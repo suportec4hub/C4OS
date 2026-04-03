@@ -1,12 +1,12 @@
 export const L = {
-  // Backgrounds
-  bg:"#f8fafc", bgWarm:"#f9fafb", white:"#ffffff", surface:"#f1f5f9", hover:"#e8f0fe",
-  line:"#e2e8f0", lineSoft:"#f1f5f9",
+  // Backgrounds — brancos puros
+  bg:"#ffffff", bgWarm:"#fafafa", white:"#ffffff", surface:"#f9fafb", hover:"#f3f4f6",
+  line:"#e5e7eb", lineSoft:"#f3f4f6",
 
-  // Primary — azul profissional (substitui o teal/verde)
-  teal:"#2563eb", tealDk:"#1d4ed8", tealBg:"#eff6ff",
+  // Primary — preto
+  teal:"#111827", tealDk:"#000000", tealBg:"#f3f4f6",
 
-  // Secundário — cinza neutro (substitui o copper/marrom)
+  // Secundário — cinza médio
   copper:"#6b7280", copperBg:"#f9fafb",
 
   // Status (mantidos para semântica)
@@ -16,17 +16,17 @@ export const L = {
   blue:"#2563eb",   blueBg:"#eff6ff",
 
   // Texto
-  t1:"#0f172a", t2:"#1e293b", t3:"#64748b", t4:"#94a3b8", t5:"#cbd5e1",
+  t1:"#111827", t2:"#374151", t3:"#6b7280", t4:"#9ca3af", t5:"#d1d8e0",
 };
 
 export const globalCSS = `
   @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap');
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
   html,body{height:100%}
-  body{background:#ffffff;color:#0f172a;font-family:'Instrument Sans',sans-serif;font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  body{background:#ffffff;color:#111827;font-family:'Instrument Sans',sans-serif;font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased}
   ::-webkit-scrollbar{width:4px;height:4px}
   ::-webkit-scrollbar-track{background:transparent}
-  ::-webkit-scrollbar-thumb{background:#e2e8f0;border-radius:99px}
+  ::-webkit-scrollbar-thumb{background:#e5e7eb;border-radius:99px}
   @keyframes up{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
   @keyframes in{from{opacity:0}to{opacity:1}}
   @keyframes px{from{transform:translateX(-6px);opacity:0}to{transform:none;opacity:1}}
