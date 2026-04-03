@@ -1,0 +1,9 @@
+{
+  "rewrites": [
+    { "source": "/C4OS/assets/(.*)", "destination": "/assets/$1" },
+    { "source": "/C4OS/logo.png",    "destination": "/logo.png" },
+    { "source": "/C4OS/favicon.ico", "destination": "/favicon.ico" },
+    { "source": "/C4OS/(.*)",        "destination": "/index.html" },
+    { "source": "/C4OS",             "destination": "/index.html" }
+  ]
+}
