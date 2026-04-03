@@ -1,0 +1,19 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "C4 OS — Dev Server",
+      "runtimeExecutable": "C:/Program Files/nodejs/node.exe",
+      "runtimeArgs": ["./node_modules/vite/bin/vite.js", "--host"],
+      "port": 5173,
+      "autoPort": true
+    },
+    {
+      "name": "C4 OS — Preview (build)",
+      "runtimeExecutable": "C:/Program Files/nodejs/node.exe",
+      "runtimeArgs": ["./node_modules/vite/bin/vite.js", "preview", "--host"],
+      "port": 4173,
+      "autoPort": true
+    }
+  ]
+}
