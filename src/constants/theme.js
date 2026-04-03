@@ -1,20 +1,29 @@
 export const L = {
-  bg:"#f5f7fa", bgWarm:"#f9fafb", white:"#ffffff", surface:"#f0f3f7", hover:"#eaf1f8",
-  line:"#e2e8f0", lineSoft:"#edf1f7",
-  teal:"#1aaa96", tealDk:"#0e7a6a", tealBg:"#f0fdf9",
-  copper:"#b8845a", copperBg:"#fdf7f2",
-  green:"#16a34a", greenBg:"#f0fdf4",
-  red:"#dc2626",   redBg:"#fef2f2",
-  yellow:"#ca8a04",yellowBg:"#fefce8",
-  blue:"#2563eb",  blueBg:"#eff6ff",
-  t1:"#0f1923", t2:"#374151", t3:"#6b7280", t4:"#9ca3af", t5:"#d1d8e0",
+  // Backgrounds
+  bg:"#f8fafc", bgWarm:"#f9fafb", white:"#ffffff", surface:"#f1f5f9", hover:"#e8f0fe",
+  line:"#e2e8f0", lineSoft:"#f1f5f9",
+
+  // Primary — azul profissional (substitui o teal/verde)
+  teal:"#2563eb", tealDk:"#1d4ed8", tealBg:"#eff6ff",
+
+  // Secundário — cinza neutro (substitui o copper/marrom)
+  copper:"#6b7280", copperBg:"#f9fafb",
+
+  // Status (mantidos para semântica)
+  green:"#16a34a",  greenBg:"#f0fdf4",
+  red:"#dc2626",    redBg:"#fef2f2",
+  yellow:"#ca8a04", yellowBg:"#fefce8",
+  blue:"#2563eb",   blueBg:"#eff6ff",
+
+  // Texto
+  t1:"#0f172a", t2:"#1e293b", t3:"#64748b", t4:"#94a3b8", t5:"#cbd5e1",
 };
 
 export const globalCSS = `
   @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap');
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
   html,body{height:100%}
-  body{background:#f5f7fa;color:#0f1923;font-family:'Instrument Sans',sans-serif;font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  body{background:#ffffff;color:#0f172a;font-family:'Instrument Sans',sans-serif;font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased}
   ::-webkit-scrollbar{width:4px;height:4px}
   ::-webkit-scrollbar-track{background:transparent}
   ::-webkit-scrollbar-thumb{background:#e2e8f0;border-radius:99px}
