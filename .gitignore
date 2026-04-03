@@ -6,3 +6,6 @@ dist/
 *.log
 .DS_Store
 Thumbs.db
+.vercel
+C4OS_v4.jsx
+.claude/settings.local.json
