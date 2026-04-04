@@ -6,7 +6,14 @@ import { Fade, Row, Grid, TabPills, PBtn, DataTable, Av, Tag, IBtn, TD } from ".
 import Modal, { Field, Input, Select, ModalFooter } from "../components/Modal";
 
 const ROLES_LABEL = { c4hub_admin:"Admin C4HUB", client_admin:"Admin", client_user:"Vendedor" };
-const ROLES_OPT   = [
+// Opções disponíveis para editor c4hub_admin (pode promover a c4hub_admin)
+const ROLES_OPT_FULL = [
+  { v:"client_user",  l:"Vendedor" },
+  { v:"client_admin", l:"Admin" },
+  { v:"c4hub_admin",  l:"Admin C4HUB (Acesso Total)" },
+];
+// Opções para editor client_admin (não pode promover a c4hub_admin)
+const ROLES_OPT_LIMITED = [
   { v:"client_user",  l:"Vendedor" },
   { v:"client_admin", l:"Admin" },
 ];
@@ -16,7 +23,9 @@ const rbg = { c4hub_admin:L.tealBg, client_admin:L.tealBg, client_user:L.copperB
 const VAZIO = { nome:"", email:"", senha:"", cargo:"", whatsapp:"", role:"client_user" };
 
 export default function PageEquipe({ user }) {
-  const isAdmin = user?.role === "c4hub_admin" || user?.role === "client_admin";
+  const isAdmin    = user?.role === "c4hub_admin" || user?.role === "client_admin";
+  const isC4Admin  = user?.role === "c4hub_admin";
+  const rolesOpt   = isC4Admin ? ROLES_OPT_FULL : ROLES_OPT_LIMITED;
 
   const { data: usuarios, loading, update, remove, refetch } = useTable("usuarios", {
     empresa_id: user?.role === "c4hub_admin" ? undefined : user?.empresa_id,
@@ -49,6 +58,12 @@ export default function PageEquipe({ user }) {
     setSelected(m); setErr(""); setSucc(""); setModal("editar");
   };
 
+  // Impede downgrade: salva c4hub_admin se o usuário editado for c4hub_admin e o editor não for c4hub_admin
+  const safeRole = (targetUser, newRole) => {
+    if (targetUser?.role === "c4hub_admin" && !isC4Admin) return "c4hub_admin";
+    return newRole;
+  };
+
   const openDetalhes = (m) => {
     setSelected(m); setModal("detalhes");
   };
@@ -73,7 +88,7 @@ export default function PageEquipe({ user }) {
   const salvarEdicao = async () => {
     if (!selected) return;
     setSaving(true); setErr("");
-    const changes = { nome: form.nome, cargo: form.cargo, role: form.role };
+    const changes = { nome: form.nome, cargo: form.cargo, role: safeRole(selected, form.role) };
     if (form.whatsapp) changes.whatsapp = form.whatsapp;
     const { error } = await update(selected.id, changes);
     if (error) setErr(error.message || "Erro ao salvar.");
@@ -176,7 +191,7 @@ export default function PageEquipe({ user }) {
                 <Field label="WhatsApp"><Input value={form.whatsapp} onChange={F("whatsapp")} placeholder="(11) 99999-0000"/></Field>
                 <Field label="Perfil de acesso" style={{gridColumn:"1/-1"}}>
                   <Select value={form.role} onChange={F("role")}>
-                    {ROLES_OPT.map(r=><option key={r.v} value={r.v}>{r.l}</option>)}
+                    {rolesOpt.map(r=><option key={r.v} value={r.v}>{r.l}</option>)}
                   </Select>
                 </Field>
               </div>
@@ -200,7 +215,7 @@ export default function PageEquipe({ user }) {
                 <Field label="WhatsApp"><Input value={form.whatsapp} onChange={F("whatsapp")} placeholder="(11) 99999-0000"/></Field>
                 <Field label="Perfil de acesso">
                   <Select value={form.role} onChange={F("role")}>
-                    {ROLES_OPT.map(r=><option key={r.v} value={r.v}>{r.l}</option>)}
+                    {rolesOpt.map(r=><option key={r.v} value={r.v}>{r.l}</option>)}
                   </Select>
                 </Field>
               </div>

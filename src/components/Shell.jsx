@@ -43,10 +43,18 @@ const ADMIN_ITEMS = [
 
 const ADMIN_ONLY = new Set(["clientes","logs","suporte","users","planos"]);
 
+// Cargos C-level recebem acesso full mesmo que o role no DB seja client_admin/client_user
+const CLEVEL_CARGOS = ["ceo","cto","coo","cfo","cmo","cso","cpo","diretor","co-founder","founder","sócio","presidente","vp"];
+function hasFullAccess(user) {
+  if (user.role === "c4hub_admin") return true;
+  const cargo = (user.cargo || "").toLowerCase();
+  return CLEVEL_CARGOS.some(c => cargo.includes(c));
+}
+
 export default function Shell({user,onLogout}) {
   const [sec,setSec] = useState("dashboard");
   const [col,setCol] = useState(false);
-  const isAdmin = user.role === "c4hub_admin";
+  const isAdmin = hasFullAccess(user);
 
   const navItems = isAdmin ? [...NAV_ITEMS, ...ADMIN_ITEMS] : NAV_ITEMS;
   const groups   = [...new Set(navItems.map(n => n.g))];
