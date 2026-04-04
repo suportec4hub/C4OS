@@ -33,13 +33,17 @@ export default function PageAI({ user }) {
     setTimeout(() => endRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
 
     try {
-      // Map to Anthropic message format (only user/assistant)
+      // Map to Anthropic message format — must start with "user"
       const apiMessages = newHistory
         .filter(m => m.role === "user" || m.role === "assistant")
         .map(m => ({ role: m.role, content: m.content.replace(/\*\*/g, "") }));
 
+      // Anthropic API requires first message to be "user"
+      const firstUserIdx = apiMessages.findIndex(m => m.role === "user");
+      const trimmedMessages = firstUserIdx > 0 ? apiMessages.slice(firstUserIdx) : apiMessages;
+
       const { data, error } = await supabase.functions.invoke("c4-ai", {
-        body: { messages: apiMessages, empresa_id: user?.empresa_id },
+        body: { messages: trimmedMessages, empresa_id: user?.empresa_id },
       });
 
       if (error || data?.error) {
