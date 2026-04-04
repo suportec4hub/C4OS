@@ -56,19 +56,11 @@ export function useProfile() {
 
 // Hook para criar usuário via Edge Function
 export async function criarUsuario({ email, senha, nome, cargo, role, empresa_id }) {
-  const { data: { session } } = await supabase.auth.getSession();
-  const res = await fetch(
-    `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/criar-usuario`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${session?.access_token}`
-      },
-      body: JSON.stringify({ email, senha, nome, cargo, role, empresa_id })
-    }
-  );
-  return res.json();
+  const { data, error } = await supabase.functions.invoke("criar-usuario", {
+    body: { email, senha, nome, cargo, role, empresa_id },
+  });
+  if (error) return { error: error.message || "Erro ao chamar a função" };
+  return data || {};
 }
 
 // Hook de planos (leitura + update para admin)
