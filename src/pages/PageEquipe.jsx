@@ -2,6 +2,7 @@ import { useState } from "react";
 import { L } from "../constants/theme";
 import { useTable, criarUsuario } from "../hooks/useData";
 import { supabase } from "../lib/supabase";
+import { hasFullAccess } from "../lib/auth";
 import { Fade, Row, Grid, TabPills, PBtn, DataTable, Av, Tag, IBtn, TD } from "../components/ui";
 import Modal, { Field, Input, Select, ModalFooter } from "../components/Modal";
 
@@ -23,8 +24,8 @@ const rbg = { c4hub_admin:L.tealBg, client_admin:L.tealBg, client_user:L.copperB
 const VAZIO = { nome:"", email:"", senha:"", cargo:"", whatsapp:"", role:"client_user" };
 
 export default function PageEquipe({ user }) {
-  const isAdmin    = user?.role === "c4hub_admin" || user?.role === "client_admin";
-  const isC4Admin  = user?.role === "c4hub_admin";
+  const isAdmin    = hasFullAccess(user) || user?.role === "client_admin";
+  const isC4Admin  = hasFullAccess(user);
   const rolesOpt   = isC4Admin ? ROLES_OPT_FULL : ROLES_OPT_LIMITED;
 
   const { data: usuarios, loading, update, remove, refetch } = useTable("usuarios", {

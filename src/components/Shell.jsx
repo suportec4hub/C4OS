@@ -41,15 +41,9 @@ const ADMIN_ITEMS = [
   {id:"planos",  label:"Planos",      ico:"★", g:"c4hub"},
 ];
 
-const ADMIN_ONLY = new Set(["clientes","logs","suporte","users","planos"]);
+import { hasFullAccess } from "../lib/auth";
 
-// Cargos C-level recebem acesso full mesmo que o role no DB seja client_admin/client_user
-const CLEVEL_CARGOS = ["ceo","cto","coo","cfo","cmo","cso","cpo","diretor","co-founder","founder","sócio","presidente","vp"];
-function hasFullAccess(user) {
-  if (user.role === "c4hub_admin") return true;
-  const cargo = (user.cargo || "").toLowerCase();
-  return CLEVEL_CARGOS.some(c => cargo.includes(c));
-}
+const ADMIN_ONLY = new Set(["clientes","logs","suporte","users","planos"]);
 
 export default function Shell({user,onLogout}) {
   const [sec,setSec] = useState("dashboard");

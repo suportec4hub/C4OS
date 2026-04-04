@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { L } from "../constants/theme";
 import { useTable, criarUsuario } from "../hooks/useData";
+import { hasFullAccess } from "../lib/auth";
 import { Fade, Row, Grid, PBtn, DataTable, Av, Tag, IBtn, TD } from "../components/ui";
 import Modal, { Field, Input, Select, ModalFooter } from "../components/Modal";
 
@@ -12,7 +13,7 @@ const ROLES = [
 const VAZIO = { nome:"", email:"", senha:"", cargo:"", role:"client_user" };
 
 export default function PageUsers({ user }) {
-  const isAdmin = user?.role === "c4hub_admin";
+  const isAdmin = hasFullAccess(user);
   const { data: usuarios, loading, update, remove, refetch } = useTable("usuarios", { empresa_id: isAdmin ? undefined : user?.empresa_id });
   const [modal, setModal] = useState(false);
   const [form, setForm]   = useState(VAZIO);
