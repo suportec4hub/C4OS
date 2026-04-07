@@ -159,10 +159,10 @@ export default function PageEmpresa({ empresa, user }) {
         <Card title="Configurações da Empresa">
           {succ && <div style={{padding:"8px 12px",background:L.greenBg,borderRadius:8,fontSize:12,color:L.green,marginBottom:14}}>{succ}</div>}
           <Grid cols={2} gap={14}>
-            {[["Nome da Empresa","nome",empData.nome||""],["CNPJ","cnpj",empData.cnpj||""],["Telefone","telefone",empData.telefone||""],["Website","website",empData.website||""],["Segmento","segmento",empData.segmento||""],["Endereço","endereco",empData.endereco||""]].map(([l,k,v])=>(
+            {[["Nome da Empresa","nome",empData.nome||"","text"],["CNPJ","cnpj",empData.cnpj||"","text"],["Telefone","telefone",empData.telefone||"","text"],["Website","website",empData.website||"","text"],["Segmento","segmento",empData.segmento||"","text"],["Endereço","endereco",empData.endereco||"","text"],["MRR (R$) — Receita Recorrente Mensal","mrr",empData.mrr||"","number"]].map(([l,k,v,type])=>(
               <div key={k}>
                 <label style={{fontSize:10,fontWeight:700,color:L.t3,textTransform:"uppercase",letterSpacing:"1.2px",display:"block",marginBottom:5,fontFamily:"'JetBrains Mono',monospace"}}>{l}</label>
-                <input defaultValue={v} onChange={e=>setInfoForm(p=>({...p,[k]:e.target.value}))}
+                <input defaultValue={v} type={type} onChange={e=>setInfoForm(p=>({...p,[k]:type==="number"?parseFloat(e.target.value)||0:e.target.value}))}
                   style={{width:"100%",background:L.surface,border:`1.5px solid ${L.line}`,borderRadius:9,padding:"9px 12px",color:L.t1,fontSize:12.5,fontFamily:"inherit",outline:"none",marginBottom:14}}
                   onFocus={e=>e.target.style.borderColor=L.teal} onBlur={e=>e.target.style.borderColor=L.line}/>
               </div>
