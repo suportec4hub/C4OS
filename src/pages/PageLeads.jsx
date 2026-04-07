@@ -86,10 +86,10 @@ export default function PageLeads({ user }) {
 
   return (
     <Fade>
-      <Row between mb={16}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8,marginBottom:16}}>
         <TabPills tabs={["Todos","Quente","Morno","Frio","Novo"]} active={f} onChange={setF}/>
         <PBtn onClick={openNew}>+ Novo Lead</PBtn>
-      </Row>
+      </div>
 
       {loading ? (
         <div style={{textAlign:"center",padding:40,color:L.t4}}>Carregando leads...</div>
@@ -134,7 +134,7 @@ export default function PageLeads({ user }) {
 
       {modal && (
         <Modal title={edit ? "Editar Lead" : "Novo Lead"} onClose={()=>setModal(false)} width={520}>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
+          <div className="form-grid">
             <Field label="Nome *"><Input value={form.nome} onChange={F("nome")} placeholder="Nome completo"/></Field>
             <Field label="WhatsApp"><Input value={form.whatsapp} onChange={F("whatsapp")} placeholder="(11) 99999-9999"/></Field>
             <Field label="E-mail"><Input value={form.email} onChange={F("email")} type="email" placeholder="email@empresa.com"/></Field>

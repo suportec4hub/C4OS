@@ -140,8 +140,8 @@ export default function PageFollowUp({ user }) {
       )}
 
       {/* Filtros */}
-      <Row between mb={14} style={{ flexWrap: "wrap", gap: 8 }}>
-        <Row gap={6} style={{ flexWrap: "wrap" }}>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:8, marginBottom:14 }}>
+        <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
           {["pendente", "concluido", "todos"].map(s => (
             <button key={s} onClick={() => setFiltro(s)} style={{ padding: "6px 14px", borderRadius: 7, fontSize: 12, fontWeight: filtro === s ? 600 : 400, cursor: "pointer", fontFamily: "inherit", background: filtro === s ? L.white : L.surface, color: filtro === s ? L.teal : L.t3, border: `1.5px solid ${filtro === s ? L.teal + "44" : L.line}`, transition: "all .12s" }}>
               {s.charAt(0).toUpperCase() + s.slice(1)}
@@ -151,9 +151,9 @@ export default function PageFollowUp({ user }) {
             <option value="todos">Todos vendedores</option>
             {usuarios.map(u => <option key={u.id} value={u.id}>{u.nome}</option>)}
           </select>
-        </Row>
+        </div>
         <PBtn onClick={openNew}>+ Novo Follow-up</PBtn>
-      </Row>
+      </div>
 
       {loading ? (
         <div style={{ textAlign: "center", padding: 40, color: L.t4 }}>Carregando...</div>
@@ -195,7 +195,7 @@ export default function PageFollowUp({ user }) {
         <Modal title={editId ? "Editar Follow-up" : "Novo Follow-up"} onClose={() => setModal(false)} width={520}>
           <Field label="Título *"><Input value={form.titulo} onChange={F("titulo")} placeholder="Ex: Enviar proposta revisada" /></Field>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px" }}>
+          <div className="form-grid">
             <Field label="Lead vinculado">
               <Select value={form.lead_id} onChange={F("lead_id")}>
                 <option value="">— nenhum —</option>

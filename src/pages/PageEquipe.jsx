@@ -112,12 +112,12 @@ export default function PageEquipe({ user }) {
 
   return (
     <Fade>
-      <Row between mb={14}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8,marginBottom:14}}>
         <TabPills tabs={["Todos","Admin","Vendedor","Inativo"]} active={filtro} onChange={setFiltro}/>
         {isAdmin && <PBtn onClick={openNovo}>+ Convidar</PBtn>}
-      </Row>
+      </div>
 
-      <Grid cols={3} gap={12} mb={14}>
+      <Grid cols={3} gap={12} mb={14} responsive>
         {[
           { l:"Ativos",           v:ativos,                                              c:L.teal },
           { l:"Leads Atribuídos", v:usuarios.reduce((s,m)=>s+(m.leads||0),0),           c:L.copper },
@@ -185,7 +185,7 @@ export default function PageEquipe({ user }) {
           ) : (
             <>
               <Field label="Nome completo *"><Input value={form.nome} onChange={F("nome")} placeholder="Nome do membro"/></Field>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
+              <div className="form-grid">
                 <Field label="E-mail *"><Input value={form.email} onChange={F("email")} type="email" placeholder="email@empresa.com"/></Field>
                 <Field label="Senha *"><Input value={form.senha} onChange={F("senha")} type="password" placeholder="Mínimo 6 caracteres"/></Field>
                 <Field label="Cargo"><Input value={form.cargo} onChange={F("cargo")} placeholder="Ex: SDR, Closer, CS..."/></Field>
@@ -210,7 +210,7 @@ export default function PageEquipe({ user }) {
             <div style={{textAlign:"center",padding:"16px 0",color:L.green,fontWeight:600}}>{succ}</div>
           ) : (
             <>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
+              <div className="form-grid">
                 <Field label="Nome completo"><Input value={form.nome} onChange={F("nome")}/></Field>
                 <Field label="Cargo"><Input value={form.cargo} onChange={F("cargo")} placeholder="Ex: SDR, Closer..."/></Field>
                 <Field label="WhatsApp"><Input value={form.whatsapp} onChange={F("whatsapp")} placeholder="(11) 99999-0000"/></Field>

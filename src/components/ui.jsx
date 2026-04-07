@@ -19,7 +19,15 @@ export function Card({title,sub,children}) {
   );
 }
 
-export function Grid({cols,gap,mb,children}) {
+export function Grid({cols,gap,mb,children,responsive}) {
+  if (responsive) {
+    return (
+      <div className="rg-auto"
+        style={{gridTemplateColumns:typeof cols==="number"?`repeat(${cols},1fr)`:cols,gap:gap||12,marginBottom:mb||0}}>
+        {children}
+      </div>
+    );
+  }
   return (
     <div style={{display:"grid",gridTemplateColumns:typeof cols==="number"?`repeat(${cols},1fr)`:cols,gap,marginBottom:mb||0}}>
       {children}
@@ -37,7 +45,7 @@ export function Row({children,gap,between,justify,mb,mt}) {
 
 export function DataTable({heads,children}) {
   return (
-    <div style={{background:L.white,borderRadius:12,border:`1px solid ${L.line}`,overflow:"hidden",boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}>
+    <div className="table-scroll" style={{background:L.white,borderRadius:12,border:`1px solid ${L.line}`,overflow:"hidden",boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}>
       <table style={{width:"100%",borderCollapse:"collapse"}}>
         <thead>
           <tr style={{background:L.surface,borderBottom:`1px solid ${L.line}`}}>
@@ -54,10 +62,18 @@ export function DataTable({heads,children}) {
   );
 }
 
-export function Av({name,color,size=28}) {
-  const initials = name.split(" ").map(n => n[0]).slice(0,2).join("");
+export function Av({name,color,size=28,src}) {
+  const initials = (name||"?").split(" ").map(n => n[0]).slice(0,2).join("");
+  const radius = Math.round(size*.28);
+  if (src) {
+    return (
+      <img src={src} alt={name}
+        style={{width:size,height:size,borderRadius:radius,flexShrink:0,objectFit:"cover",border:`1.5px solid ${color}25`,display:"block"}}
+      />
+    );
+  }
   return (
-    <div style={{width:size,height:size,borderRadius:Math.round(size*.28),flexShrink:0,background:`${color}18`,border:`1.5px solid ${color}25`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:size*.37,fontWeight:700,color,fontFamily:"'Outfit',sans-serif"}}>
+    <div style={{width:size,height:size,borderRadius:radius,flexShrink:0,background:`${color}18`,border:`1.5px solid ${color}25`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:size*.37,fontWeight:700,color,fontFamily:"'Outfit',sans-serif"}}>
       {initials}
     </div>
   );

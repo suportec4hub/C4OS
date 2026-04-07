@@ -38,7 +38,7 @@ export default function PageClientes() {
 
   return (
     <Fade>
-      <Grid cols={4} gap={12} mb={14}>
+      <Grid cols={4} gap={12} mb={14} responsive>
         {[
           {l:"Clientes Ativos",v:empresas.filter(e=>e.status==="ativo"&&!e.is_c4hub).length,c:L.green},
           {l:"MRR Total",v:`R$ ${mrr.toLocaleString("pt-BR",{minimumFractionDigits:2})}`,c:L.teal},

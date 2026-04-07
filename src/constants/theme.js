@@ -32,4 +32,34 @@ export const globalCSS = `
   @keyframes px{from{transform:translateX(-6px);opacity:0}to{transform:none;opacity:1}}
   @keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
   @keyframes spin{to{transform:rotate(360deg)}}
+  @keyframes slideIn{from{transform:translateX(-100%)}to{transform:translateX(0)}}
+  /* ── Responsive grid ── */
+  .rg-auto{display:grid}
+  .sidebar-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:14;animation:in .15s ease}
+  .sidebar-drawer{animation:slideIn .22s ease}
+  /* Form grid (2 cols → 1 col on mobile) */
+  .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
+  /* Mobile < 640px */
+  @media(max-width:639px){
+    .form-grid{grid-template-columns:1fr!important}
+    .rg-auto{grid-template-columns:1fr!important}
+    .hide-mobile{display:none!important}
+    .show-mobile{display:flex!important}
+    .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+    .table-scroll table{min-width:580px}
+    .stack-mobile{flex-direction:column!important;align-items:stretch!important;gap:8px!important}
+    .wrap-mobile{flex-wrap:wrap!important}
+  }
+  /* Tablet 640–1023px */
+  @media(min-width:640px) and (max-width:1023px){
+    .rg-auto{grid-template-columns:repeat(2,1fr)!important}
+    .hide-tablet{display:none!important}
+    .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+    .table-scroll table{min-width:580px}
+  }
+  /* TV ≥ 1920px */
+  @media(min-width:1920px){
+    body{font-size:14px}
+    .tv-wide{max-width:1800px;margin:0 auto;width:100%}
+  }
 `;

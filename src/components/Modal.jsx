@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { L } from "../constants/theme";
 
 export default function Modal({ title, onClose, children, width = 480 }) {
@@ -42,7 +42,7 @@ export function Field({ label, children, required }) {
 }
 
 export function Input({ value, onChange, placeholder, type = "text", ...rest }) {
-  const [focus, setFocus] = React.useState(false);
+  const [focus, setFocus] = useState(false);
   return (
     <input
       value={value} onChange={e => onChange(e.target.value)}
@@ -78,6 +78,3 @@ export function ModalFooter({ onClose, onSave, loading, label = "Salvar" }) {
     </div>
   );
 }
-
-// Importa React para usar useState no Input
-import React from "react";

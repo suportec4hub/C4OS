@@ -158,14 +158,14 @@ export default function PageEmpresa({ empresa, user }) {
 
       {/* Info tab */}
       {tab==="info" && (
-        <Grid cols={2} gap={14}>
+        <Grid cols={2} gap={14} responsive>
           <Card title="Informações da Empresa">
             {[["Nome",empData.nome||"—"],["CNPJ",empData.cnpj||"—"],["Segmento",empData.segmento||"—"],["Website",empData.website||"—"],["Telefone",empData.telefone||"—"],["Endereço",empData.endereco||"—"],["Status",empData.status||"—"]].map(([k,v])=>(
               <InfoRow key={k} label={k} value={v}/>
             ))}
           </Card>
           <Card title="Plano e Uso">
-            <Grid cols={2} gap={8} mb={14}>
+            <Grid cols={2} gap={8} mb={14} responsive>
               {[["MRR",`R$ ${parseFloat(empData.mrr||0).toLocaleString("pt-BR",{minimumFractionDigits:2})}`,L.teal,L.tealBg],["Status",empData.status||"—",L.copper,L.copperBg]].map(([k,v,c,bg])=>(
                 <div key={k} style={{padding:11,background:bg,borderRadius:9,border:`1px solid ${c}18`}}>
                   <div style={{fontSize:10,color:c,fontFamily:"'JetBrains Mono',monospace",letterSpacing:"1px",textTransform:"uppercase",marginBottom:4,fontWeight:600}}>{k}</div>
@@ -181,7 +181,7 @@ export default function PageEmpresa({ empresa, user }) {
       {tab==="configurações" && (
         <Card title="Configurações da Empresa">
           {succ && <div style={{padding:"8px 12px",background:L.greenBg,borderRadius:8,fontSize:12,color:L.green,marginBottom:14}}>{succ}</div>}
-          <Grid cols={2} gap={14}>
+          <Grid cols={2} gap={14} responsive>
             {[["Nome da Empresa","nome",empData.nome||"","text"],["CNPJ","cnpj",empData.cnpj||"","text"],["Telefone","telefone",empData.telefone||"","text"],["Website","website",empData.website||"","text"],["Segmento","segmento",empData.segmento||"","text"],["Endereço","endereco",empData.endereco||"","text"],["MRR (R$) — Receita Recorrente Mensal","mrr",empData.mrr||"","number"]].map(([l,k,v,type])=>(
               <div key={k}>
                 <label style={{fontSize:10,fontWeight:700,color:L.t3,textTransform:"uppercase",letterSpacing:"1.2px",display:"block",marginBottom:5,fontFamily:"'JetBrains Mono',monospace"}}>{l}</label>
@@ -253,7 +253,7 @@ export default function PageEmpresa({ empresa, user }) {
                 {succWaba}
               </div>
             )}
-            <Grid cols={2} gap={12}>
+            <Grid cols={2} gap={12} responsive>
               <LabelInput label="Phone Number ID" value={wabaForm.waba_phone_number_id}
                 onChange={e=>setWabaForm(p=>({...p,waba_phone_number_id:e.target.value}))}
                 placeholder="Ex: 123456789012345"/>
@@ -295,7 +295,7 @@ export default function PageEmpresa({ empresa, user }) {
 
             {succMeta && <div style={{padding:"8px 12px",background:succMeta.startsWith("Erro")?L.redBg:L.greenBg,borderRadius:8,fontSize:12,color:succMeta.startsWith("Erro")?L.red:L.green,marginBottom:14}}>{succMeta}</div>}
 
-            <Grid cols={2} gap={12}>
+            <Grid cols={2} gap={12} responsive>
               <LabelInput label="Pixel ID" value={metaForm.meta_pixel_id} onChange={e=>setMetaForm(p=>({...p,meta_pixel_id:e.target.value}))} placeholder="Ex: 123456789012345"/>
               <LabelInput label="Dataset ID (mesmo do Pixel)" value={metaForm.meta_dataset_id} onChange={e=>setMetaForm(p=>({...p,meta_dataset_id:e.target.value}))} placeholder="Ex: 123456789012345"/>
               <div style={{gridColumn:"1/-1"}}>
@@ -330,7 +330,7 @@ export default function PageEmpresa({ empresa, user }) {
 
             {succGa4 && <div style={{padding:"8px 12px",background:succGa4.startsWith("Erro")?L.redBg:L.greenBg,borderRadius:8,fontSize:12,color:succGa4.startsWith("Erro")?L.red:L.green,marginBottom:14}}>{succGa4}</div>}
 
-            <Grid cols={2} gap={12}>
+            <Grid cols={2} gap={12} responsive>
               <LabelInput label="Measurement ID" value={ga4Form.ga4_measurement_id} onChange={e=>setGa4Form(p=>({...p,ga4_measurement_id:e.target.value}))} placeholder="Ex: G-XXXXXXXXXX"/>
               <LabelInput label="API Secret (Measurement Protocol)" value={ga4Form.ga4_api_secret} onChange={e=>setGa4Form(p=>({...p,ga4_api_secret:e.target.value}))} placeholder="Segredo da API" type="password"/>
             </Grid>

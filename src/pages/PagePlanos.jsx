@@ -56,7 +56,7 @@ export default function PagePlanos({ user }) {
         {isAdmin && <div style={{marginTop:8,fontSize:11,color:L.teal}}>✦ Clique em qualquer plano para editar preço e recursos</div>}
       </div>
 
-      <Grid cols={visiveis.length <= 2 ? visiveis.length : 3} gap={16} mb={20}>
+      <Grid cols={visiveis.length <= 2 ? visiveis.length : 3} gap={16} mb={20} responsive>
         {visiveis.map((p, i) => {
           const meta = PLANO_CORES[p.nome] || {c:L.t3,bg:L.surface};
           return (

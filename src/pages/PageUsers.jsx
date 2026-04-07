@@ -51,7 +51,7 @@ export default function PageUsers({ user }) {
   return (
     <Fade>
       <Row between mb={14}>
-        <Grid cols={3} gap={12}>
+        <Grid cols={3} gap={12} responsive>
           {[
             {l:"Ativos",   v:usuarios.filter(u=>u.ativo).length,  c:L.teal},
             {l:"Inativos", v:usuarios.filter(u=>!u.ativo).length, c:L.red},

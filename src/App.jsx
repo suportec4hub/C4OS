@@ -55,12 +55,14 @@ export default function App() {
           id:         data.id,
           nome:       data.nome,
           cargo:      data.cargo ?? "",
+          email:      user?.email ?? "",
           role:       data.role,
           empresa:    data.empresas?.nome ?? "—",
           empresa_id: data.empresa_id,
           is_c4hub:   data.empresas?.is_c4hub ?? false,
           cor:        data.role === "c4hub_admin" ? L.teal : L.copper,
           avatar:     data.nome.split(" ").map(n => n[0]).slice(0,2).join(""),
+          foto_url:   data.foto_url ?? null,
         });
       }
     } catch (e) {
@@ -74,6 +76,10 @@ export default function App() {
     await supabase.auth.signOut();
   };
 
+  const handleProfileUpdate = (updated) => {
+    setProfile(p => ({ ...p, ...updated }));
+  };
+
   if (!ready) {
     return (
       <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#f5f7fa"}}>
@@ -83,5 +89,5 @@ export default function App() {
   }
 
   if (!user || !profile) return <Login />;
-  return <Shell user={profile} onLogout={handleLogout} />;
+  return <Shell user={profile} onLogout={handleLogout} onProfileUpdate={handleProfileUpdate} />;
 }

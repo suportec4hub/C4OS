@@ -129,7 +129,7 @@ export default function PageAI({ user }) {
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 106px)", minHeight: 400, animation: "in .3s ease" }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "calc(100dvh - 86px)", minHeight: 400, animation: "in .3s ease" }}>
 
       {/* ── HEADER ── */}
       <div style={{ background: `linear-gradient(135deg,${L.tealBg},${L.copperBg})`, border: `1px solid ${L.teal}22`, borderRadius: 12, padding: "12px 16px", marginBottom: 12, flexShrink: 0, boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
@@ -154,7 +154,7 @@ export default function PageAI({ user }) {
       </div>
 
       {/* ── SUGESTÕES ── */}
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10, flexShrink: 0 }}>
+      <div className="hide-mobile" style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10, flexShrink: 0 }}>
         {SUGS.map(s => (
           <button key={s} onClick={() => send(s)} disabled={loading}
             style={{ padding: "5px 11px", borderRadius: 8, fontSize: 11, cursor: loading ? "not-allowed" : "pointer", fontFamily: "inherit", background: L.white, color: L.t3, border: `1px solid ${L.line}`, transition: "all .12s", opacity: loading ? .5 : 1, whiteSpace: "nowrap" }}

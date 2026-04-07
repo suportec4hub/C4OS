@@ -116,15 +116,15 @@ export default function PageSuporte({ user }) {
       {!sel ? (
         <>
           {/* Busca + resumo */}
-          <Row between mb={14}>
-            <Row gap={10}>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:8, marginBottom:14 }}>
+            <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
               <input value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar empresa..."
-                style={{ padding: "7px 12px", borderRadius: 8, border: `1.5px solid ${L.line}`, background: L.white, color: L.t1, fontSize: 12, fontFamily: "inherit", outline: "none", width: 220 }}
+                style={{ padding: "7px 12px", borderRadius: 8, border: `1.5px solid ${L.line}`, background: L.white, color: L.t1, fontSize: 12, fontFamily: "inherit", outline: "none", width: 200 }}
                 onFocus={e => e.target.style.borderColor = L.teal} onBlur={e => e.target.style.borderColor = L.line} />
               <Tag color={L.teal} bg={L.tealBg}>{empresas.length} empresa{empresas.length !== 1 ? "s" : ""}</Tag>
-            </Row>
+            </div>
             <button onClick={load} style={{ padding: "6px 14px", borderRadius: 8, fontSize: 12, cursor: "pointer", fontFamily: "inherit", background: L.surface, color: L.t2, border: `1px solid ${L.line}` }}>↺ Atualizar</button>
-          </Row>
+          </div>
 
           {loading ? (
             <div style={{ textAlign: "center", padding: 60, color: L.t4 }}>
@@ -134,7 +134,7 @@ export default function PageSuporte({ user }) {
           ) : filteredEmps.length === 0 ? (
             <div style={{ textAlign: "center", padding: 60, color: L.t4 }}>Nenhuma empresa encontrada.</div>
           ) : (
-            <Grid cols={2} gap={12}>
+            <Grid cols={2} gap={12} responsive>
               {filteredEmps.map((emp) => {
                 const pc = pColor(emp.plano_nome);
                 return (
@@ -204,7 +204,7 @@ export default function PageSuporte({ user }) {
           </Row>
 
           {/* KPIs */}
-          <Grid cols={4} gap={12} mb={14}>
+          <Grid cols={4} gap={12} mb={14} responsive>
             {[
               { l: "Usuários Ativos", v: sel.usuario_count, c: L.teal   },
               { l: "Leads",           v: sel.lead_count,    c: L.copper  },
@@ -218,7 +218,7 @@ export default function PageSuporte({ user }) {
             ))}
           </Grid>
 
-          <Grid cols={2} gap={12}>
+          <Grid cols={2} gap={12} responsive>
             {/* Ações */}
             <Card title="Ações de Suporte">
               {[

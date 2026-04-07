@@ -69,7 +69,7 @@ export default function PageLogs({ user }) {
 
   return (
     <Fade>
-      <Grid cols={4} gap={12} mb={14}>
+      <Grid cols={4} gap={12} mb={14} responsive>
         {[
           { l: "Total Hoje",  v: todayLogs.length, c: L.teal  },
           { l: "Warnings",    v: warns,             c: L.yellow },
@@ -83,18 +83,18 @@ export default function PageLogs({ user }) {
         ))}
       </Grid>
 
-      <Row between mb={12}>
-        <Row gap={8}>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:8, marginBottom:12 }}>
+        <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center" }}>
           <TabPills tabs={["Todos", "Info", "Warn", "Error"]} active={filtro} onChange={setFiltro} />
           <input value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar ação, usuário, empresa..."
-            style={{ padding: "6px 12px", borderRadius: 8, border: `1.5px solid ${L.line}`, background: L.white, color: L.t1, fontSize: 12, fontFamily: "inherit", outline: "none", width: 220 }}
+            style={{ padding: "6px 12px", borderRadius: 8, border: `1.5px solid ${L.line}`, background: L.white, color: L.t1, fontSize: 12, fontFamily: "inherit", outline: "none", width: 200 }}
             onFocus={e => e.target.style.borderColor = L.teal} onBlur={e => e.target.style.borderColor = L.line} />
-        </Row>
-        <Row gap={8}>
+        </div>
+        <div style={{ display:"flex", gap:8 }}>
           <IBtn c={L.teal} onClick={() => load()}>↺ Atualizar</IBtn>
           <IBtn c={L.green} onClick={() => downloadCSV(filtered)}>Exportar CSV</IBtn>
-        </Row>
-      </Row>
+        </div>
+      </div>
 
       <div style={{ background: L.white, borderRadius: 12, border: `1px solid ${L.line}`, overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
         {/* Terminal header */}

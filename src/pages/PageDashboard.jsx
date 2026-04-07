@@ -146,7 +146,7 @@ export default function PageDashboard({ user }) {
   if (loading) return (
     <Fade>
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <Grid cols={3} gap={12} mb={16}>
+        <Grid cols={3} gap={12} mb={16} responsive>
           {[...Array(6)].map((_, i) => (
             <div key={i} style={{ height: 88, background: L.white, borderRadius: 12, border: `1px solid ${L.line}`, animation: "pulse 1.5s ease infinite" }}/>
           ))}
@@ -170,7 +170,7 @@ export default function PageDashboard({ user }) {
       )}
 
       {/* ── KPIs ── */}
-      <Grid cols={3} gap={12} mb={16}>
+      <Grid cols={3} gap={12} mb={16} responsive>
         {kpis.map((k, i) => (
           <div key={i} style={{ background: L.white, borderRadius: 12, border: `1px solid ${L.line}`, padding: "16px 18px", position: "relative", overflow: "hidden", animation: `up .35s ease ${i*.05}s both`, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
             <div style={{ fontSize: 10, color: L.t3, textTransform: "uppercase", letterSpacing: "1.5px", fontFamily: "'JetBrains Mono',monospace", marginBottom: 8, fontWeight: 600 }}>{k.l}</div>
@@ -187,7 +187,7 @@ export default function PageDashboard({ user }) {
       </Grid>
 
       {/* ── RECEITA + CANAIS ── */}
-      <Grid cols="2fr 1fr" gap={12} mb={12}>
+      <Grid cols="2fr 1fr" gap={12} mb={12} responsive>
         <Card title="Receita vs Meta" sub="últimos 6 meses">
           {hasReceitaData ? (
             <ResponsiveContainer width="100%" height={190}>
@@ -232,7 +232,7 @@ export default function PageDashboard({ user }) {
       </Grid>
 
       {/* ── FUNIL + RADAR + LEADS ── */}
-      <Grid cols={3} gap={12}>
+      <Grid cols={3} gap={12} responsive>
         <Card title="Funil de Conversão" sub="leads por etapa">
           {hasFunilData ? (
             <ResponsiveContainer width="100%" height={170}>
