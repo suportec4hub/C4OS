@@ -3,6 +3,7 @@ import { L } from "../constants/theme";
 import { useTable } from "../hooks/useData";
 import { supabase } from "../lib/supabase";
 import { trackLead } from "../lib/analytics";
+import { logAction } from "../lib/log";
 import { Fade, Row, TabPills, PBtn, DataTable, Av, Tag, ScBar, IBtn, TD } from "../components/ui";
 import Modal, { Field, Input, Select, ModalFooter } from "../components/Modal";
 
@@ -65,6 +66,11 @@ export default function PageLeads({ user }) {
       supabase.functions.invoke("track-conversion", {
         body: { empresa_id: user?.empresa_id, event_name: "Lead", event_data: { value: payload.valor_estimado || 0, content_name: form.nome, content_category: form.origem } },
       });
+
+      // Auditoria
+      logAction({ empresa_id: user?.empresa_id, usuario_id: user?.id, usuario_email: user?.email, tipo: "LEAD", nivel: "info", acao: `Lead criado: ${form.nome} (${form.origem})`, detalhes: { lead_id: saved?.id, valor: payload.valor_estimado } });
+    } else {
+      logAction({ empresa_id: user?.empresa_id, usuario_id: user?.id, usuario_email: user?.email, tipo: "LEAD", nivel: "info", acao: `Lead atualizado: ${form.nome}`, detalhes: { lead_id: edit } });
     }
 
     setModal(false);
