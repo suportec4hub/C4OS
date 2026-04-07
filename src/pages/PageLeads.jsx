@@ -1,13 +1,15 @@
 import { useState } from "react";
 import { L } from "../constants/theme";
 import { useTable } from "../hooks/useData";
+import { supabase } from "../lib/supabase";
+import { trackLead } from "../lib/analytics";
 import { Fade, Row, TabPills, PBtn, DataTable, Av, Tag, ScBar, IBtn, TD } from "../components/ui";
 import Modal, { Field, Input, Select, ModalFooter } from "../components/Modal";
 
 const STATUS_COLORS = { quente:{c:L.red,bg:L.redBg,l:"Quente"}, morno:{c:L.yellow,bg:L.yellowBg,l:"Morno"}, frio:{c:L.blue,bg:L.blueBg,l:"Frio"}, novo:{c:L.teal,bg:L.tealBg,l:"Novo"} };
 const CANAIS = ["WhatsApp","Site","Email","Indicação","Ligação","Instagram","Facebook ADS","Outro"];
 
-const VAZIO = { nome:"", email:"", whatsapp:"", empresa_nome:"", cargo:"", status:"novo", score:70, origem:"WhatsApp", valor_estimado:"", observacoes:"" };
+const VAZIO = { nome:"", email:"", whatsapp:"", empresa_nome:"", cargo:"", status:"novo", score:70, origem:"WhatsApp", valor_estimado:"", observacoes:"", atribuido_a:"" };
 
 export default function PageLeads({ user }) {
   const [f, setF]       = useState("Todos");
@@ -18,6 +20,7 @@ export default function PageLeads({ user }) {
   const [err, setErr]     = useState("");
 
   const { data: leads, loading, insert, update, remove } = useTable("leads", { empresa_id: user?.empresa_id });
+  const { data: usuarios } = useTable("usuarios", { empresa_id: user?.empresa_id, ativo: true });
 
   const filtered = f === "Todos" ? leads : leads.filter(l => l.status === f.toLowerCase());
 
@@ -33,10 +36,38 @@ export default function PageLeads({ user }) {
       valor_estimado: form.valor_estimado ? parseFloat(form.valor_estimado) : null,
       empresa_id: user?.empresa_id,
       ultima_atividade: new Date().toISOString(),
+      atribuido_a: form.atribuido_a || null,
     };
-    const { error } = edit ? await update(edit, payload) : await insert(payload);
-    if (error) setErr(error.message || "Erro ao salvar.");
-    else setModal(false);
+    const { data: saved, error } = edit ? await update(edit, payload) : await insert(payload);
+    if (error) { setErr(error.message || "Erro ao salvar."); setSaving(false); return; }
+
+    // ── Novo lead: dispara pixel + cria follow-up automático ──
+    if (!edit) {
+      trackLead(payload);
+
+      // Auto-cria follow-up de primeiro contato
+      const agendado = new Date(Date.now() + 2 * 3600000).toISOString(); // +2h
+      await supabase.from("follow_ups").insert({
+        empresa_id: user?.empresa_id,
+        lead_id: saved?.id,
+        responsavel_id: form.atribuido_a || null,
+        titulo: `Primeiro contato — ${form.nome}`,
+        descricao: form.whatsapp ? `WhatsApp: ${form.whatsapp}` : "",
+        canal: form.origem === "WhatsApp" ? "WhatsApp" : form.origem === "Email" ? "Email" : "Ligação",
+        prioridade: form.status === "quente" ? "Alta" : "Media",
+        status: "pendente",
+        agendado_para: agendado,
+        mensagem_whatsapp: `Olá ${form.nome}! Vi que você entrou em contato conosco. Como posso te ajudar? 😊`,
+        criado_por: user?.id,
+      });
+
+      // Conversions API server-side
+      supabase.functions.invoke("track-conversion", {
+        body: { empresa_id: user?.empresa_id, event_name: "Lead", event_data: { value: payload.valor_estimado || 0, content_name: form.nome, content_category: form.origem } },
+      });
+    }
+
+    setModal(false);
     setSaving(false);
   };
 
@@ -64,7 +95,7 @@ export default function PageLeads({ user }) {
           <PBtn onClick={openNew}>+ Adicionar Lead</PBtn>
         </div>
       ) : (
-        <DataTable heads={["Lead","Empresa","WhatsApp","Status","Score","Origem","Valor","Ações"]}>
+        <DataTable heads={["Lead","Empresa","WhatsApp","Status","Score","Origem","Valor","Responsável","Ações"]}>
           {filtered.map(l => {
             const sc = STATUS_COLORS[l.status] || STATUS_COLORS.novo;
             return (
@@ -79,6 +110,9 @@ export default function PageLeads({ user }) {
                 <td style={TD}><Row gap={7}><ScBar v={l.score||50}/><span style={{fontSize:10,color:L.t3,fontFamily:"'JetBrains Mono',monospace"}}>{l.score||50}</span></Row></td>
                 <td style={{...TD,color:L.t3,fontSize:12}}>{l.origem||"—"}</td>
                 <td style={{...TD,color:L.green,fontWeight:600,fontSize:12.5}}>{l.valor_estimado ? `R$ ${parseFloat(l.valor_estimado).toLocaleString("pt-BR",{minimumFractionDigits:2})}` : "—"}</td>
+                <td style={TD}>
+                  {(() => { const u = usuarios.find(u => u.id === l.atribuido_a); return u ? <Row gap={6}><Av name={u.nome} color={L.copper} size={20}/><span style={{fontSize:11,color:L.t3}}>{u.nome.split(" ")[0]}</span></Row> : <span style={{color:L.t4,fontSize:11}}>—</span>; })()}
+                </td>
                 <td style={TD}>
                   <Row gap={5}>
                     {l.whatsapp && <IBtn c={L.green} onClick={()=>window.open(`https://wa.me/55${l.whatsapp.replace(/\D/g,"")}`)}>WhatsApp</IBtn>}
@@ -104,6 +138,12 @@ export default function PageLeads({ user }) {
             <Field label="Status">
               <Select value={form.status} onChange={F("status")}>
                 {["novo","quente","morno","frio"].map(s=><option key={s} value={s}>{s.charAt(0).toUpperCase()+s.slice(1)}</option>)}
+              </Select>
+            </Field>
+            <Field label="Responsável (Vendedor)">
+              <Select value={form.atribuido_a} onChange={F("atribuido_a")}>
+                <option value="">— atribuir —</option>
+                {usuarios.map(u=><option key={u.id} value={u.id}>{u.nome}</option>)}
               </Select>
             </Field>
             <Field label="Origem">

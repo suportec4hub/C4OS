@@ -1,7 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Logo from "./Logo";
 import { Av, Chip } from "./ui";
 import { L } from "../constants/theme";
+import { supabase } from "../lib/supabase";
+import { injectMetaPixel, injectGA4 } from "../lib/analytics";
 import PageDashboard  from "../pages/PageDashboard";
 import PageLeads      from "../pages/PageLeads";
 import PagePipeline   from "../pages/PagePipeline";
@@ -49,6 +51,16 @@ export default function Shell({user,onLogout}) {
   const [sec,setSec] = useState("dashboard");
   const [col,setCol] = useState(false);
   const isAdmin = hasFullAccess(user);
+
+  // Injeta pixels de analytics da empresa
+  useEffect(() => {
+    if (!user?.empresa_id) return;
+    supabase.from("empresas").select("meta_pixel_id, ga4_measurement_id").eq("id", user.empresa_id).single()
+      .then(({ data }) => {
+        if (data?.meta_pixel_id) injectMetaPixel(data.meta_pixel_id);
+        if (data?.ga4_measurement_id) injectGA4(data.ga4_measurement_id);
+      });
+  }, [user?.empresa_id]);
 
   const navItems = isAdmin ? [...NAV_ITEMS, ...ADMIN_ITEMS] : NAV_ITEMS;
   const groups   = [...new Set(navItems.map(n => n.g))];

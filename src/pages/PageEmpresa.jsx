@@ -62,15 +62,30 @@ export default function PageEmpresa({ empresa, user }) {
 
   const [infoForm, setInfoForm] = useState({});
   const [wabaForm, setWabaForm] = useState({ waba_phone_number_id:"", waba_access_token:"", waba_verify_token:"" });
+  const [metaForm, setMetaForm] = useState({ meta_pixel_id:"", meta_access_token:"", meta_dataset_id:"" });
+  const [ga4Form,  setGa4Form]  = useState({ ga4_measurement_id:"", ga4_api_secret:"" });
+  const [savingMeta, setSavingMeta] = useState(false);
+  const [savingGa4,  setSavingGa4]  = useState(false);
+  const [succMeta, setSuccMeta] = useState("");
+  const [succGa4,  setSuccGa4]  = useState("");
   const { update } = useTable("empresas");
 
-  // sync wabaForm from empData
+  // sync forms from empData
   useEffect(() => {
     if (empData.id) {
       setWabaForm({
         waba_phone_number_id: empData.waba_phone_number_id || "",
         waba_access_token:    empData.waba_access_token    || "",
         waba_verify_token:    empData.waba_verify_token    || "",
+      });
+      setMetaForm({
+        meta_pixel_id:     empData.meta_pixel_id     || "",
+        meta_access_token: empData.meta_access_token || "",
+        meta_dataset_id:   empData.meta_dataset_id   || "",
+      });
+      setGa4Form({
+        ga4_measurement_id: empData.ga4_measurement_id || "",
+        ga4_api_secret:     empData.ga4_api_secret     || "",
       });
     }
   }, [empData.id]);
@@ -94,14 +109,22 @@ export default function PageEmpresa({ empresa, user }) {
   };
 
   const wabaStatus = empData.waba_phone_number_id ? "Configurado" : "Não configurado";
+  const metaStatus = empData.meta_pixel_id ? "Conectado" : "Desconectado";
+  const ga4Status  = empData.ga4_measurement_id ? "Conectado" : "Desconectado";
 
-  const OTHER_INTEG = [
-    {n:"Meta Ads",         s:"Desconectado", c:L.red,    bg:L.redBg,    i:"⊞"},
-    {n:"Facebook ADS",     s:"Desconectado", c:L.red,    bg:L.redBg,    i:"f"},
-    {n:"API de Conversão", s:"Desconectado", c:L.red,    bg:L.redBg,    i:"⚡"},
-    {n:"Google Analytics", s:"Desconectado", c:L.red,    bg:L.redBg,    i:"◫"},
-    {n:"Webhook API",      s:"Configurado",  c:L.teal,   bg:L.tealBg,   i:"{}"},
-  ];
+  const saveMeta = async () => {
+    setSavingMeta(true); setSuccMeta("");
+    const { error } = await supabase.from("empresas").update(metaForm).eq("id", user?.empresa_id);
+    setSuccMeta(error ? "Erro: " + error.message : "Meta Ads salvo! Recarregue para ativar o pixel.");
+    setSavingMeta(false);
+  };
+
+  const saveGa4 = async () => {
+    setSavingGa4(true); setSuccGa4("");
+    const { error } = await supabase.from("empresas").update(ga4Form).eq("id", user?.empresa_id);
+    setSuccGa4(error ? "Erro: " + error.message : "Google Analytics salvo! Recarregue para ativar.");
+    setSavingGa4(false);
+  };
 
   return (
     <Fade>
@@ -246,28 +269,93 @@ export default function PageEmpresa({ empresa, user }) {
             <PBtn onClick={saveWaba}>{savingWaba?"Salvando...":"Salvar Configurações WhatsApp"}</PBtn>
           </div>
 
-          {/* Other integrations */}
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:12}}>
-            {OTHER_INTEG.map((it,i)=>(
-              <div key={i}
-                style={{background:L.white,borderRadius:12,border:`1px solid ${L.line}`,padding:18,cursor:"pointer",boxShadow:"0 1px 3px rgba(0,0,0,0.04)",transition:"all .15s"}}
-                onMouseEnter={e=>{e.currentTarget.style.borderColor=it.c+"55";e.currentTarget.style.transform="translateY(-1px)";}}
-                onMouseLeave={e=>{e.currentTarget.style.borderColor=L.line;e.currentTarget.style.transform="none";}}
-              >
-                <Row between mb={12}>
-                  <div style={{width:38,height:38,borderRadius:10,background:it.bg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:it.i==="f"?18:16,color:it.c,fontWeight:700}}>{it.i}</div>
-                  <Tag color={it.c} bg={it.bg} small>{it.s}</Tag>
-                </Row>
-                <div style={{fontSize:13,fontWeight:600,color:L.t1,marginBottom:12}}>{it.n}</div>
-                <button
-                  style={{width:"100%",padding:"7px",borderRadius:8,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:it.bg,color:it.c,border:`1.5px solid ${it.c}22`,transition:"all .12s"}}
-                  onMouseEnter={e=>{e.currentTarget.style.filter="brightness(.96)";}}
-                  onMouseLeave={e=>{e.currentTarget.style.filter="none";}}
-                >
-                  {it.s==="Conectado"?"Gerenciar":it.s==="Configurado"?"Ver Config":"Conectar"}
-                </button>
+          {/* ── META ADS + PIXEL + CONVERSIONS API ── */}
+          <div style={{background:L.white,borderRadius:12,border:`1.5px solid ${empData.meta_pixel_id?L.blue+"33":L.line}`,padding:20,boxShadow:"0 1px 4px rgba(0,0,0,0.04)"}}>
+            <Row between mb={16}>
+              <Row gap={12}>
+                <div style={{width:42,height:42,borderRadius:11,background:"#1877f222",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>📘</div>
+                <div>
+                  <div style={{fontSize:14,fontWeight:700,color:L.t1}}>Meta Ads — Pixel & Conversions API</div>
+                  <div style={{fontSize:11,color:L.t3,marginTop:2}}>Facebook Pixel + API de Conversão (server-side)</div>
+                </div>
+              </Row>
+              <Tag color={empData.meta_pixel_id?L.green:L.red} bg={empData.meta_pixel_id?L.greenBg:L.redBg}>{metaStatus}</Tag>
+            </Row>
+
+            <div style={{background:"#fffbf0",border:`1px solid ${L.yellow}44`,borderRadius:10,padding:12,marginBottom:16,fontSize:11,color:L.t2,lineHeight:1.7}}>
+              <div style={{fontWeight:700,color:L.yellow,marginBottom:6}}>⚡ Como configurar</div>
+              <ol style={{paddingLeft:18,margin:0}}>
+                <li>Acesse <b>Meta Business Suite → Events Manager → Pixels</b></li>
+                <li>Copie o <b>Pixel ID</b> e cole abaixo</li>
+                <li>Para Conversions API: em <b>Configurações → API de Conversões</b>, gere um <b>Access Token</b></li>
+                <li>O <b>Dataset ID</b> é o mesmo ID do seu Pixel</li>
+                <li>Salve — o pixel será injetado automaticamente em todas as páginas</li>
+              </ol>
+            </div>
+
+            {succMeta && <div style={{padding:"8px 12px",background:succMeta.startsWith("Erro")?L.redBg:L.greenBg,borderRadius:8,fontSize:12,color:succMeta.startsWith("Erro")?L.red:L.green,marginBottom:14}}>{succMeta}</div>}
+
+            <Grid cols={2} gap={12}>
+              <LabelInput label="Pixel ID" value={metaForm.meta_pixel_id} onChange={e=>setMetaForm(p=>({...p,meta_pixel_id:e.target.value}))} placeholder="Ex: 123456789012345"/>
+              <LabelInput label="Dataset ID (mesmo do Pixel)" value={metaForm.meta_dataset_id} onChange={e=>setMetaForm(p=>({...p,meta_dataset_id:e.target.value}))} placeholder="Ex: 123456789012345"/>
+              <div style={{gridColumn:"1/-1"}}>
+                <LabelInput label="Access Token — Conversions API" value={metaForm.meta_access_token} onChange={e=>setMetaForm(p=>({...p,meta_access_token:e.target.value}))} placeholder="EAAxxxxxxxx..." type="password"/>
               </div>
-            ))}
+            </Grid>
+            <PBtn onClick={saveMeta}>{savingMeta?"Salvando...":"Salvar Meta Ads"}</PBtn>
+          </div>
+
+          {/* ── GOOGLE ANALYTICS GA4 ── */}
+          <div style={{background:L.white,borderRadius:12,border:`1.5px solid ${empData.ga4_measurement_id?L.green+"33":L.line}`,padding:20,boxShadow:"0 1px 4px rgba(0,0,0,0.04)"}}>
+            <Row between mb={16}>
+              <Row gap={12}>
+                <div style={{width:42,height:42,borderRadius:11,background:L.greenBg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>📊</div>
+                <div>
+                  <div style={{fontSize:14,fontWeight:700,color:L.t1}}>Google Analytics 4</div>
+                  <div style={{fontSize:11,color:L.t3,marginTop:2}}>GA4 — rastreamento de eventos e conversões</div>
+                </div>
+              </Row>
+              <Tag color={empData.ga4_measurement_id?L.green:L.red} bg={empData.ga4_measurement_id?L.greenBg:L.redBg}>{ga4Status}</Tag>
+            </Row>
+
+            <div style={{background:"#fffbf0",border:`1px solid ${L.yellow}44`,borderRadius:10,padding:12,marginBottom:16,fontSize:11,color:L.t2,lineHeight:1.7}}>
+              <div style={{fontWeight:700,color:L.yellow,marginBottom:6}}>⚡ Como configurar</div>
+              <ol style={{paddingLeft:18,margin:0}}>
+                <li>Acesse <b>Google Analytics → Admin → Fluxos de dados</b></li>
+                <li>Copie o <b>Measurement ID</b> (formato G-XXXXXXXX)</li>
+                <li>Para Measurement Protocol: em <b>Segredos da API do protocolo de medição</b>, crie um segredo</li>
+                <li>Salve — o script GA4 será injetado automaticamente</li>
+              </ol>
+            </div>
+
+            {succGa4 && <div style={{padding:"8px 12px",background:succGa4.startsWith("Erro")?L.redBg:L.greenBg,borderRadius:8,fontSize:12,color:succGa4.startsWith("Erro")?L.red:L.green,marginBottom:14}}>{succGa4}</div>}
+
+            <Grid cols={2} gap={12}>
+              <LabelInput label="Measurement ID" value={ga4Form.ga4_measurement_id} onChange={e=>setGa4Form(p=>({...p,ga4_measurement_id:e.target.value}))} placeholder="Ex: G-XXXXXXXXXX"/>
+              <LabelInput label="API Secret (Measurement Protocol)" value={ga4Form.ga4_api_secret} onChange={e=>setGa4Form(p=>({...p,ga4_api_secret:e.target.value}))} placeholder="Segredo da API" type="password"/>
+            </Grid>
+            <PBtn onClick={saveGa4}>{savingGa4?"Salvando...":"Salvar Google Analytics"}</PBtn>
+          </div>
+
+          {/* ── WEBHOOK API ── */}
+          <div style={{background:L.white,borderRadius:12,border:`1px solid ${L.line}`,padding:20,boxShadow:"0 1px 4px rgba(0,0,0,0.04)"}}>
+            <Row between mb={12}>
+              <Row gap={12}>
+                <div style={{width:42,height:42,borderRadius:11,background:L.tealBg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,color:L.teal,fontWeight:700}}>{"{ }"}</div>
+                <div>
+                  <div style={{fontSize:14,fontWeight:700,color:L.t1}}>Webhook API</div>
+                  <div style={{fontSize:11,color:L.t3,marginTop:2}}>Receba eventos via webhook em qualquer sistema</div>
+                </div>
+              </Row>
+              <Tag color={L.teal} bg={L.tealBg}>Ativo</Tag>
+            </Row>
+            <div style={{background:L.surface,borderRadius:9,padding:12,border:`1px solid ${L.line}`}}>
+              <div style={{fontSize:10,color:L.t4,marginBottom:6}}>URL do Webhook</div>
+              <Row gap={8}>
+                <div style={{flex:1,background:L.white,border:`1px solid ${L.line}`,borderRadius:8,padding:"7px 10px",fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:L.t2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{WEBHOOK_URL}</div>
+                <CopyBtn value={WEBHOOK_URL}/>
+              </Row>
+            </div>
           </div>
         </div>
       )}
