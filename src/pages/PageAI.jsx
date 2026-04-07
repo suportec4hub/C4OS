@@ -1,141 +1,237 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { L } from "../constants/theme";
 import { Av, Tag } from "../components/ui";
 import { supabase } from "../lib/supabase";
 
-export default function PageAI({ user }) {
-  const [chat, setChat] = useState([{
-    role: "assistant",
-    content: `Olá, **${user?.nome || ""}**! Sou o **C4 AI**, powered by Claude. Posso analisar seu funil de vendas, sugerir ações estratégicas, gerar relatórios e identificar oportunidades. Como posso ajudar hoje?`,
-  }]);
-  const [input,   setInput]   = useState("");
-  const [loading, setLoading] = useState(false);
-  const endRef = useRef(null);
+/* ─── Renderizador de Markdown simplificado ─── */
+function MdLine({ text }) {
+  // Bold + italic inline
+  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g);
+  return (
+    <>
+      {parts.map((p, i) => {
+        if (p.startsWith("**") && p.endsWith("**")) return <strong key={i} style={{ fontWeight: 700, color: L.t1 }}>{p.slice(2, -2)}</strong>;
+        if (p.startsWith("*")  && p.endsWith("*"))  return <em key={i} style={{ fontStyle: "italic" }}>{p.slice(1, -1)}</em>;
+        if (p.startsWith("`")  && p.endsWith("`"))  return <code key={i} style={{ background: L.surface, border: `1px solid ${L.line}`, borderRadius: 4, padding: "1px 5px", fontSize: "0.9em", fontFamily: "'JetBrains Mono',monospace" }}>{p.slice(1, -1)}</code>;
+        return <span key={i}>{p}</span>;
+      })}
+    </>
+  );
+}
 
-  const sugs = [
-    "Analise meu funil de vendas",
-    "Gere um relatório semanal",
-    "Quais leads devo priorizar?",
-    "Como melhorar minha taxa de conversão?",
-    "Previsão de receita para os próximos 90 dias",
-    "Leads em risco de churn",
-  ];
+function MdBlock({ content }) {
+  const lines = content.split("\n");
+  const out = [];
+  let listItems = [];
+  let numItems = [];
+
+  const flushList = () => {
+    if (listItems.length) { out.push(<ul key={out.length} style={{ paddingLeft: 18, margin: "6px 0" }}>{listItems}</ul>); listItems = []; }
+    if (numItems.length)  { out.push(<ol key={out.length} style={{ paddingLeft: 18, margin: "6px 0" }}>{numItems}</ol>); numItems = []; }
+  };
+
+  lines.forEach((line, i) => {
+    const trimmed = line.trim();
+    if (!trimmed) { flushList(); out.push(<br key={`br${i}`}/>); return; }
+
+    // Bullet list
+    if (/^[-•*]\s/.test(trimmed)) {
+      const txt = trimmed.replace(/^[-•*]\s/, "");
+      listItems.push(<li key={i} style={{ marginBottom: 2, lineHeight: 1.6 }}><MdLine text={txt}/></li>);
+      return;
+    }
+    // Numbered list
+    if (/^\d+\.\s/.test(trimmed)) {
+      const txt = trimmed.replace(/^\d+\.\s/, "");
+      numItems.push(<li key={i} style={{ marginBottom: 2, lineHeight: 1.6 }}><MdLine text={txt}/></li>);
+      return;
+    }
+    // Heading
+    if (trimmed.startsWith("### ")) { flushList(); out.push(<div key={i} style={{ fontSize: 13, fontWeight: 700, color: L.t1, marginTop: 10, marginBottom: 4 }}><MdLine text={trimmed.slice(4)}/></div>); return; }
+    if (trimmed.startsWith("## "))  { flushList(); out.push(<div key={i} style={{ fontSize: 14, fontWeight: 700, color: L.t1, marginTop: 10, marginBottom: 4 }}><MdLine text={trimmed.slice(3)}/></div>); return; }
+    if (trimmed.startsWith("# "))   { flushList(); out.push(<div key={i} style={{ fontSize: 15, fontWeight: 700, color: L.t1, marginTop: 10, marginBottom: 4 }}><MdLine text={trimmed.slice(2)}/></div>); return; }
+    // Divider
+    if (/^---+$/.test(trimmed)) { flushList(); out.push(<hr key={i} style={{ border: "none", borderTop: `1px solid ${L.line}`, margin: "8px 0" }}/>); return; }
+
+    flushList();
+    out.push(<div key={i} style={{ lineHeight: 1.65, marginBottom: 2 }}><MdLine text={trimmed}/></div>);
+  });
+  flushList();
+  return <div>{out}</div>;
+}
+
+const SUGS = [
+  "Analise meu funil de vendas",
+  "Quais leads devo priorizar?",
+  "Como melhorar minha taxa de conversão?",
+  "Gere um relatório semanal",
+  "Previsão de receita — próximos 90 dias",
+  "Leads em risco de churn",
+];
+
+export default function PageAI({ user }) {
+  const welcome = `Olá, **${user?.nome?.split(" ")[0] || ""}**! Sou o **C4 AI**, powered by Claude.\n\nPosso analisar seu funil de vendas, sugerir ações estratégicas, gerar relatórios e identificar oportunidades.\n\nComo posso ajudar hoje?`;
+
+  const [chat, setChat] = useState([{ role: "assistant", content: welcome }]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+  const [model, setModel] = useState("");
+  const endRef = useRef(null);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chat, loading]);
 
   const send = async (txt) => {
     const q = (txt || input).trim();
     if (!q || loading) return;
-    setInput("");
+    setInput(""); setErr("");
 
     const userMsg = { role: "user", content: q };
-    const newHistory = [...chat, userMsg];
-    setChat(newHistory);
+    const history = [...chat, userMsg];
+    setChat(history);
     setLoading(true);
-    setTimeout(() => endRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
 
     try {
-      // Map to Anthropic message format — must start with "user"
-      const apiMessages = newHistory
-        .filter(m => m.role === "user" || m.role === "assistant")
-        .map(m => ({ role: m.role, content: m.content.replace(/\*\*/g, "") }));
-
-      // Anthropic API requires first message to be "user"
-      const firstUserIdx = apiMessages.findIndex(m => m.role === "user");
-      const trimmedMessages = firstUserIdx > 0 ? apiMessages.slice(firstUserIdx) : apiMessages;
+      // Filtra: só user/assistant, começa em user
+      const msgs = history.filter(m => m.role === "user" || m.role === "assistant");
+      const firstUser = msgs.findIndex(m => m.role === "user");
+      const trimmed = firstUser > 0 ? msgs.slice(firstUser) : msgs;
 
       const { data, error } = await supabase.functions.invoke("c4-ai", {
-        body: { messages: trimmedMessages, empresa_id: user?.empresa_id },
+        body: { messages: trimmed, empresa_id: user?.empresa_id },
       });
 
-      if (error || data?.error) {
-        const msg = data?.error || error?.message || "Erro ao conectar com a IA.";
-        setChat(p => [...p, { role: "assistant", content: `❌ ${msg}` }]);
+      if (error) {
+        setErr(error.message || "Erro ao conectar.");
+        setChat(p => [...p, { role: "assistant", content: `❌ ${error.message || "Erro ao conectar com a IA."}` }]);
+      } else if (data?.error) {
+        setErr(data.error);
+        setChat(p => [...p, { role: "assistant", content: `❌ ${data.error}` }]);
       } else {
-        setChat(p => [...p, { role: "assistant", content: data.text }]);
+        if (data?.model) setModel(data.model);
+        setChat(p => [...p, { role: "assistant", content: data.text || "Sem resposta." }]);
       }
     } catch (e) {
+      setErr(e.message);
       setChat(p => [...p, { role: "assistant", content: `❌ Erro inesperado: ${e.message}` }]);
     }
 
     setLoading(false);
-    setTimeout(() => endRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+    setTimeout(() => inputRef.current?.focus(), 100);
+  };
+
+  const clearChat = () => {
+    setChat([{ role: "assistant", content: welcome }]);
+    setErr(""); setModel("");
   };
 
   return (
-    <div style={{display:"flex",flexDirection:"column",height:"calc(100vh - 130px)",animation:"in .3s ease"}}>
+    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 106px)", minHeight: 400, animation: "in .3s ease" }}>
 
       {/* ── HEADER ── */}
-      <div style={{background:`linear-gradient(135deg,${L.tealBg},${L.copperBg})`,border:`1px solid ${L.teal}22`,borderRadius:12,padding:"16px 20px",marginBottom:16,display:"flex",alignItems:"center",gap:16,flexShrink:0,boxShadow:"0 1px 4px rgba(0,0,0,0.04)"}}>
-        <div style={{width:44,height:44,borderRadius:12,background:L.teal,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,color:"white",flexShrink:0,boxShadow:`0 4px 12px ${L.teal}40`}}>✦</div>
-        <div>
-          <div style={{fontSize:15,fontWeight:700,color:L.t1,fontFamily:"'Outfit',sans-serif",letterSpacing:"-.2px"}}>
-            C4 <span style={{color:L.teal}}>AI</span>
+      <div style={{ background: `linear-gradient(135deg,${L.tealBg},${L.copperBg})`, border: `1px solid ${L.teal}22`, borderRadius: 12, padding: "12px 16px", marginBottom: 12, flexShrink: 0, boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: L.teal, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, color: "white", flexShrink: 0, boxShadow: `0 4px 12px ${L.teal}40` }}>✦</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: L.t1, fontFamily: "'Outfit',sans-serif" }}>
+              C4 <span style={{ color: L.teal }}>AI</span>
+              {model && <span style={{ fontSize: 9, color: L.t4, fontFamily: "'JetBrains Mono',monospace", marginLeft: 6, fontWeight: 400 }}>{model}</span>}
+            </div>
+            <div style={{ fontSize: 10, color: L.t3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Powered by Claude · Inteligência de negócios</div>
           </div>
-          <div style={{fontSize:11,color:L.t3}}>Powered by Claude · Inteligência de negócios em tempo real</div>
+          <button onClick={clearChat} title="Limpar conversa" style={{ background: "none", border: `1px solid ${L.line}`, borderRadius: 7, cursor: "pointer", color: L.t4, fontSize: 11, padding: "4px 9px", fontFamily: "inherit", transition: "all .12s", flexShrink: 0 }} onMouseEnter={e => { e.currentTarget.style.color = L.red; e.currentTarget.style.borderColor = L.red + "88"; }} onMouseLeave={e => { e.currentTarget.style.color = L.t4; e.currentTarget.style.borderColor = L.line; }}>
+            ↺ Limpar
+          </button>
         </div>
-        <div style={{marginLeft:"auto",display:"flex",gap:6,flexWrap:"wrap"}}>
-          {["Análise","Relatório","Sugestão","Previsão"].map(t => (
+        <div style={{ display: "flex", gap: 5, marginTop: 8, flexWrap: "wrap" }}>
+          {["Análise", "Relatório", "Sugestão", "Previsão"].map(t => (
             <Tag key={t} color={L.teal} bg={L.tealBg} small>{t}</Tag>
           ))}
         </div>
       </div>
 
-      {/* ── SUGESTÕES RÁPIDAS ── */}
-      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14,flexShrink:0}}>
-        {sugs.map(s => (
-          <button key={s} onClick={()=>send(s)} disabled={loading}
-            style={{padding:"6px 12px",borderRadius:8,fontSize:11.5,cursor:"pointer",fontFamily:"inherit",background:L.white,color:L.t3,border:`1px solid ${L.line}`,transition:"all .12s",boxShadow:"0 1px 2px rgba(0,0,0,0.04)",opacity:loading?.5:1}}
-            onMouseEnter={e=>{if(!loading){e.currentTarget.style.borderColor=L.teal;e.currentTarget.style.color=L.teal;e.currentTarget.style.background=L.tealBg;}}}
-            onMouseLeave={e=>{e.currentTarget.style.borderColor=L.line;e.currentTarget.style.color=L.t3;e.currentTarget.style.background=L.white;}}
-          >
-            ✦ {s}
-          </button>
+      {/* ── SUGESTÕES ── */}
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10, flexShrink: 0 }}>
+        {SUGS.map(s => (
+          <button key={s} onClick={() => send(s)} disabled={loading}
+            style={{ padding: "5px 11px", borderRadius: 8, fontSize: 11, cursor: loading ? "not-allowed" : "pointer", fontFamily: "inherit", background: L.white, color: L.t3, border: `1px solid ${L.line}`, transition: "all .12s", opacity: loading ? .5 : 1, whiteSpace: "nowrap" }}
+            onMouseEnter={e => { if (!loading) { e.currentTarget.style.borderColor = L.teal; e.currentTarget.style.color = L.teal; e.currentTarget.style.background = L.tealBg; } }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = L.line; e.currentTarget.style.color = L.t3; e.currentTarget.style.background = L.white; }}
+          >✦ {s}</button>
         ))}
       </div>
 
       {/* ── MENSAGENS ── */}
-      <div style={{flex:1,overflowY:"auto",display:"flex",flexDirection:"column",gap:14,padding:"2px 0"}}>
-        {chat.map((m,i) => (
-          <div key={i} style={{display:"flex",gap:10,alignItems:"flex-start"}}>
-            {m.role==="assistant"
-              ? <div style={{width:30,height:30,borderRadius:8,background:L.teal,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,color:"white",flexShrink:0}}>✦</div>
-              : <Av name={user?.nome||"U"} color={user?.cor||L.copper} size={30}/>
+      <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 12, padding: "2px 0 8px" }}>
+        {chat.map((m, i) => (
+          <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+            {m.role === "assistant"
+              ? <div style={{ width: 28, height: 28, borderRadius: 8, background: L.teal, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "white", flexShrink: 0, marginTop: 1 }}>✦</div>
+              : <Av name={user?.nome || "U"} color={user?.cor || L.copper} size={28} />
             }
-            <div style={{flex:1,padding:"11px 15px",borderRadius:m.role==="assistant"?"3px 12px 12px 12px":"12px 3px 12px 12px",background:L.white,border:`1px solid ${m.role==="assistant"?L.teal+"22":L.line}`,fontSize:12.5,color:L.t1,lineHeight:1.65,boxShadow:"0 1px 3px rgba(0,0,0,0.05)"}}>
-              {m.content.split("**").map((p,j) => j%2===0
-                ? <span key={j}>{p}</span>
-                : <b key={j} style={{color:L.teal,fontWeight:600}}>{p}</b>
-              )}
+            <div style={{
+              flex: 1, padding: "10px 14px",
+              borderRadius: m.role === "assistant" ? "3px 12px 12px 12px" : "12px 3px 12px 12px",
+              background: m.role === "assistant" ? L.white : L.tealBg,
+              border: `1px solid ${m.role === "assistant" ? L.teal + "22" : L.teal + "33"}`,
+              fontSize: 12.5, color: L.t1, boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+              wordBreak: "break-word",
+            }}>
+              {m.role === "assistant"
+                ? <MdBlock content={m.content} />
+                : <span style={{ lineHeight: 1.6 }}>{m.content}</span>
+              }
             </div>
           </div>
         ))}
+
         {loading && (
-          <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
-            <div style={{width:30,height:30,borderRadius:8,background:L.teal,display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,color:"white"}}>✦</div>
-            <div style={{padding:"13px 18px",background:L.white,border:`1px solid ${L.teal}22`,borderRadius:"3px 12px 12px 12px",boxShadow:"0 1px 3px rgba(0,0,0,0.05)"}}>
-              <div style={{display:"flex",gap:5}}>
-                {[0,1,2].map(i => (
-                  <div key={i} style={{width:6,height:6,borderRadius:"50%",background:L.teal,animation:`blink 1.2s ease ${i*.22}s infinite`}}/>
+          <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+            <div style={{ width: 28, height: 28, borderRadius: 8, background: L.teal, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "white", flexShrink: 0 }}>✦</div>
+            <div style={{ padding: "12px 16px", background: L.white, border: `1px solid ${L.teal}22`, borderRadius: "3px 12px 12px 12px", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
+              <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+                {[0, 1, 2].map(j => (
+                  <div key={j} style={{ width: 6, height: 6, borderRadius: "50%", background: L.teal, animation: `blink 1.2s ease ${j * .22}s infinite` }} />
                 ))}
+                <span style={{ fontSize: 11, color: L.t4, marginLeft: 6 }}>Analisando...</span>
               </div>
             </div>
           </div>
         )}
-        <div ref={endRef}/>
+
+        {err && !loading && (
+          <div style={{ padding: "8px 14px", background: L.redBg, border: `1px solid ${L.red}22`, borderRadius: 8, fontSize: 12, color: L.red }}>
+            ❌ {err}
+          </div>
+        )}
+
+        <div ref={endRef} />
       </div>
 
       {/* ── INPUT ── */}
-      <div style={{display:"flex",gap:8,marginTop:14,flexShrink:0}}>
-        <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&send()}
+      <div style={{ display: "flex", gap: 8, marginTop: 6, flexShrink: 0 }}>
+        <input
+          ref={inputRef}
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
           placeholder="Pergunte sobre seus dados, relatórios ou análises..."
-          style={{flex:1,background:L.white,border:`1.5px solid ${L.line}`,borderRadius:10,padding:"11px 15px",color:L.t1,fontSize:12.5,fontFamily:"inherit",outline:"none",transition:"border-color .12s",boxShadow:"0 1px 2px rgba(0,0,0,0.04)"}}
-          onFocus={e=>e.target.style.borderColor=L.teal}
-          onBlur={e=>e.target.style.borderColor=L.line}
+          disabled={loading}
+          style={{ flex: 1, background: L.white, border: `1.5px solid ${L.line}`, borderRadius: 10, padding: "11px 15px", color: L.t1, fontSize: 12.5, fontFamily: "inherit", outline: "none", transition: "border-color .12s", boxShadow: "0 1px 2px rgba(0,0,0,0.04)", opacity: loading ? .7 : 1 }}
+          onFocus={e => e.target.style.borderColor = L.teal}
+          onBlur={e => e.target.style.borderColor = L.line}
         />
-        <button onClick={()=>send()} disabled={loading}
-          style={{padding:"11px 20px",borderRadius:10,background:L.teal,border:"none",color:"white",fontWeight:600,cursor:loading?"not-allowed":"pointer",fontSize:13,opacity:loading?.5:1,transition:"opacity .12s",fontFamily:"inherit",boxShadow:`0 4px 12px ${L.teal}30`}}
+        <button onClick={() => send()} disabled={loading || !input.trim()}
+          style={{ padding: "11px 20px", borderRadius: 10, background: loading || !input.trim() ? L.surface : L.teal, border: "none", color: loading || !input.trim() ? L.t4 : "white", fontWeight: 600, cursor: loading || !input.trim() ? "not-allowed" : "pointer", fontSize: 13, transition: "all .15s", fontFamily: "inherit", boxShadow: !loading && input.trim() ? `0 4px 12px ${L.teal}30` : "none", whiteSpace: "nowrap" }}
         >
           {loading ? "..." : "Enviar"}
         </button>
+      </div>
+      <div style={{ textAlign: "center", fontSize: 10, color: L.t5, marginTop: 6 }}>
+        Enter para enviar · Shift+Enter para nova linha
       </div>
     </div>
   );
