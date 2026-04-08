@@ -2,11 +2,25 @@ import { useState } from "react";
 import { L } from "../constants/theme";
 import { useTable, criarUsuario } from "../hooks/useData";
 import { supabase } from "../lib/supabase";
-import { hasFullAccess } from "../lib/auth";
+import { hasFullAccess, getAccessLabel } from "../lib/auth";
 import { Fade, Row, Grid, TabPills, PBtn, DataTable, Av, Tag, IBtn, TD } from "../components/ui";
 import Modal, { Field, Input, Select, ModalFooter } from "../components/Modal";
 
-const ROLES_LABEL = { c4hub_admin:"Admin C4HUB", client_admin:"Admin", client_user:"Vendedor" };
+const ROLES_LABEL = { c4hub_admin:"Admin C4HUB", client_admin:"Admin", client_user:"Usuário" };
+
+// Cargos predefinidos por setor
+const CARGOS_GRUPOS = [
+  { g:"C-Level & Diretoria", items:["CEO","COO","CFO","CTO","CMO","Diretor","Co-Founder","Sócio","Presidente","VP"] },
+  { g:"Vendas",              items:["Gerente de Vendas","Coordenador de Vendas","SDR","BDR","Closer","Hunter","Farmer","Executivo de Vendas","Representante de Vendas"] },
+  { g:"Marketing",           items:["Gerente de Marketing","Analista de Marketing","Social Media","Designer","Redator","Copywriter","Branding"] },
+  { g:"Tráfego Pago",        items:["Gestor de Tráfego","Analista de Mídia Paga","Media Buyer"] },
+  { g:"Digital / Produto",   items:["Desenvolvedor","Analista Digital","UX Designer","Product Manager","Web Designer"] },
+  { g:"T.I",                 items:["Analista de T.I","Suporte T.I","Infraestrutura","DevOps"] },
+  { g:"Financeiro",          items:["Gerente Financeiro","Analista Financeiro","Controladoria","Contabilidade","Fiscal"] },
+  { g:"RH / Pessoas",        items:["Gerente de RH","Analista de RH","Recrutamento","DP"] },
+  { g:"Suporte / CS",        items:["Gerente de CS","Customer Success","Atendimento","SAC","Helpdesk","Pós-Venda"] },
+  { g:"Outros",              items:["Assistente","Estagiário","Freelancer"] },
+];
 // Opções disponíveis para editor c4hub_admin (pode promover a c4hub_admin)
 const ROLES_OPT_FULL = [
   { v:"client_user",  l:"Vendedor" },
@@ -149,7 +163,10 @@ export default function PageEquipe({ user }) {
                 </Row>
               </td>
               <td style={{...TD,color:L.t3,fontSize:11.5}}>{m.cargo||"—"}</td>
-              <td style={TD}><Tag color={rc[m.role]||L.t3} bg={rbg[m.role]||L.surface}>{ROLES_LABEL[m.role]||m.role}</Tag></td>
+              <td style={TD}>
+                <Tag color={rc[m.role]||L.t3} bg={rbg[m.role]||L.surface}>{ROLES_LABEL[m.role]||m.role}</Tag>
+                <div style={{fontSize:9,color:L.t4,marginTop:2,fontFamily:"'JetBrains Mono',monospace"}}>{getAccessLabel(m)}</div>
+              </td>
               <td style={{...TD,textAlign:"center",fontWeight:600,color:L.t1}}>{m.leads||0}</td>
               <td style={{...TD,textAlign:"center",fontWeight:600,color:L.green}}>{m.fechados||0}</td>
               <td style={{...TD,fontFamily:"'JetBrains Mono',monospace",color:L.copper,fontSize:11}}>{m.conv||"—"}</td>
@@ -188,7 +205,16 @@ export default function PageEquipe({ user }) {
               <div className="form-grid">
                 <Field label="E-mail *"><Input value={form.email} onChange={F("email")} type="email" placeholder="email@empresa.com"/></Field>
                 <Field label="Senha *"><Input value={form.senha} onChange={F("senha")} type="password" placeholder="Mínimo 6 caracteres"/></Field>
-                <Field label="Cargo"><Input value={form.cargo} onChange={F("cargo")} placeholder="Ex: SDR, Closer, CS..."/></Field>
+                <Field label="Cargo / Setor">
+                  <Select value={form.cargo} onChange={F("cargo")}>
+                    <option value="">Selecionar cargo...</option>
+                    {CARGOS_GRUPOS.map(g => (
+                      <optgroup key={g.g} label={g.g}>
+                        {g.items.map(c => <option key={c} value={c}>{c}</option>)}
+                      </optgroup>
+                    ))}
+                  </Select>
+                </Field>
                 <Field label="WhatsApp"><Input value={form.whatsapp} onChange={F("whatsapp")} placeholder="(11) 99999-0000"/></Field>
                 <Field label="Perfil de acesso" style={{gridColumn:"1/-1"}}>
                   <Select value={form.role} onChange={F("role")}>
@@ -212,9 +238,18 @@ export default function PageEquipe({ user }) {
             <>
               <div className="form-grid">
                 <Field label="Nome completo"><Input value={form.nome} onChange={F("nome")}/></Field>
-                <Field label="Cargo"><Input value={form.cargo} onChange={F("cargo")} placeholder="Ex: SDR, Closer..."/></Field>
                 <Field label="WhatsApp"><Input value={form.whatsapp} onChange={F("whatsapp")} placeholder="(11) 99999-0000"/></Field>
-                <Field label="Perfil de acesso">
+                <Field label="Cargo / Setor" style={{gridColumn:"1/-1"}}>
+                  <Select value={form.cargo} onChange={F("cargo")}>
+                    <option value="">Selecionar cargo...</option>
+                    {CARGOS_GRUPOS.map(g => (
+                      <optgroup key={g.g} label={g.g}>
+                        {g.items.map(c => <option key={c} value={c}>{c}</option>)}
+                      </optgroup>
+                    ))}
+                  </Select>
+                </Field>
+                <Field label="Perfil de acesso" style={{gridColumn:"1/-1"}}>
                   <Select value={form.role} onChange={F("role")}>
                     {rolesOpt.map(r=><option key={r.v} value={r.v}>{r.l}</option>)}
                   </Select>

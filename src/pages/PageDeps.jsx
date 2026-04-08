@@ -2,7 +2,8 @@ import { useState } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { L } from "../constants/theme";
 import { useTable } from "../hooks/useData";
-import { Fade, Row, Card, Grid, PBtn, Tag, TT } from "../components/ui";
+import { supabase } from "../lib/supabase";
+import { Fade, Row, Card, Grid, PBtn, Tag, TT, Av } from "../components/ui";
 import Modal, { Field, Input, ModalFooter } from "../components/Modal";
 import { logAction } from "../lib/log";
 
@@ -13,20 +14,25 @@ const NOVO_VAZIO = { nome:"", descricao:"", meta:"", responsavel:"", cor: L.teal
 
 export default function PageDeps({ user }) {
   const { data: deps, loading, insert, update, remove } = useTable("departamentos", { empresa_id: user?.empresa_id });
-  const { data: usuarios } = useTable("usuarios", { empresa_id: user?.empresa_id, ativo: true });
+  const { data: usuarios, refetch: refetchUsuarios } = useTable("usuarios", { empresa_id: user?.empresa_id, ativo: true });
 
-  const [expanded,   setExpanded]   = useState(null);
-  const [modal,      setModal]      = useState(false);
-  const [editId,     setEditId]     = useState(null);
-  const [form,       setForm]       = useState(NOVO_VAZIO);
-  const [saving,     setSaving]     = useState(false);
-  const [err,        setErr]        = useState("");
+  const [expanded,    setExpanded]    = useState(null);
+  const [modal,       setModal]       = useState(false);   // "form" | "membros"
+  const [editId,      setEditId]      = useState(null);
+  const [form,        setForm]        = useState(NOVO_VAZIO);
+  const [saving,      setSaving]      = useState(false);
+  const [err,         setErr]         = useState("");
+  const [membrosModal,setMembrosModal] = useState(null);   // dep selecionado p/ gerenciar
+  const [savingMembro,setSavingMembro] = useState(false);
 
   const toggle = (id) => setExpanded(p => p === id ? null : id);
   const F = k => v => setForm(p => ({ ...p, [k]: v }));
 
-  const openNew = () => { setForm(NOVO_VAZIO); setEditId(null); setErr(""); setModal(true); };
-  const openEdit = (d) => { setForm({ nome:d.nome, descricao:d.descricao||"", meta:d.meta||"", responsavel:d.responsavel||"", cor:d.cor||L.teal, bg:d.bg||L.tealBg }); setEditId(d.id); setErr(""); setModal(true); };
+  const openNew  = () => { setForm(NOVO_VAZIO); setEditId(null); setErr(""); setModal("form"); };
+  const openEdit = (d) => {
+    setForm({ nome:d.nome, descricao:d.descricao||"", meta:d.meta||"", responsavel:d.responsavel||"", cor:d.cor||L.teal, bg:d.bg||L.tealBg });
+    setEditId(d.id); setErr(""); setModal("form");
+  };
 
   const save = async () => {
     if (!form.nome.trim()) { setErr("Nome é obrigatório."); return; }
@@ -40,21 +46,33 @@ export default function PageDeps({ user }) {
 
   const del = async (id, nome) => {
     if (!confirm(`Excluir departamento "${nome}"?`)) return;
+    // Remove membros do departamento antes de excluir
+    await supabase.from("usuarios").update({ departamento_id: null }).eq("departamento_id", id);
     await remove(id);
     logAction({ empresa_id: user?.empresa_id, usuario_id: user?.id, usuario_email: user?.email, tipo: "DATA", nivel: "warn", acao: `Departamento excluído: ${nome}` });
   };
 
-  // Membros do departamento = usuarios com cargo relacionado ou responsável pelo dep
-  const membrosDepart = (dep) => {
-    const resp = dep.responsavel?.toLowerCase() || "";
-    return usuarios.filter(u =>
-      u.nome?.toLowerCase().includes(resp) ||
-      u.cargo?.toLowerCase().includes(dep.nome?.toLowerCase())
-    );
+  // Membros = usuarios com departamento_id = dep.id
+  const membrosDepart = (dep) => usuarios.filter(u => u.departamento_id === dep.id);
+
+  // Adicionar membro ao departamento
+  const adicionarMembro = async (userId) => {
+    setSavingMembro(true);
+    await supabase.from("usuarios").update({ departamento_id: membrosModal.id }).eq("id", userId);
+    await refetchUsuarios();
+    setSavingMembro(false);
   };
 
-  const corIdx = (dep, arr) => {
-    const idx = arr.indexOf(dep.cor);
+  // Remover membro do departamento
+  const removerMembro = async (userId) => {
+    setSavingMembro(true);
+    await supabase.from("usuarios").update({ departamento_id: null }).eq("id", userId);
+    await refetchUsuarios();
+    setSavingMembro(false);
+  };
+
+  const corIdx = (dep) => {
+    const idx = CORES.indexOf(dep.cor);
     return idx >= 0 ? idx : 0;
   };
 
@@ -85,7 +103,7 @@ export default function PageDeps({ user }) {
               const cor     = d.cor || L.teal;
               const bg      = d.bg  || L.tealBg;
               const membros = membrosDepart(d);
-              const ico     = ICONS[corIdx(d, CORES) % ICONS.length];
+              const ico     = ICONS[corIdx(d) % ICONS.length];
 
               return (
                 <div key={d.id} style={{background:L.white,borderRadius:12,border:`1.5px solid ${open ? cor+"66" : L.line}`,overflow:"hidden",transition:"border-color .2s",boxShadow:open?"0 4px 16px rgba(0,0,0,0.07)":"0 1px 3px rgba(0,0,0,0.04)"}}>
@@ -98,7 +116,10 @@ export default function PageDeps({ user }) {
                         </div>
                         <div>
                           <div style={{fontSize:14,fontWeight:600,color:L.t1}}>{d.nome}</div>
-                          <div style={{fontSize:11,color:L.t4}}>{membros.length} membro{membros.length !== 1 ? "s" : ""}{d.responsavel ? ` · ${d.responsavel}` : ""}</div>
+                          <div style={{fontSize:11,color:L.t4}}>
+                            {membros.length} membro{membros.length !== 1 ? "s" : ""}
+                            {d.responsavel ? ` · ${d.responsavel}` : ""}
+                          </div>
                         </div>
                       </div>
                       <div style={{display:"flex",alignItems:"center",gap:8}}>
@@ -114,26 +135,44 @@ export default function PageDeps({ user }) {
                   {/* Expandido */}
                   {open && (
                     <div style={{borderTop:`1px solid ${L.line}`,background:L.surface,padding:20}}>
-                      {/* Membros */}
-                      {membros.length > 0 && (
-                        <div style={{marginBottom:14}}>
-                          <div style={{fontSize:10,fontWeight:700,color:L.t3,textTransform:"uppercase",letterSpacing:"1px",marginBottom:9,fontFamily:"'JetBrains Mono',monospace"}}>Membros da equipe</div>
+                      {/* Lista de membros */}
+                      <div style={{marginBottom:14}}>
+                        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:9}}>
+                          <div style={{fontSize:10,fontWeight:700,color:L.t3,textTransform:"uppercase",letterSpacing:"1px",fontFamily:"'JetBrains Mono',monospace"}}>
+                            Membros ({membros.length})
+                          </div>
+                          <button onClick={()=>setMembrosModal(d)}
+                            style={{fontSize:10,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:bg,color:cor,border:`1px solid ${cor}33`,borderRadius:6,padding:"3px 10px",transition:"all .12s"}}
+                            onMouseEnter={e=>e.currentTarget.style.filter="brightness(.95)"}
+                            onMouseLeave={e=>e.currentTarget.style.filter="none"}
+                          >+ Gerenciar</button>
+                        </div>
+
+                        {membros.length === 0 ? (
+                          <div style={{textAlign:"center",padding:"14px 0",color:L.t4,fontSize:11}}>
+                            Nenhum membro — clique em Gerenciar para adicionar
+                          </div>
+                        ) : (
                           <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                            {membros.map((m,i) => (
-                              <div key={i} style={{background:L.white,borderRadius:8,padding:"9px 12px",border:`1px solid ${L.line}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                                <div>
-                                  <div style={{fontSize:12,fontWeight:600,color:L.t1}}>{m.nome}</div>
-                                  <div style={{fontSize:10,color:L.t4}}>{m.cargo || "—"}</div>
+                            {membros.map((m) => (
+                              <div key={m.id} style={{background:L.white,borderRadius:8,padding:"9px 12px",border:`1px solid ${L.line}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                                  <Av name={m.nome} color={cor} size={26}/>
+                                  <div>
+                                    <div style={{fontSize:12,fontWeight:600,color:L.t1}}>{m.nome}</div>
+                                    <div style={{fontSize:10,color:L.t4}}>{m.cargo || "—"}</div>
+                                  </div>
                                 </div>
-                                <div style={{textAlign:"right"}}>
-                                  <div style={{fontSize:11,color:cor,fontWeight:600}}>{m.conv || "—"}</div>
-                                  <div style={{fontSize:10,color:L.t4}}>{m.leads || 0} leads</div>
-                                </div>
+                                <button onClick={()=>removerMembro(m.id)} title="Remover do departamento"
+                                  style={{background:"none",border:"none",cursor:"pointer",color:L.t4,fontSize:13,padding:4,transition:"color .1s"}}
+                                  onMouseEnter={e=>e.currentTarget.style.color=L.red}
+                                  onMouseLeave={e=>e.currentTarget.style.color=L.t4}
+                                >⊗</button>
                               </div>
                             ))}
                           </div>
-                        </div>
-                      )}
+                        )}
+                      </div>
 
                       {/* Ações */}
                       <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
@@ -172,8 +211,8 @@ export default function PageDeps({ user }) {
         </>
       )}
 
-      {/* Modal */}
-      {modal && (
+      {/* Modal — Form departamento */}
+      {modal === "form" && (
         <Modal title={editId ? "Editar Departamento" : "Novo Departamento"} onClose={()=>setModal(false)} width={440}>
           <Field label="Nome *"><Input value={form.nome} onChange={F("nome")} placeholder="Ex: Customer Success"/></Field>
           <Field label="Descrição"><Input value={form.descricao} onChange={F("descricao")} placeholder="Objetivo do departamento"/></Field>
@@ -192,6 +231,86 @@ export default function PageDeps({ user }) {
           </Field>
           {err && <div style={{padding:"8px 12px",background:L.redBg,border:`1px solid ${L.red}22`,borderRadius:8,fontSize:12,color:L.red,marginBottom:4}}>{err}</div>}
           <ModalFooter onClose={()=>setModal(false)} onSave={save} loading={saving} label={editId?"Salvar Alterações":"Criar Departamento"}/>
+        </Modal>
+      )}
+
+      {/* Modal — Gerenciar membros */}
+      {membrosModal && (
+        <Modal title={`Membros — ${membrosModal.nome}`} onClose={()=>setMembrosModal(null)} width={460}>
+          <div style={{marginBottom:12,fontSize:11,color:L.t3}}>
+            Selecione quais membros da equipe pertencem a este departamento.
+          </div>
+
+          {/* Membros já no dept */}
+          {membrosDepart(membrosModal).length > 0 && (
+            <div style={{marginBottom:16}}>
+              <div style={{fontSize:10,fontWeight:700,color:L.t3,textTransform:"uppercase",letterSpacing:"1px",marginBottom:8,fontFamily:"'JetBrains Mono',monospace"}}>
+                No departamento
+              </div>
+              {membrosDepart(membrosModal).map(m => (
+                <div key={m.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 10px",borderRadius:8,background:L.greenBg,border:`1px solid ${L.green}22`,marginBottom:5}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <Av name={m.nome} color={membrosModal.cor||L.teal} size={26}/>
+                    <div>
+                      <div style={{fontSize:12,fontWeight:600,color:L.t1}}>{m.nome}</div>
+                      <div style={{fontSize:10,color:L.t4}}>{m.cargo||"—"}</div>
+                    </div>
+                  </div>
+                  <button onClick={()=>removerMembro(m.id)} disabled={savingMembro}
+                    style={{padding:"4px 10px",borderRadius:6,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:L.redBg,color:L.red,border:`1px solid ${L.red}22`}}>
+                    Remover
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Usuários disponíveis */}
+          {(() => {
+            const disponiveis = usuarios.filter(u => u.departamento_id !== membrosModal.id);
+            if (disponiveis.length === 0) return (
+              <div style={{textAlign:"center",padding:16,color:L.t4,fontSize:12}}>
+                Todos os membros já estão neste departamento.
+              </div>
+            );
+            return (
+              <div>
+                <div style={{fontSize:10,fontWeight:700,color:L.t3,textTransform:"uppercase",letterSpacing:"1px",marginBottom:8,fontFamily:"'JetBrains Mono',monospace"}}>
+                  Adicionar da equipe
+                </div>
+                <div style={{maxHeight:240,overflowY:"auto",display:"flex",flexDirection:"column",gap:5}}>
+                  {disponiveis.map(m => (
+                    <div key={m.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 10px",borderRadius:8,background:L.surface,border:`1px solid ${L.line}`,transition:"background .1s"}}
+                      onMouseEnter={e=>e.currentTarget.style.background=L.hover}
+                      onMouseLeave={e=>e.currentTarget.style.background=L.surface}
+                    >
+                      <div style={{display:"flex",alignItems:"center",gap:8}}>
+                        <Av name={m.nome} color={L.copper} size={26}/>
+                        <div>
+                          <div style={{fontSize:12,fontWeight:500,color:L.t1}}>{m.nome}</div>
+                          <div style={{fontSize:10,color:L.t4}}>
+                            {m.cargo||"Sem cargo"}
+                            {m.departamento_id ? ` · já em outro dept.` : ""}
+                          </div>
+                        </div>
+                      </div>
+                      <button onClick={()=>adicionarMembro(m.id)} disabled={savingMembro}
+                        style={{padding:"4px 12px",borderRadius:6,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:L.tealBg,color:L.teal,border:`1px solid ${L.teal}22`}}>
+                        + Adicionar
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
+          <div style={{display:"flex",justifyContent:"flex-end",marginTop:16}}>
+            <button onClick={()=>setMembrosModal(null)}
+              style={{padding:"8px 20px",borderRadius:8,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:L.teal,color:"white",border:"none"}}>
+              Concluir
+            </button>
+          </div>
         </Modal>
       )}
     </Fade>

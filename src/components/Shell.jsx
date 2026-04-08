@@ -45,7 +45,7 @@ const ADMIN_ITEMS = [
   {id:"planos",  label:"Planos",      ico:"★", g:"c4hub"},
 ];
 
-import { hasFullAccess } from "../lib/auth";
+import { hasFullAccess, hasPageAccess } from "../lib/auth";
 
 const ADMIN_ONLY = new Set(["clientes","logs","suporte","users","planos"]);
 
@@ -77,7 +77,10 @@ export default function Shell({user,onLogout,onProfileUpdate}) {
       });
   }, [user?.empresa_id]);
 
-  const navItems = isAdmin ? [...NAV_ITEMS, ...ADMIN_ITEMS] : NAV_ITEMS;
+  const allNav   = isAdmin ? [...NAV_ITEMS, ...ADMIN_ITEMS] : NAV_ITEMS;
+  const navItems = allNav.filter(item =>
+    ADMIN_ONLY.has(item.id) ? isAdmin : hasPageAccess(user, item.id)
+  );
   const groups   = [...new Set(navItems.map(n => n.g))];
   const safe     = (!isAdmin && ADMIN_ONLY.has(sec)) ? "dashboard" : sec;
   const curr     = navItems.find(n => n.id === safe);
