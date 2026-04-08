@@ -55,9 +55,9 @@ export function useProfile() {
 }
 
 // Hook para criar usuário via Edge Function
-export async function criarUsuario({ email, senha, nome, cargo, role, empresa_id }) {
+export async function criarUsuario({ email, senha, nome, cargo, role, empresa_id, whatsapp, perfil_acesso }) {
   const { data, error } = await supabase.functions.invoke("criar-usuario", {
-    body: { email, senha, nome, cargo, role, empresa_id },
+    body: { email, senha, nome, cargo, role, empresa_id, whatsapp, perfil_acesso },
   });
   if (error) return { error: error.message || "Erro ao chamar a função" };
   return data || {};

@@ -2,11 +2,26 @@ import { useState } from "react";
 import { L } from "../constants/theme";
 import { useTable, criarUsuario } from "../hooks/useData";
 import { supabase } from "../lib/supabase";
-import { hasFullAccess, getAccessLabel } from "../lib/auth";
+import { hasFullAccess, getCargoGroup } from "../lib/auth";
 import { Fade, Row, Grid, TabPills, PBtn, DataTable, Av, Tag, IBtn, TD } from "../components/ui";
 import Modal, { Field, Input, Select, ModalFooter } from "../components/Modal";
 
-const ROLES_LABEL = { c4hub_admin:"Admin C4HUB", client_admin:"Admin", client_user:"Usuário" };
+// Perfis de acesso disponíveis
+const PERFIS_ACESSO = [
+  { v:"vendas",     l:"Vendas",              role:"client_user",  pa:"vendas"     },
+  { v:"marketing",  l:"Marketing",           role:"client_user",  pa:"marketing"  },
+  { v:"trafego",    l:"Tráfego Pago",        role:"client_user",  pa:"trafego"    },
+  { v:"digital",    l:"Digital / Produto",   role:"client_user",  pa:"digital"    },
+  { v:"financeiro", l:"Financeiro",          role:"client_user",  pa:"financeiro" },
+  { v:"rh",         l:"RH / Pessoas",        role:"client_user",  pa:"rh"         },
+  { v:"suporte",    l:"Suporte / CS",        role:"client_user",  pa:"suporte"    },
+  { v:"ti",         l:"T.I (Acesso Total)",  role:"client_user",  pa:"full"       },
+  { v:"admin",      l:"Admin Empresa",       role:"client_admin", pa:"full"       },
+];
+const PERFIS_C4HUB = [
+  ...PERFIS_ACESSO,
+  { v:"c4hub_admin", l:"Admin C4HUB",        role:"c4hub_admin",  pa:null         },
+];
 
 // Cargos predefinidos por setor
 const CARGOS_GRUPOS = [
@@ -21,44 +36,51 @@ const CARGOS_GRUPOS = [
   { g:"Suporte / CS",        items:["Gerente de CS","Customer Success","Atendimento","SAC","Helpdesk","Pós-Venda"] },
   { g:"Outros",              items:["Assistente","Estagiário","Freelancer"] },
 ];
-// Opções disponíveis para editor c4hub_admin (pode promover a c4hub_admin)
-const ROLES_OPT_FULL = [
-  { v:"client_user",  l:"Vendedor" },
-  { v:"client_admin", l:"Admin" },
-  { v:"c4hub_admin",  l:"Admin C4HUB (Acesso Total)" },
-];
-// Opções para editor client_admin (não pode promover a c4hub_admin)
-const ROLES_OPT_LIMITED = [
-  { v:"client_user",  l:"Vendedor" },
-  { v:"client_admin", l:"Admin" },
-];
-const rc  = { c4hub_admin:L.teal,   client_admin:L.teal,   client_user:L.copper };
+
+const FILTRO_GROUP = { Vendas:"vendas", Marketing:"marketing", Tráfego:"trafego", Digital:"digital", Financeiro:"financeiro", RH:"rh", Suporte:"suporte", "T.I":"full" };
+
+const rc  = { c4hub_admin:L.teal, client_admin:L.teal, client_user:L.copper };
 const rbg = { c4hub_admin:L.tealBg, client_admin:L.tealBg, client_user:L.copperBg };
 
-const VAZIO = { nome:"", email:"", senha:"", cargo:"", whatsapp:"", role:"client_user" };
+// Derive perfil value from user data
+function derivarPerfil(m, perfisOpt) {
+  if (m.role === "c4hub_admin") return "c4hub_admin";
+  if (m.role === "client_admin") return "admin";
+  if (m.perfil_acesso) {
+    const found = perfisOpt.find(p => p.pa === m.perfil_acesso && p.role === m.role);
+    if (found) return found.v;
+    if (m.perfil_acesso === "full") return "ti";
+  }
+  const group = getCargoGroup(m);
+  const found = perfisOpt.find(p => p.pa === group);
+  return found?.v || "vendas";
+}
+
+const VAZIO = { nome:"", email:"", senha:"", cargo:"", whatsapp:"", perfil:"vendas" };
 
 export default function PageEquipe({ user }) {
   const isAdmin    = hasFullAccess(user) || user?.role === "client_admin";
-  const isC4Admin  = hasFullAccess(user);
-  const rolesOpt   = isC4Admin ? ROLES_OPT_FULL : ROLES_OPT_LIMITED;
+  const isC4Admin  = hasFullAccess(user) && user?.role === "c4hub_admin";
+  const perfisOpt  = isC4Admin ? PERFIS_C4HUB : PERFIS_ACESSO;
 
   const { data: usuarios, loading, update, remove, refetch } = useTable("usuarios", {
     empresa_id: user?.role === "c4hub_admin" ? undefined : user?.empresa_id,
   });
 
-  const [filtro,    setFiltro]    = useState("Todos");
-  const [modal,     setModal]     = useState(false);  // "novo" | "editar" | "detalhes" | false
-  const [selected,  setSelected]  = useState(null);
-  const [form,      setForm]      = useState(VAZIO);
-  const [saving,    setSaving]    = useState(false);
-  const [err,       setErr]       = useState("");
-  const [succ,      setSucc]      = useState("");
+  const [filtro,   setFiltro]   = useState("Todos");
+  const [modal,    setModal]    = useState(false);
+  const [selected, setSelected] = useState(null);
+  const [form,     setForm]     = useState(VAZIO);
+  const [saving,   setSaving]   = useState(false);
+  const [err,      setErr]      = useState("");
+  const [succ,     setSucc]     = useState("");
 
   const filtered = usuarios.filter(m => {
-    if (filtro === "Todos")    return true;
-    if (filtro === "Admin")    return m.role === "client_admin" || m.role === "c4hub_admin";
-    if (filtro === "Vendedor") return m.role === "client_user";
-    if (filtro === "Inativo")  return !m.ativo;
+    if (filtro === "Todos")   return true;
+    if (filtro === "Admin")   return m.role === "client_admin" || m.role === "c4hub_admin";
+    if (filtro === "Inativo") return !m.ativo;
+    const groupTarget = FILTRO_GROUP[filtro];
+    if (groupTarget) return getCargoGroup(m) === groupTarget;
     return true;
   });
 
@@ -69,31 +91,26 @@ export default function PageEquipe({ user }) {
   };
 
   const openEditar = (m) => {
-    setForm({ nome: m.nome, cargo: m.cargo || "", whatsapp: m.whatsapp || "", role: m.role, email:"", senha:"" });
+    setForm({ nome: m.nome, cargo: m.cargo || "", whatsapp: m.whatsapp || "", perfil: derivarPerfil(m, perfisOpt), email:"", senha:"" });
     setSelected(m); setErr(""); setSucc(""); setModal("editar");
   };
 
-  // Impede downgrade: salva c4hub_admin se o usuário editado for c4hub_admin e o editor não for c4hub_admin
-  const safeRole = (targetUser, newRole) => {
-    if (targetUser?.role === "c4hub_admin" && !isC4Admin) return "c4hub_admin";
-    return newRole;
-  };
-
-  const openDetalhes = (m) => {
-    setSelected(m); setModal("detalhes");
-  };
+  const openDetalhes = (m) => { setSelected(m); setModal("detalhes"); };
 
   const salvarNovo = async () => {
     if (!form.email || !form.senha || !form.nome) { setErr("Nome, e-mail e senha são obrigatórios."); return; }
     if (form.senha.length < 6) { setErr("Senha mínima: 6 caracteres."); return; }
     setSaving(true); setErr("");
+    const perfilItem = perfisOpt.find(p => p.v === form.perfil) || perfisOpt[0];
     const res = await criarUsuario({
-      email: form.email.trim().toLowerCase(),
-      senha: form.senha,
-      nome: form.nome.trim(),
-      cargo: form.cargo,
-      role: form.role,
-      empresa_id: user?.empresa_id,
+      email:        form.email.trim().toLowerCase(),
+      senha:        form.senha,
+      nome:         form.nome.trim(),
+      cargo:        form.cargo,
+      whatsapp:     form.whatsapp,
+      role:         perfilItem.role,
+      empresa_id:   user?.empresa_id,
+      perfil_acesso: perfilItem.pa,
     });
     if (res.error) setErr(res.error);
     else { setSucc(`${form.nome} adicionado à equipe!`); refetch(); }
@@ -103,17 +120,23 @@ export default function PageEquipe({ user }) {
   const salvarEdicao = async () => {
     if (!selected) return;
     setSaving(true); setErr("");
-    const changes = { nome: form.nome, cargo: form.cargo, role: safeRole(selected, form.role) };
-    if (form.whatsapp) changes.whatsapp = form.whatsapp;
+    const perfilItem = perfisOpt.find(p => p.v === form.perfil) || perfisOpt[0];
+    // Protege contra downgrade de c4hub_admin por não-c4hub
+    const newRole = (selected.role === "c4hub_admin" && !isC4Admin) ? "c4hub_admin" : perfilItem.role;
+    const changes = {
+      nome:          form.nome,
+      cargo:         form.cargo,
+      whatsapp:      form.whatsapp,
+      role:          newRole,
+      perfil_acesso: perfilItem.pa,
+    };
     const { error } = await update(selected.id, changes);
     if (error) setErr(error.message || "Erro ao salvar.");
     else { setSucc("Alterações salvas!"); refetch(); setTimeout(() => setModal(false), 1200); }
     setSaving(false);
   };
 
-  const toggleAtivo = async (m) => {
-    await update(m.id, { ativo: !m.ativo });
-  };
+  const toggleAtivo = async (m) => { await update(m.id, { ativo: !m.ativo }); };
 
   const excluir = async (m) => {
     if (!window.confirm(`Remover ${m.nome} da equipe?`)) return;
@@ -122,20 +145,29 @@ export default function PageEquipe({ user }) {
   };
 
   const ativos   = usuarios.filter(m => m.ativo).length;
-  const inativos = usuarios.filter(m => !m.ativo).length;
+
+  // Label do perfil para exibição
+  const perfilLabel = (m) => {
+    const p = perfisOpt.find(x => x.v === derivarPerfil(m, perfisOpt));
+    return p?.l || "Vendas";
+  };
+
+  const TABS = ["Todos","Admin","Vendas","Marketing","Tráfego","Digital","Financeiro","RH","Suporte","T.I","Inativo"];
 
   return (
     <Fade>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8,marginBottom:14}}>
-        <TabPills tabs={["Todos","Admin","Vendedor","Inativo"]} active={filtro} onChange={setFiltro}/>
+        <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+          <TabPills tabs={TABS} active={filtro} onChange={setFiltro}/>
+        </div>
         {isAdmin && <PBtn onClick={openNovo}>+ Convidar</PBtn>}
       </div>
 
       <Grid cols={3} gap={12} mb={14} responsive>
         {[
-          { l:"Ativos",           v:ativos,                                              c:L.teal },
-          { l:"Leads Atribuídos", v:usuarios.reduce((s,m)=>s+(m.leads||0),0),           c:L.copper },
-          { l:"Deals Fechados",   v:usuarios.reduce((s,m)=>s+(m.fechados||0),0),        c:L.green },
+          { l:"Ativos",           v:ativos,                                        c:L.teal },
+          { l:"Leads Atribuídos", v:usuarios.reduce((s,m)=>s+(m.leads||0),0),     c:L.copper },
+          { l:"Deals Fechados",   v:usuarios.reduce((s,m)=>s+(m.fechados||0),0),  c:L.green },
         ].map((k,i) => (
           <div key={i} style={{background:L.white,borderRadius:12,border:`1px solid ${L.line}`,padding:"15px 18px",boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}>
             <div style={{fontSize:10,color:L.t4,textTransform:"uppercase",letterSpacing:"1.5px",marginBottom:6,fontFamily:"'JetBrains Mono',monospace",fontWeight:600}}>{k.l}</div>
@@ -147,7 +179,7 @@ export default function PageEquipe({ user }) {
       {loading ? (
         <div style={{textAlign:"center",padding:40,color:L.t4}}>Carregando equipe...</div>
       ) : (
-        <DataTable heads={["Membro","Cargo","Perfil","Leads","Fechados","Conv.","Status","Ações"]}>
+        <DataTable heads={["Membro","Cargo","Perfil de Acesso","Leads","Fechados","Conv.","Status","Ações"]}>
           {filtered.map(m => (
             <tr key={m.id} style={{borderBottom:`1px solid ${L.lineSoft}`,opacity:m.ativo?1:0.55}}
               onMouseEnter={e=>e.currentTarget.style.background=L.surface}
@@ -164,8 +196,7 @@ export default function PageEquipe({ user }) {
               </td>
               <td style={{...TD,color:L.t3,fontSize:11.5}}>{m.cargo||"—"}</td>
               <td style={TD}>
-                <Tag color={rc[m.role]||L.t3} bg={rbg[m.role]||L.surface}>{ROLES_LABEL[m.role]||m.role}</Tag>
-                <div style={{fontSize:9,color:L.t4,marginTop:2,fontFamily:"'JetBrains Mono',monospace"}}>{getAccessLabel(m)}</div>
+                <Tag color={rc[m.role]||L.t3} bg={rbg[m.role]||L.surface}>{perfilLabel(m)}</Tag>
               </td>
               <td style={{...TD,textAlign:"center",fontWeight:600,color:L.t1}}>{m.leads||0}</td>
               <td style={{...TD,textAlign:"center",fontWeight:600,color:L.green}}>{m.fechados||0}</td>
@@ -173,8 +204,8 @@ export default function PageEquipe({ user }) {
               <td style={TD}><Tag color={m.ativo?L.green:L.red} bg={m.ativo?L.greenBg:L.redBg}>{m.ativo?"Ativo":"Inativo"}</Tag></td>
               <td style={TD}>
                 <Row gap={5}>
-                  <IBtn c={L.teal}    title="Ver detalhes"  onClick={()=>openDetalhes(m)}>◷</IBtn>
-                  {isAdmin && <IBtn c={L.t3} title="Editar" onClick={()=>openEditar(m)}>✎</IBtn>}
+                  <IBtn c={L.teal}              title="Ver detalhes"  onClick={()=>openDetalhes(m)}>◷</IBtn>
+                  {isAdmin && <IBtn c={L.t3}    title="Editar"        onClick={()=>openEditar(m)}>✎</IBtn>}
                   {isAdmin && <IBtn c={m.ativo?L.red:L.green} title={m.ativo?"Desativar":"Ativar"} onClick={()=>toggleAtivo(m)}>{m.ativo?"⊗":"✓"}</IBtn>}
                 </Row>
               </td>
@@ -203,8 +234,8 @@ export default function PageEquipe({ user }) {
             <>
               <Field label="Nome completo *"><Input value={form.nome} onChange={F("nome")} placeholder="Nome do membro"/></Field>
               <div className="form-grid">
-                <Field label="E-mail *"><Input value={form.email} onChange={F("email")} type="email" placeholder="email@empresa.com"/></Field>
-                <Field label="Senha *"><Input value={form.senha} onChange={F("senha")} type="password" placeholder="Mínimo 6 caracteres"/></Field>
+                <Field label="E-mail *">    <Input value={form.email}    onChange={F("email")}    type="email"    placeholder="email@empresa.com"/></Field>
+                <Field label="Senha *">     <Input value={form.senha}    onChange={F("senha")}    type="password" placeholder="Mínimo 6 caracteres"/></Field>
                 <Field label="Cargo / Setor">
                   <Select value={form.cargo} onChange={F("cargo")}>
                     <option value="">Selecionar cargo...</option>
@@ -217,8 +248,8 @@ export default function PageEquipe({ user }) {
                 </Field>
                 <Field label="WhatsApp"><Input value={form.whatsapp} onChange={F("whatsapp")} placeholder="(11) 99999-0000"/></Field>
                 <Field label="Perfil de acesso" style={{gridColumn:"1/-1"}}>
-                  <Select value={form.role} onChange={F("role")}>
-                    {rolesOpt.map(r=><option key={r.v} value={r.v}>{r.l}</option>)}
+                  <Select value={form.perfil} onChange={F("perfil")}>
+                    {perfisOpt.map(p => <option key={p.v} value={p.v}>{p.l}</option>)}
                   </Select>
                 </Field>
               </div>
@@ -237,8 +268,8 @@ export default function PageEquipe({ user }) {
           ) : (
             <>
               <div className="form-grid">
-                <Field label="Nome completo"><Input value={form.nome} onChange={F("nome")}/></Field>
-                <Field label="WhatsApp"><Input value={form.whatsapp} onChange={F("whatsapp")} placeholder="(11) 99999-0000"/></Field>
+                <Field label="Nome completo"><Input value={form.nome}     onChange={F("nome")}/></Field>
+                <Field label="WhatsApp">     <Input value={form.whatsapp} onChange={F("whatsapp")} placeholder="(11) 99999-0000"/></Field>
                 <Field label="Cargo / Setor" style={{gridColumn:"1/-1"}}>
                   <Select value={form.cargo} onChange={F("cargo")}>
                     <option value="">Selecionar cargo...</option>
@@ -250,8 +281,8 @@ export default function PageEquipe({ user }) {
                   </Select>
                 </Field>
                 <Field label="Perfil de acesso" style={{gridColumn:"1/-1"}}>
-                  <Select value={form.role} onChange={F("role")}>
-                    {rolesOpt.map(r=><option key={r.v} value={r.v}>{r.l}</option>)}
+                  <Select value={form.perfil} onChange={F("perfil")}>
+                    {perfisOpt.map(p => <option key={p.v} value={p.v}>{p.l}</option>)}
                   </Select>
                 </Field>
               </div>
@@ -269,14 +300,14 @@ export default function PageEquipe({ user }) {
             <Av name={selected.nome} color={rc[selected.role]||L.t3} size={52}/>
             <div style={{fontSize:16,fontWeight:700,color:L.t1,marginTop:10}}>{selected.nome}</div>
             <div style={{fontSize:12,color:L.t4,marginTop:2}}>{selected.cargo||"—"}</div>
-            <Tag color={rc[selected.role]||L.t3} bg={rbg[selected.role]||L.surface}>{ROLES_LABEL[selected.role]||selected.role}</Tag>
+            <Tag color={rc[selected.role]||L.t3} bg={rbg[selected.role]||L.surface}>{perfilLabel(selected)}</Tag>
           </div>
           {[
-            ["WhatsApp",   selected.whatsapp||"—"],
-            ["Leads",      selected.leads||0],
-            ["Fechados",   selected.fechados||0],
-            ["Conversão",  selected.conv||"—"],
-            ["Status",     selected.ativo?"Ativo":"Inativo"],
+            ["WhatsApp",      selected.whatsapp||"—"],
+            ["Leads",         selected.leads||0],
+            ["Fechados",      selected.fechados||0],
+            ["Conversão",     selected.conv||"—"],
+            ["Status",        selected.ativo?"Ativo":"Inativo"],
             ["Último acesso", selected.ultimo_acesso ? new Date(selected.ultimo_acesso).toLocaleDateString("pt-BR") : "—"],
           ].map(([k,v]) => (
             <div key={k} style={{display:"flex",justifyContent:"space-between",padding:"9px 0",borderBottom:`1px solid ${L.lineSoft}`}}>

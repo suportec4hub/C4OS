@@ -14,16 +14,17 @@ const NOVO_VAZIO = { nome:"", descricao:"", meta:"", responsavel:"", cor: L.teal
 
 export default function PageDeps({ user }) {
   const { data: deps, loading, insert, update, remove } = useTable("departamentos", { empresa_id: user?.empresa_id });
-  const { data: usuarios, refetch: refetchUsuarios } = useTable("usuarios", { empresa_id: user?.empresa_id, ativo: true });
+  const { data: usuarios, loading: loadingUsers } = useTable("usuarios", { empresa_id: user?.empresa_id, ativo: true });
+  const { data: memberships, refetch: refetchMemberships } = useTable("usuario_departamentos");
 
-  const [expanded,    setExpanded]    = useState(null);
-  const [modal,       setModal]       = useState(false);   // "form" | "membros"
-  const [editId,      setEditId]      = useState(null);
-  const [form,        setForm]        = useState(NOVO_VAZIO);
-  const [saving,      setSaving]      = useState(false);
-  const [err,         setErr]         = useState("");
-  const [membrosModal,setMembrosModal] = useState(null);   // dep selecionado p/ gerenciar
-  const [savingMembro,setSavingMembro] = useState(false);
+  const [expanded,     setExpanded]     = useState(null);
+  const [modal,        setModal]        = useState(false);
+  const [editId,       setEditId]       = useState(null);
+  const [form,         setForm]         = useState(NOVO_VAZIO);
+  const [saving,       setSaving]       = useState(false);
+  const [err,          setErr]          = useState("");
+  const [membrosModal, setMembrosModal] = useState(null);
+  const [savingMembro, setSavingMembro] = useState(false);
 
   const toggle = (id) => setExpanded(p => p === id ? null : id);
   const F = k => v => setForm(p => ({ ...p, [k]: v }));
@@ -46,28 +47,36 @@ export default function PageDeps({ user }) {
 
   const del = async (id, nome) => {
     if (!confirm(`Excluir departamento "${nome}"?`)) return;
-    // Remove membros do departamento antes de excluir
-    await supabase.from("usuarios").update({ departamento_id: null }).eq("departamento_id", id);
+    // CASCADE no FK apaga os memberships automaticamente
     await remove(id);
     logAction({ empresa_id: user?.empresa_id, usuario_id: user?.id, usuario_email: user?.email, tipo: "DATA", nivel: "warn", acao: `Departamento excluído: ${nome}` });
   };
 
-  // Membros = usuarios com departamento_id = dep.id
-  const membrosDepart = (dep) => usuarios.filter(u => u.departamento_id === dep.id);
+  // Muitos-para-muitos via junction table
+  const membrosDepart = (dep) => {
+    const uids = new Set(memberships.filter(m => m.departamento_id === dep.id).map(m => m.usuario_id));
+    return usuarios.filter(u => uids.has(u.id));
+  };
 
-  // Adicionar membro ao departamento
+  const deptsDoUsuario = (userId) =>
+    memberships.filter(m => m.usuario_id === userId).map(m => m.departamento_id);
+
+  const isMembro = (userId, deptId) =>
+    memberships.some(m => m.usuario_id === userId && m.departamento_id === deptId);
+
   const adicionarMembro = async (userId) => {
+    if (isMembro(userId, membrosModal.id)) return;
     setSavingMembro(true);
-    await supabase.from("usuarios").update({ departamento_id: membrosModal.id }).eq("id", userId);
-    await refetchUsuarios();
+    await supabase.from("usuario_departamentos").insert({ usuario_id: userId, departamento_id: membrosModal.id });
+    await refetchMemberships();
     setSavingMembro(false);
   };
 
-  // Remover membro do departamento
   const removerMembro = async (userId) => {
     setSavingMembro(true);
-    await supabase.from("usuarios").update({ departamento_id: null }).eq("id", userId);
-    await refetchUsuarios();
+    await supabase.from("usuario_departamentos").delete()
+      .eq("usuario_id", userId).eq("departamento_id", membrosModal.id);
+    await refetchMemberships();
     setSavingMembro(false);
   };
 
@@ -111,9 +120,7 @@ export default function PageDeps({ user }) {
                   <div style={{padding:20,cursor:"pointer"}} onClick={()=>toggle(d.id)}>
                     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
                       <div style={{display:"flex",alignItems:"center",gap:10}}>
-                        <div style={{width:38,height:38,borderRadius:10,background:bg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,color:cor,fontWeight:700}}>
-                          {ico}
-                        </div>
+                        <div style={{width:38,height:38,borderRadius:10,background:bg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:17,color:cor,fontWeight:700}}>{ico}</div>
                         <div>
                           <div style={{fontSize:14,fontWeight:600,color:L.t1}}>{d.nome}</div>
                           <div style={{fontSize:11,color:L.t4}}>
@@ -127,9 +134,7 @@ export default function PageDeps({ user }) {
                         <span style={{fontSize:14,color:open?cor:L.t4,transition:"color .2s"}}>{open?"▲":"▼"}</span>
                       </div>
                     </div>
-                    {d.descricao && (
-                      <div style={{fontSize:11.5,color:L.t3,lineHeight:1.5}}>{d.descricao}</div>
-                    )}
+                    {d.descricao && <div style={{fontSize:11.5,color:L.t3,lineHeight:1.5}}>{d.descricao}</div>}
                   </div>
 
                   {/* Expandido */}
@@ -154,22 +159,33 @@ export default function PageDeps({ user }) {
                           </div>
                         ) : (
                           <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                            {membros.map((m) => (
-                              <div key={m.id} style={{background:L.white,borderRadius:8,padding:"9px 12px",border:`1px solid ${L.line}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                                <div style={{display:"flex",alignItems:"center",gap:8}}>
-                                  <Av name={m.nome} color={cor} size={26}/>
-                                  <div>
-                                    <div style={{fontSize:12,fontWeight:600,color:L.t1}}>{m.nome}</div>
-                                    <div style={{fontSize:10,color:L.t4}}>{m.cargo || "—"}</div>
+                            {membros.map((m) => {
+                              const outrosDepts = deptsDoUsuario(m.id)
+                                .filter(did => did !== d.id)
+                                .map(did => deps.find(x => x.id === did)?.nome)
+                                .filter(Boolean);
+                              return (
+                                <div key={m.id} style={{background:L.white,borderRadius:8,padding:"9px 12px",border:`1px solid ${L.line}`,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                                    <Av name={m.nome} color={cor} size={26}/>
+                                    <div>
+                                      <div style={{fontSize:12,fontWeight:600,color:L.t1}}>{m.nome}</div>
+                                      <div style={{fontSize:10,color:L.t4}}>
+                                        {m.cargo || "—"}
+                                        {outrosDepts.length > 0 && (
+                                          <span style={{color:L.teal}}> · também em: {outrosDepts.join(", ")}</span>
+                                        )}
+                                      </div>
+                                    </div>
                                   </div>
+                                  <button onClick={()=>removerMembro(m.id)} title="Remover do departamento"
+                                    style={{background:"none",border:"none",cursor:"pointer",color:L.t4,fontSize:13,padding:4,transition:"color .1s"}}
+                                    onMouseEnter={e=>e.currentTarget.style.color=L.red}
+                                    onMouseLeave={e=>e.currentTarget.style.color=L.t4}
+                                  >⊗</button>
                                 </div>
-                                <button onClick={()=>removerMembro(m.id)} title="Remover do departamento"
-                                  style={{background:"none",border:"none",cursor:"pointer",color:L.t4,fontSize:13,padding:4,transition:"color .1s"}}
-                                  onMouseEnter={e=>e.currentTarget.style.color=L.red}
-                                  onMouseLeave={e=>e.currentTarget.style.color=L.t4}
-                                >⊗</button>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         )}
                       </div>
@@ -177,12 +193,12 @@ export default function PageDeps({ user }) {
                       {/* Ações */}
                       <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
                         <button onClick={()=>openEdit(d)}
-                          style={{padding:"6px 14px",borderRadius:8,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:L.tealBg,color:L.teal,border:`1px solid ${L.teal}22`,transition:"all .12s"}}
+                          style={{padding:"6px 14px",borderRadius:8,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:L.tealBg,color:L.teal,border:`1px solid ${L.teal}22`}}
                           onMouseEnter={e=>e.currentTarget.style.filter="brightness(.96)"}
                           onMouseLeave={e=>e.currentTarget.style.filter="none"}
                         >✎ Editar</button>
                         <button onClick={()=>del(d.id, d.nome)}
-                          style={{padding:"6px 14px",borderRadius:8,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:L.redBg,color:L.red,border:`1px solid ${L.red}22`,transition:"all .12s"}}
+                          style={{padding:"6px 14px",borderRadius:8,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:L.redBg,color:L.red,border:`1px solid ${L.red}22`}}
                           onMouseEnter={e=>e.currentTarget.style.filter="brightness(.96)"}
                           onMouseLeave={e=>e.currentTarget.style.filter="none"}
                         >⊗ Excluir</button>
@@ -237,69 +253,84 @@ export default function PageDeps({ user }) {
       {/* Modal — Gerenciar membros */}
       {membrosModal && (
         <Modal title={`Membros — ${membrosModal.nome}`} onClose={()=>setMembrosModal(null)} width={460}>
-          <div style={{marginBottom:12,fontSize:11,color:L.t3}}>
-            Selecione quais membros da equipe pertencem a este departamento.
+          <div style={{marginBottom:12,fontSize:11,color:L.t3,lineHeight:1.5}}>
+            Um membro pode pertencer a mais de um departamento ao mesmo tempo.
           </div>
 
           {/* Membros já no dept */}
           {membrosDepart(membrosModal).length > 0 && (
             <div style={{marginBottom:16}}>
               <div style={{fontSize:10,fontWeight:700,color:L.t3,textTransform:"uppercase",letterSpacing:"1px",marginBottom:8,fontFamily:"'JetBrains Mono',monospace"}}>
-                No departamento
+                No departamento ({membrosDepart(membrosModal).length})
               </div>
-              {membrosDepart(membrosModal).map(m => (
-                <div key={m.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 10px",borderRadius:8,background:L.greenBg,border:`1px solid ${L.green}22`,marginBottom:5}}>
-                  <div style={{display:"flex",alignItems:"center",gap:8}}>
-                    <Av name={m.nome} color={membrosModal.cor||L.teal} size={26}/>
-                    <div>
-                      <div style={{fontSize:12,fontWeight:600,color:L.t1}}>{m.nome}</div>
-                      <div style={{fontSize:10,color:L.t4}}>{m.cargo||"—"}</div>
+              {membrosDepart(membrosModal).map(m => {
+                const outrosDepts = deptsDoUsuario(m.id)
+                  .filter(did => did !== membrosModal.id)
+                  .map(did => deps.find(x => x.id === did)?.nome)
+                  .filter(Boolean);
+                return (
+                  <div key={m.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 10px",borderRadius:8,background:L.greenBg,border:`1px solid ${L.green}22`,marginBottom:5}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <Av name={m.nome} color={membrosModal.cor||L.teal} size={26}/>
+                      <div>
+                        <div style={{fontSize:12,fontWeight:600,color:L.t1}}>{m.nome}</div>
+                        <div style={{fontSize:10,color:L.t4}}>
+                          {m.cargo||"—"}
+                          {outrosDepts.length > 0 && <span style={{color:L.teal}}> · {outrosDepts.join(", ")}</span>}
+                        </div>
+                      </div>
                     </div>
+                    <button onClick={()=>removerMembro(m.id)} disabled={savingMembro}
+                      style={{padding:"4px 10px",borderRadius:6,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:L.redBg,color:L.red,border:`1px solid ${L.red}22`}}>
+                      Remover
+                    </button>
                   </div>
-                  <button onClick={()=>removerMembro(m.id)} disabled={savingMembro}
-                    style={{padding:"4px 10px",borderRadius:6,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:L.redBg,color:L.red,border:`1px solid ${L.red}22`}}>
-                    Remover
-                  </button>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
-          {/* Usuários disponíveis */}
+          {/* Usuários disponíveis para adicionar */}
           {(() => {
-            const disponiveis = usuarios.filter(u => u.departamento_id !== membrosModal.id);
-            if (disponiveis.length === 0) return (
+            const disponiveis = usuarios.filter(u => !isMembro(u.id, membrosModal.id));
+            if (disponiveis.length === 0 && membrosDepart(membrosModal).length > 0) return (
               <div style={{textAlign:"center",padding:16,color:L.t4,fontSize:12}}>
                 Todos os membros já estão neste departamento.
               </div>
             );
+            if (disponiveis.length === 0) return null;
             return (
               <div>
                 <div style={{fontSize:10,fontWeight:700,color:L.t3,textTransform:"uppercase",letterSpacing:"1px",marginBottom:8,fontFamily:"'JetBrains Mono',monospace"}}>
                   Adicionar da equipe
                 </div>
                 <div style={{maxHeight:240,overflowY:"auto",display:"flex",flexDirection:"column",gap:5}}>
-                  {disponiveis.map(m => (
-                    <div key={m.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 10px",borderRadius:8,background:L.surface,border:`1px solid ${L.line}`,transition:"background .1s"}}
-                      onMouseEnter={e=>e.currentTarget.style.background=L.hover}
-                      onMouseLeave={e=>e.currentTarget.style.background=L.surface}
-                    >
-                      <div style={{display:"flex",alignItems:"center",gap:8}}>
-                        <Av name={m.nome} color={L.copper} size={26}/>
-                        <div>
-                          <div style={{fontSize:12,fontWeight:500,color:L.t1}}>{m.nome}</div>
-                          <div style={{fontSize:10,color:L.t4}}>
-                            {m.cargo||"Sem cargo"}
-                            {m.departamento_id ? ` · já em outro dept.` : ""}
+                  {disponiveis.map(m => {
+                    const outrosDepts = deptsDoUsuario(m.id)
+                      .map(did => deps.find(x => x.id === did)?.nome)
+                      .filter(Boolean);
+                    return (
+                      <div key={m.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 10px",borderRadius:8,background:L.surface,border:`1px solid ${L.line}`}}
+                        onMouseEnter={e=>e.currentTarget.style.background=L.hover}
+                        onMouseLeave={e=>e.currentTarget.style.background=L.surface}
+                      >
+                        <div style={{display:"flex",alignItems:"center",gap:8}}>
+                          <Av name={m.nome} color={L.copper} size={26}/>
+                          <div>
+                            <div style={{fontSize:12,fontWeight:500,color:L.t1}}>{m.nome}</div>
+                            <div style={{fontSize:10,color:L.t4}}>
+                              {m.cargo||"Sem cargo"}
+                              {outrosDepts.length > 0 && <span style={{color:L.teal}}> · {outrosDepts.join(", ")}</span>}
+                            </div>
                           </div>
                         </div>
+                        <button onClick={()=>adicionarMembro(m.id)} disabled={savingMembro}
+                          style={{padding:"4px 12px",borderRadius:6,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:L.tealBg,color:L.teal,border:`1px solid ${L.teal}22`}}>
+                          + Adicionar
+                        </button>
                       </div>
-                      <button onClick={()=>adicionarMembro(m.id)} disabled={savingMembro}
-                        style={{padding:"4px 12px",borderRadius:6,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:L.tealBg,color:L.teal,border:`1px solid ${L.teal}22`}}>
-                        + Adicionar
-                      </button>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             );
