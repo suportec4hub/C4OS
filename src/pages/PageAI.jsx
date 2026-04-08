@@ -1,6 +1,8 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { L } from "../constants/theme";
 import { Av, Tag } from "../components/ui";
+import { supabase } from "../lib/supabase";
+import { useBreakpoint } from "../hooks/useBreakpoint";
 
 /* ─── Groq API ─── */
 const GROQ_KEY   = import.meta.env.VITE_GROQ_KEY;
@@ -19,7 +21,7 @@ Você ajuda times de vendas a:
 
 Responda sempre em português brasileiro. Seja objetivo, prático e orientado a resultados. Use formatação markdown quando útil (listas, negrito, seções com ##).`;
 
-/* ─── Renderizador de Markdown simplificado ─── */
+/* ─── Markdown renderer ─── */
 function MdLine({ text }) {
   const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g);
   return (
@@ -48,22 +50,18 @@ function MdBlock({ content }) {
   lines.forEach((line, i) => {
     const trimmed = line.trim();
     if (!trimmed) { flushList(); out.push(<br key={`br${i}`}/>); return; }
-
     if (/^[-•*]\s/.test(trimmed)) {
-      const txt = trimmed.replace(/^[-•*]\s/, "");
-      listItems.push(<li key={i} style={{ marginBottom: 2, lineHeight: 1.6 }}><MdLine text={txt}/></li>);
+      listItems.push(<li key={i} style={{ marginBottom: 2, lineHeight: 1.6 }}><MdLine text={trimmed.replace(/^[-•*]\s/, "")}/></li>);
       return;
     }
     if (/^\d+\.\s/.test(trimmed)) {
-      const txt = trimmed.replace(/^\d+\.\s/, "");
-      numItems.push(<li key={i} style={{ marginBottom: 2, lineHeight: 1.6 }}><MdLine text={txt}/></li>);
+      numItems.push(<li key={i} style={{ marginBottom: 2, lineHeight: 1.6 }}><MdLine text={trimmed.replace(/^\d+\.\s/, "")}/></li>);
       return;
     }
     if (trimmed.startsWith("### ")) { flushList(); out.push(<div key={i} style={{ fontSize: 13, fontWeight: 700, color: L.t1, marginTop: 10, marginBottom: 4 }}><MdLine text={trimmed.slice(4)}/></div>); return; }
     if (trimmed.startsWith("## "))  { flushList(); out.push(<div key={i} style={{ fontSize: 14, fontWeight: 700, color: L.t1, marginTop: 10, marginBottom: 4 }}><MdLine text={trimmed.slice(3)}/></div>); return; }
     if (trimmed.startsWith("# "))   { flushList(); out.push(<div key={i} style={{ fontSize: 15, fontWeight: 700, color: L.t1, marginTop: 10, marginBottom: 4 }}><MdLine text={trimmed.slice(2)}/></div>); return; }
     if (/^---+$/.test(trimmed)) { flushList(); out.push(<hr key={i} style={{ border: "none", borderTop: `1px solid ${L.line}`, margin: "8px 0" }}/>); return; }
-
     flushList();
     out.push(<div key={i} style={{ lineHeight: 1.65, marginBottom: 2 }}><MdLine text={trimmed}/></div>);
   });
@@ -77,36 +75,135 @@ const SUGS = [
   "Como melhorar minha taxa de conversão?",
   "Gere um relatório semanal",
   "Previsão de receita — próximos 90 dias",
-  "Leads em risco de churn",
 ];
 
+function formatDate(iso) {
+  const d = new Date(iso);
+  const now = new Date();
+  const diff = now - d;
+  const mins = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+  if (mins < 1) return "Agora";
+  if (mins < 60) return `${mins}min atrás`;
+  if (hours < 24) return `${hours}h atrás`;
+  const days = Math.floor(diff / 86400000);
+  if (days === 1) return "Ontem";
+  if (days < 7) return `${days} dias atrás`;
+  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" });
+}
+
 export default function PageAI({ user }) {
+  const { isMobile } = useBreakpoint();
   const welcome = `Olá, **${user?.nome?.split(" ")[0] || ""}**! Sou o **C4 AI**, powered by Groq · Llama 3.3.\n\nPosso analisar seu funil de vendas, sugerir ações estratégicas, gerar relatórios e identificar oportunidades.\n\nComo posso ajudar hoje?`;
 
-  const [chat, setChat] = useState([{ role: "assistant", content: welcome }]);
-  const [input, setInput] = useState("");
+  // Conversas salvas
+  const [conversas, setConversas]           = useState([]);
+  const [activeConversa, setActiveConversa] = useState(null); // id da conversa ativa
+  const [loadingHistorico, setLoadingHistorico] = useState(true);
+
+  // Chat atual
+  const [chat, setChat]     = useState([{ role: "assistant", content: welcome }]);
+  const [input, setInput]   = useState("");
   const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState("");
-  const [model, setModel] = useState("");
-  const endRef = useRef(null);
+  const [err, setErr]       = useState("");
+  const [model, setModel]   = useState("");
+
+  // Mobile: mostrar sidebar ou chat
+  const [showSidebar, setShowSidebar] = useState(!isMobile);
+
+  const endRef   = useRef(null);
   const inputRef = useRef(null);
+
+  // Carregar lista de conversas do usuário
+  const loadConversas = useCallback(async () => {
+    if (!user?.id) return;
+    const { data } = await supabase
+      .from("ai_conversas")
+      .select("id, titulo, updated_at, created_at")
+      .eq("usuario_id", user.id)
+      .order("updated_at", { ascending: false });
+    setConversas(data || []);
+    setLoadingHistorico(false);
+  }, [user?.id]);
+
+  useEffect(() => { loadConversas(); }, [loadConversas]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chat, loading]);
 
+  // Abrir conversa existente
+  const abrirConversa = async (conv) => {
+    setActiveConversa(conv.id);
+    setErr(""); setModel("");
+    if (isMobile) setShowSidebar(false);
+
+    const { data: msgs } = await supabase
+      .from("ai_mensagens")
+      .select("role, content, created_at")
+      .eq("conversa_id", conv.id)
+      .order("created_at", { ascending: true });
+
+    if (msgs && msgs.length > 0) {
+      setChat(msgs.map(m => ({ role: m.role, content: m.content })));
+    } else {
+      setChat([{ role: "assistant", content: welcome }]);
+    }
+  };
+
+  // Nova conversa
+  const novaConversa = () => {
+    setActiveConversa(null);
+    setChat([{ role: "assistant", content: welcome }]);
+    setErr(""); setModel(""); setInput("");
+    if (isMobile) setShowSidebar(false);
+  };
+
+  // Excluir conversa
+  const excluirConversa = async (e, convId) => {
+    e.stopPropagation();
+    if (!confirm("Excluir esta conversa?")) return;
+    await supabase.from("ai_conversas").delete().eq("id", convId);
+    if (activeConversa === convId) novaConversa();
+    setConversas(p => p.filter(c => c.id !== convId));
+  };
+
   const send = async (txt) => {
     const q = (txt || input).trim();
     if (!q || loading) return;
     setInput(""); setErr("");
+    if (isMobile) setShowSidebar(false);
 
     const userMsg = { role: "user", content: q };
     const history = [...chat, userMsg];
     setChat(history);
     setLoading(true);
 
+    let convId = activeConversa;
+
     try {
-      // Formato OpenAI-compatible (Groq)
+      // Criar conversa nova se não existe
+      if (!convId) {
+        const titulo = q.length > 55 ? q.slice(0, 52) + "..." : q;
+        const { data: novaConv, error: convErr } = await supabase
+          .from("ai_conversas")
+          .insert({ usuario_id: user.id, empresa_id: user.empresa_id, titulo })
+          .select()
+          .single();
+
+        if (!convErr && novaConv) {
+          convId = novaConv.id;
+          setActiveConversa(convId);
+          setConversas(p => [novaConv, ...p]);
+        }
+      }
+
+      // Salvar mensagem do usuário
+      if (convId) {
+        await supabase.from("ai_mensagens").insert({ conversa_id: convId, role: "user", content: q });
+      }
+
+      // Chamar Groq
       const messages = [
         { role: "system", content: SYSTEM_PROMPT },
         ...history
@@ -116,16 +213,8 @@ export default function PageAI({ user }) {
 
       const res = await fetch(GROQ_URL, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${GROQ_KEY}`,
-        },
-        body: JSON.stringify({
-          model: GROQ_MODEL,
-          messages,
-          temperature: 0.7,
-          max_tokens: 2048,
-        }),
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${GROQ_KEY}` },
+        body: JSON.stringify({ model: GROQ_MODEL, messages, temperature: 0.7, max_tokens: 2048 }),
       });
 
       if (!res.ok) {
@@ -136,7 +225,17 @@ export default function PageAI({ user }) {
       const data = await res.json();
       const text = data.choices?.[0]?.message?.content || "Sem resposta.";
       if (data.model) setModel(data.model);
+
       setChat(p => [...p, { role: "assistant", content: text }]);
+
+      // Salvar resposta + atualizar updated_at da conversa
+      if (convId) {
+        await supabase.from("ai_mensagens").insert({ conversa_id: convId, role: "assistant", content: text });
+        await supabase.from("ai_conversas").update({ updated_at: new Date().toISOString() }).eq("id", convId);
+        // Atualizar lista local
+        setConversas(p => p.map(c => c.id === convId ? { ...c, updated_at: new Date().toISOString() } : c));
+      }
+
     } catch (e) {
       setErr(e.message);
       setChat(p => [...p, { role: "assistant", content: `❌ ${e.message}` }]);
@@ -146,65 +245,133 @@ export default function PageAI({ user }) {
     setTimeout(() => inputRef.current?.focus(), 100);
   };
 
-  const clearChat = () => {
-    setChat([{ role: "assistant", content: welcome }]);
-    setErr(""); setModel("");
-  };
+  /* ── SIDEBAR ── */
+  const Sidebar = (
+    <div style={{
+      width: isMobile ? "100%" : 240, minWidth: isMobile ? undefined : 240,
+      background: L.white, borderRight: isMobile ? "none" : `1px solid ${L.line}`,
+      display: "flex", flexDirection: "column", overflow: "hidden", flexShrink: 0,
+    }}>
+      {/* Header sidebar */}
+      <div style={{ padding: "12px 12px 8px", borderBottom: `1px solid ${L.lineSoft}`, flexShrink: 0 }}>
+        <button onClick={novaConversa}
+          style={{ width: "100%", padding: "9px 12px", borderRadius: 9, background: L.teal, color: "white", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 7, justifyContent: "center", transition: "all .12s", boxShadow: `0 3px 10px ${L.teal}30` }}
+          onMouseEnter={e => e.currentTarget.style.filter = "brightness(1.08)"}
+          onMouseLeave={e => e.currentTarget.style.filter = "none"}
+        >
+          <span style={{ fontSize: 15, lineHeight: 1 }}>+</span> Nova conversa
+        </button>
+      </div>
 
-  return (
-    <div style={{ display: "flex", flexDirection: "column", height: "calc(100dvh - 86px)", minHeight: 400, animation: "in .3s ease" }}>
-
-      {/* ── HEADER ── */}
-      <div style={{ background: `linear-gradient(135deg,${L.tealBg},${L.copperBg})`, border: `1px solid ${L.teal}22`, borderRadius: 12, padding: "12px 16px", marginBottom: 12, flexShrink: 0, boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ width: 36, height: 36, borderRadius: 10, background: L.teal, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, color: "white", flexShrink: 0, boxShadow: `0 4px 12px ${L.teal}40` }}>✦</div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: L.t1, fontFamily: "'Outfit',sans-serif" }}>
-              C4 <span style={{ color: L.teal }}>AI</span>
-              {model && <span style={{ fontSize: 9, color: L.t4, fontFamily: "'JetBrains Mono',monospace", marginLeft: 6, fontWeight: 400 }}>{model}</span>}
-            </div>
-            <div style={{ fontSize: 10, color: L.t3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Powered by Groq · Llama 3.3 70B · Inteligência de negócios</div>
+      {/* Lista de conversas */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "6px 6px" }}>
+        {loadingHistorico ? (
+          <div style={{ textAlign: "center", padding: 20, color: L.t4, fontSize: 11 }}>Carregando...</div>
+        ) : conversas.length === 0 ? (
+          <div style={{ textAlign: "center", padding: 24, color: L.t4 }}>
+            <div style={{ fontSize: 22, marginBottom: 8, opacity: .5 }}>✦</div>
+            <div style={{ fontSize: 11 }}>Nenhuma conversa ainda</div>
           </div>
-          <button onClick={clearChat} title="Limpar conversa" style={{ background: "none", border: `1px solid ${L.line}`, borderRadius: 7, cursor: "pointer", color: L.t4, fontSize: 11, padding: "4px 9px", fontFamily: "inherit", transition: "all .12s", flexShrink: 0 }} onMouseEnter={e => { e.currentTarget.style.color = L.red; e.currentTarget.style.borderColor = L.red + "88"; }} onMouseLeave={e => { e.currentTarget.style.color = L.t4; e.currentTarget.style.borderColor = L.line; }}>
-            ↺ Limpar
-          </button>
+        ) : (
+          conversas.map(c => {
+            const active = c.id === activeConversa;
+            return (
+              <div key={c.id} onClick={() => abrirConversa(c)}
+                style={{ padding: "9px 10px", borderRadius: 8, cursor: "pointer", marginBottom: 2, background: active ? L.tealBg : "transparent", border: `1px solid ${active ? L.teal + "33" : "transparent"}`, transition: "all .12s", position: "relative", group: "conv" }}
+                onMouseEnter={e => { if (!active) e.currentTarget.style.background = L.surface; }}
+                onMouseLeave={e => { if (!active) e.currentTarget.style.background = "transparent"; }}
+              >
+                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 4 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: active ? 600 : 400, color: active ? L.teal : L.t2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", lineHeight: 1.4 }}>
+                      {c.titulo}
+                    </div>
+                    <div style={{ fontSize: 10, color: L.t5, marginTop: 2, fontFamily: "'JetBrains Mono',monospace" }}>
+                      {formatDate(c.updated_at)}
+                    </div>
+                  </div>
+                  <button onClick={e => excluirConversa(e, c.id)}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: L.t5, fontSize: 12, padding: "1px 3px", borderRadius: 4, flexShrink: 0, lineHeight: 1, transition: "color .1s", opacity: active ? 1 : 0.4 }}
+                    onMouseEnter={e => { e.currentTarget.style.color = L.red; e.currentTarget.style.opacity = "1"; }}
+                    onMouseLeave={e => { e.currentTarget.style.color = L.t5; e.currentTarget.style.opacity = active ? "1" : "0.4"; }}
+                  >⊗</button>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {/* Footer com info do modelo */}
+      <div style={{ padding: "8px 12px", borderTop: `1px solid ${L.lineSoft}`, flexShrink: 0 }}>
+        <div style={{ fontSize: 9, color: L.t5, fontFamily: "'JetBrains Mono',monospace", textAlign: "center" }}>
+          Groq · Llama 3.3 70B
         </div>
-        <div style={{ display: "flex", gap: 5, marginTop: 8, flexWrap: "wrap" }}>
-          {["Análise", "Relatório", "Sugestão", "Previsão"].map(t => (
+      </div>
+    </div>
+  );
+
+  /* ── CHAT AREA ── */
+  const ChatArea = (
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
+
+      {/* Header chat */}
+      <div style={{ padding: "10px 14px", borderBottom: `1px solid ${L.lineSoft}`, flexShrink: 0, background: `linear-gradient(135deg,${L.tealBg},${L.copperBg})`, display: "flex", alignItems: "center", gap: 10 }}>
+        {isMobile && (
+          <button onClick={() => setShowSidebar(true)}
+            style={{ background: "none", border: `1px solid ${L.line}`, borderRadius: 7, padding: "5px 8px", cursor: "pointer", color: L.t3, fontSize: 12, fontFamily: "inherit" }}>
+            ☰
+          </button>
+        )}
+        <div style={{ width: 30, height: 30, borderRadius: 8, background: L.teal, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, color: "white", flexShrink: 0, boxShadow: `0 3px 10px ${L.teal}40` }}>✦</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: L.t1, fontFamily: "'Outfit',sans-serif" }}>
+            C4 <span style={{ color: L.teal }}>AI</span>
+            {model && <span style={{ fontSize: 9, color: L.t4, fontFamily: "'JetBrains Mono',monospace", marginLeft: 6, fontWeight: 400 }}>{model}</span>}
+          </div>
+          {activeConversa && (
+            <div style={{ fontSize: 10, color: L.t3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {conversas.find(c => c.id === activeConversa)?.titulo || "Conversa ativa"}
+            </div>
+          )}
+        </div>
+        <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+          {["Análise","Relatório","Sugestão"].map(t => (
             <Tag key={t} color={L.teal} bg={L.tealBg} small>{t}</Tag>
           ))}
         </div>
       </div>
 
-      {/* ── SUGESTÕES ── */}
-      <div className="hide-mobile" style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10, flexShrink: 0 }}>
-        {SUGS.map(s => (
-          <button key={s} onClick={() => send(s)} disabled={loading}
-            style={{ padding: "5px 11px", borderRadius: 8, fontSize: 11, cursor: loading ? "not-allowed" : "pointer", fontFamily: "inherit", background: L.white, color: L.t3, border: `1px solid ${L.line}`, transition: "all .12s", opacity: loading ? .5 : 1, whiteSpace: "nowrap" }}
-            onMouseEnter={e => { if (!loading) { e.currentTarget.style.borderColor = L.teal; e.currentTarget.style.color = L.teal; e.currentTarget.style.background = L.tealBg; } }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor = L.line; e.currentTarget.style.color = L.t3; e.currentTarget.style.background = L.white; }}
-          >✦ {s}</button>
-        ))}
-      </div>
+      {/* Sugestões (só quando chat vazio/novo) */}
+      {chat.length <= 1 && (
+        <div className="hide-mobile" style={{ display: "flex", gap: 6, flexWrap: "wrap", padding: "10px 14px 0", flexShrink: 0 }}>
+          {SUGS.map(s => (
+            <button key={s} onClick={() => send(s)} disabled={loading}
+              style={{ padding: "5px 11px", borderRadius: 8, fontSize: 11, cursor: loading ? "not-allowed" : "pointer", fontFamily: "inherit", background: L.white, color: L.t3, border: `1px solid ${L.line}`, transition: "all .12s", whiteSpace: "nowrap" }}
+              onMouseEnter={e => { if (!loading) { e.currentTarget.style.borderColor = L.teal; e.currentTarget.style.color = L.teal; e.currentTarget.style.background = L.tealBg; } }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = L.line; e.currentTarget.style.color = L.t3; e.currentTarget.style.background = L.white; }}
+            >✦ {s}</button>
+          ))}
+        </div>
+      )}
 
-      {/* ── MENSAGENS ── */}
-      <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 12, padding: "2px 0 8px" }}>
+      {/* Mensagens */}
+      <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 12, padding: "12px 14px 8px" }}>
         {chat.map((m, i) => (
           <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
             {m.role === "assistant"
               ? <div style={{ width: 28, height: 28, borderRadius: 8, background: L.teal, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "white", flexShrink: 0, marginTop: 1 }}>✦</div>
-              : <Av name={user?.nome || "U"} color={user?.cor || L.copper} size={28} />
+              : <Av name={user?.nome || "U"} color={user?.cor || L.copper} size={28} src={user?.foto_url}/>
             }
             <div style={{
               flex: 1, padding: "10px 14px",
               borderRadius: m.role === "assistant" ? "3px 12px 12px 12px" : "12px 3px 12px 12px",
               background: m.role === "assistant" ? L.white : L.tealBg,
               border: `1px solid ${m.role === "assistant" ? L.teal + "22" : L.teal + "33"}`,
-              fontSize: 12.5, color: L.t1, boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-              wordBreak: "break-word",
+              fontSize: 12.5, color: L.t1, boxShadow: "0 1px 3px rgba(0,0,0,0.05)", wordBreak: "break-word",
             }}>
               {m.role === "assistant"
-                ? <MdBlock content={m.content} />
+                ? <MdBlock content={m.content}/>
                 : <span style={{ lineHeight: 1.6 }}>{m.content}</span>
               }
             </div>
@@ -217,7 +384,7 @@ export default function PageAI({ user }) {
             <div style={{ padding: "12px 16px", background: L.white, border: `1px solid ${L.teal}22`, borderRadius: "3px 12px 12px 12px", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
               <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
                 {[0, 1, 2].map(j => (
-                  <div key={j} style={{ width: 6, height: 6, borderRadius: "50%", background: L.teal, animation: `blink 1.2s ease ${j * .22}s infinite` }} />
+                  <div key={j} style={{ width: 6, height: 6, borderRadius: "50%", background: L.teal, animation: `blink 1.2s ease ${j * .22}s infinite` }}/>
                 ))}
                 <span style={{ fontSize: 11, color: L.t4, marginLeft: 6 }}>Analisando...</span>
               </div>
@@ -225,37 +392,45 @@ export default function PageAI({ user }) {
           </div>
         )}
 
-        {err && !loading && (
-          <div style={{ padding: "8px 14px", background: L.redBg, border: `1px solid ${L.red}22`, borderRadius: 8, fontSize: 12, color: L.red }}>
-            ❌ {err}
-          </div>
-        )}
-
-        <div ref={endRef} />
+        <div ref={endRef}/>
       </div>
 
-      {/* ── INPUT ── */}
-      <div style={{ display: "flex", gap: 8, marginTop: 6, flexShrink: 0 }}>
-        <input
-          ref={inputRef}
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-          placeholder="Pergunte sobre seus dados, relatórios ou análises..."
-          disabled={loading}
-          style={{ flex: 1, background: L.white, border: `1.5px solid ${L.line}`, borderRadius: 10, padding: "11px 15px", color: L.t1, fontSize: 12.5, fontFamily: "inherit", outline: "none", transition: "border-color .12s", boxShadow: "0 1px 2px rgba(0,0,0,0.04)", opacity: loading ? .7 : 1 }}
-          onFocus={e => e.target.style.borderColor = L.teal}
-          onBlur={e => e.target.style.borderColor = L.line}
-        />
-        <button onClick={() => send()} disabled={loading || !input.trim()}
-          style={{ padding: "11px 20px", borderRadius: 10, background: loading || !input.trim() ? L.surface : L.teal, border: "none", color: loading || !input.trim() ? L.t4 : "white", fontWeight: 600, cursor: loading || !input.trim() ? "not-allowed" : "pointer", fontSize: 13, transition: "all .15s", fontFamily: "inherit", boxShadow: !loading && input.trim() ? `0 4px 12px ${L.teal}30` : "none", whiteSpace: "nowrap" }}
-        >
-          {loading ? "..." : "Enviar"}
-        </button>
+      {/* Input */}
+      <div style={{ padding: "8px 14px 10px", borderTop: `1px solid ${L.lineSoft}`, flexShrink: 0 }}>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input
+            ref={inputRef}
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+            placeholder="Pergunte sobre seus dados, relatórios ou análises..."
+            disabled={loading}
+            style={{ flex: 1, background: L.white, border: `1.5px solid ${L.line}`, borderRadius: 10, padding: "11px 15px", color: L.t1, fontSize: 12.5, fontFamily: "inherit", outline: "none", transition: "border-color .12s", boxShadow: "0 1px 2px rgba(0,0,0,0.04)", opacity: loading ? .7 : 1 }}
+            onFocus={e => e.target.style.borderColor = L.teal}
+            onBlur={e => e.target.style.borderColor = L.line}
+          />
+          <button onClick={() => send()} disabled={loading || !input.trim()}
+            style={{ padding: "11px 20px", borderRadius: 10, background: loading || !input.trim() ? L.surface : L.teal, border: "none", color: loading || !input.trim() ? L.t4 : "white", fontWeight: 600, cursor: loading || !input.trim() ? "not-allowed" : "pointer", fontSize: 13, transition: "all .15s", fontFamily: "inherit", boxShadow: !loading && input.trim() ? `0 4px 12px ${L.teal}30` : "none", whiteSpace: "nowrap" }}>
+            {loading ? "..." : "Enviar"}
+          </button>
+        </div>
+        <div style={{ textAlign: "center", fontSize: 10, color: L.t5, marginTop: 5 }}>
+          Enter para enviar · Shift+Enter para nova linha
+        </div>
       </div>
-      <div style={{ textAlign: "center", fontSize: 10, color: L.t5, marginTop: 6 }}>
-        Enter para enviar · Shift+Enter para nova linha
-      </div>
+    </div>
+  );
+
+  return (
+    <div style={{ display: "flex", height: "calc(100dvh - 86px)", minHeight: 400, background: L.bg, borderRadius: 12, overflow: "hidden", border: `1px solid ${L.line}`, boxShadow: "0 2px 8px rgba(0,0,0,0.04)", animation: "in .3s ease" }}>
+      {isMobile ? (
+        showSidebar ? Sidebar : ChatArea
+      ) : (
+        <>
+          {Sidebar}
+          {ChatArea}
+        </>
+      )}
     </div>
   );
 }
