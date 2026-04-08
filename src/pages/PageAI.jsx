@@ -2,10 +2,10 @@ import { useState, useRef, useEffect } from "react";
 import { L } from "../constants/theme";
 import { Av, Tag } from "../components/ui";
 
-/* ─── Gemini API ─── */
-const GEMINI_KEY   = "AIzaSyBWJ8CZf9bHbdSxraT_H5j29Xc1yE5U7Mg";
-const GEMINI_MODEL = "gemini-2.0-flash";
-const GEMINI_URL   = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_KEY}`;
+/* ─── Groq API ─── */
+const GROQ_KEY   = import.meta.env.VITE_GROQ_KEY;
+const GROQ_MODEL = "llama-3.3-70b-versatile";
+const GROQ_URL   = "https://api.groq.com/openai/v1/chat/completions";
 
 const SYSTEM_PROMPT = `Você é o C4 AI, assistente inteligente do C4 OS — um CRM focado em vendas e gestão comercial.
 
@@ -81,7 +81,7 @@ const SUGS = [
 ];
 
 export default function PageAI({ user }) {
-  const welcome = `Olá, **${user?.nome?.split(" ")[0] || ""}**! Sou o **C4 AI**, powered by Gemini.\n\nPosso analisar seu funil de vendas, sugerir ações estratégicas, gerar relatórios e identificar oportunidades.\n\nComo posso ajudar hoje?`;
+  const welcome = `Olá, **${user?.nome?.split(" ")[0] || ""}**! Sou o **C4 AI**, powered by Groq · Llama 3.3.\n\nPosso analisar seu funil de vendas, sugerir ações estratégicas, gerar relatórios e identificar oportunidades.\n\nComo posso ajudar hoje?`;
 
   const [chat, setChat] = useState([{ role: "assistant", content: welcome }]);
   const [input, setInput] = useState("");
@@ -106,21 +106,25 @@ export default function PageAI({ user }) {
     setLoading(true);
 
     try {
-      // Converte para formato Gemini (user/model)
-      const contents = history
-        .filter(m => m.role === "user" || m.role === "assistant")
-        .map(m => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }));
+      // Formato OpenAI-compatible (Groq)
+      const messages = [
+        { role: "system", content: SYSTEM_PROMPT },
+        ...history
+          .filter(m => m.role === "user" || m.role === "assistant")
+          .map(m => ({ role: m.role, content: m.content })),
+      ];
 
-      // Remove mensagens "model" no início (Gemini exige que comece com "user")
-      while (contents.length > 0 && contents[0].role === "model") contents.shift();
-
-      const res = await fetch(GEMINI_URL, {
+      const res = await fetch(GROQ_URL, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${GROQ_KEY}`,
+        },
         body: JSON.stringify({
-          contents,
-          systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-          generationConfig: { temperature: 0.7, maxOutputTokens: 2048 },
+          model: GROQ_MODEL,
+          messages,
+          temperature: 0.7,
+          max_tokens: 2048,
         }),
       });
 
@@ -130,8 +134,8 @@ export default function PageAI({ user }) {
       }
 
       const data = await res.json();
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "Sem resposta.";
-      if (data.modelVersion) setModel(data.modelVersion);
+      const text = data.choices?.[0]?.message?.content || "Sem resposta.";
+      if (data.model) setModel(data.model);
       setChat(p => [...p, { role: "assistant", content: text }]);
     } catch (e) {
       setErr(e.message);
@@ -159,7 +163,7 @@ export default function PageAI({ user }) {
               C4 <span style={{ color: L.teal }}>AI</span>
               {model && <span style={{ fontSize: 9, color: L.t4, fontFamily: "'JetBrains Mono',monospace", marginLeft: 6, fontWeight: 400 }}>{model}</span>}
             </div>
-            <div style={{ fontSize: 10, color: L.t3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Powered by Gemini · Inteligência de negócios</div>
+            <div style={{ fontSize: 10, color: L.t3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Powered by Groq · Llama 3.3 70B · Inteligência de negócios</div>
           </div>
           <button onClick={clearChat} title="Limpar conversa" style={{ background: "none", border: `1px solid ${L.line}`, borderRadius: 7, cursor: "pointer", color: L.t4, fontSize: 11, padding: "4px 9px", fontFamily: "inherit", transition: "all .12s", flexShrink: 0 }} onMouseEnter={e => { e.currentTarget.style.color = L.red; e.currentTarget.style.borderColor = L.red + "88"; }} onMouseLeave={e => { e.currentTarget.style.color = L.t4; e.currentTarget.style.borderColor = L.line; }}>
             ↺ Limpar
