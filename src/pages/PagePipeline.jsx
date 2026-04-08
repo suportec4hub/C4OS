@@ -64,7 +64,7 @@ export default function PagePipeline({ user }) {
         <PBtn onClick={()=>openNew()}>+ Novo Deal</PBtn>
       </Row>
 
-      <div style={{display:"flex",gap:12,overflowX:"auto",paddingBottom:12}}>
+      <div className="kanban-wrap" style={{display:"flex",gap:12,overflowX:"auto",paddingBottom:12}}>
         {ETAPAS.map(stage => (
           <div key={stage.id}
             onDragOver={e=>{e.preventDefault();setDragOver(stage.id);}}

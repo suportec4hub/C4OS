@@ -14,8 +14,9 @@ export default function Modal({ title, onClose, children, width = 480 }) {
       style={{position:"fixed",inset:0,background:"rgba(15,25,35,0.45)",backdropFilter:"blur(3px)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center",animation:"in .15s ease"}}
     >
       <div
+        className="modal-box"
         onClick={e => e.stopPropagation()}
-        style={{background:L.white,borderRadius:14,border:`1px solid ${L.line}`,width,maxWidth:"95vw",maxHeight:"90vh",overflowY:"auto",boxShadow:"0 20px 60px rgba(0,0,0,0.18)",animation:"up .2s ease"}}
+        style={{background:L.white,borderRadius:14,border:`1px solid ${L.line}`,width,maxWidth:"95vw",maxHeight:"90dvh",overflowY:"auto",boxShadow:"0 20px 60px rgba(0,0,0,0.18)",animation:"up .2s ease"}}
       >
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 20px",borderBottom:`1px solid ${L.lineSoft}`}}>
           <div style={{fontSize:14,fontWeight:700,color:L.t1,fontFamily:"'Outfit',sans-serif"}}>{title}</div>

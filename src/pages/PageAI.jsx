@@ -1,11 +1,26 @@
 import { useState, useRef, useEffect } from "react";
 import { L } from "../constants/theme";
 import { Av, Tag } from "../components/ui";
-import { supabase } from "../lib/supabase";
+
+/* ─── Gemini API ─── */
+const GEMINI_KEY   = "AIzaSyBWJ8CZf9bHbdSxraT_H5j29Xc1yE5U7Mg";
+const GEMINI_MODEL = "gemini-2.0-flash";
+const GEMINI_URL   = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_KEY}`;
+
+const SYSTEM_PROMPT = `Você é o C4 AI, assistente inteligente do C4 OS — um CRM focado em vendas e gestão comercial.
+
+Você ajuda times de vendas a:
+- Analisar funis de conversão e identificar gargalos
+- Priorizar leads com maior potencial de fechamento
+- Sugerir estratégias para melhorar taxas de conversão
+- Gerar insights e relatórios a partir de dados de vendas
+- Identificar leads em risco de churn
+- Projetar receita, pipeline e metas comerciais
+
+Responda sempre em português brasileiro. Seja objetivo, prático e orientado a resultados. Use formatação markdown quando útil (listas, negrito, seções com ##).`;
 
 /* ─── Renderizador de Markdown simplificado ─── */
 function MdLine({ text }) {
-  // Bold + italic inline
   const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g);
   return (
     <>
@@ -34,23 +49,19 @@ function MdBlock({ content }) {
     const trimmed = line.trim();
     if (!trimmed) { flushList(); out.push(<br key={`br${i}`}/>); return; }
 
-    // Bullet list
     if (/^[-•*]\s/.test(trimmed)) {
       const txt = trimmed.replace(/^[-•*]\s/, "");
       listItems.push(<li key={i} style={{ marginBottom: 2, lineHeight: 1.6 }}><MdLine text={txt}/></li>);
       return;
     }
-    // Numbered list
     if (/^\d+\.\s/.test(trimmed)) {
       const txt = trimmed.replace(/^\d+\.\s/, "");
       numItems.push(<li key={i} style={{ marginBottom: 2, lineHeight: 1.6 }}><MdLine text={txt}/></li>);
       return;
     }
-    // Heading
     if (trimmed.startsWith("### ")) { flushList(); out.push(<div key={i} style={{ fontSize: 13, fontWeight: 700, color: L.t1, marginTop: 10, marginBottom: 4 }}><MdLine text={trimmed.slice(4)}/></div>); return; }
     if (trimmed.startsWith("## "))  { flushList(); out.push(<div key={i} style={{ fontSize: 14, fontWeight: 700, color: L.t1, marginTop: 10, marginBottom: 4 }}><MdLine text={trimmed.slice(3)}/></div>); return; }
     if (trimmed.startsWith("# "))   { flushList(); out.push(<div key={i} style={{ fontSize: 15, fontWeight: 700, color: L.t1, marginTop: 10, marginBottom: 4 }}><MdLine text={trimmed.slice(2)}/></div>); return; }
-    // Divider
     if (/^---+$/.test(trimmed)) { flushList(); out.push(<hr key={i} style={{ border: "none", borderTop: `1px solid ${L.line}`, margin: "8px 0" }}/>); return; }
 
     flushList();
@@ -70,7 +81,7 @@ const SUGS = [
 ];
 
 export default function PageAI({ user }) {
-  const welcome = `Olá, **${user?.nome?.split(" ")[0] || ""}**! Sou o **C4 AI**, powered by Claude.\n\nPosso analisar seu funil de vendas, sugerir ações estratégicas, gerar relatórios e identificar oportunidades.\n\nComo posso ajudar hoje?`;
+  const welcome = `Olá, **${user?.nome?.split(" ")[0] || ""}**! Sou o **C4 AI**, powered by Gemini.\n\nPosso analisar seu funil de vendas, sugerir ações estratégicas, gerar relatórios e identificar oportunidades.\n\nComo posso ajudar hoje?`;
 
   const [chat, setChat] = useState([{ role: "assistant", content: welcome }]);
   const [input, setInput] = useState("");
@@ -95,28 +106,36 @@ export default function PageAI({ user }) {
     setLoading(true);
 
     try {
-      // Filtra: só user/assistant, começa em user
-      const msgs = history.filter(m => m.role === "user" || m.role === "assistant");
-      const firstUser = msgs.findIndex(m => m.role === "user");
-      const trimmed = firstUser > 0 ? msgs.slice(firstUser) : msgs;
+      // Converte para formato Gemini (user/model)
+      const contents = history
+        .filter(m => m.role === "user" || m.role === "assistant")
+        .map(m => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] }));
 
-      const { data, error } = await supabase.functions.invoke("c4-ai", {
-        body: { messages: trimmed, empresa_id: user?.empresa_id },
+      // Remove mensagens "model" no início (Gemini exige que comece com "user")
+      while (contents.length > 0 && contents[0].role === "model") contents.shift();
+
+      const res = await fetch(GEMINI_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents,
+          systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+          generationConfig: { temperature: 0.7, maxOutputTokens: 2048 },
+        }),
       });
 
-      if (error) {
-        setErr(error.message || "Erro ao conectar.");
-        setChat(p => [...p, { role: "assistant", content: `❌ ${error.message || "Erro ao conectar com a IA."}` }]);
-      } else if (data?.error) {
-        setErr(data.error);
-        setChat(p => [...p, { role: "assistant", content: `❌ ${data.error}` }]);
-      } else {
-        if (data?.model) setModel(data.model);
-        setChat(p => [...p, { role: "assistant", content: data.text || "Sem resposta." }]);
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData?.error?.message || `Erro HTTP ${res.status}`);
       }
+
+      const data = await res.json();
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "Sem resposta.";
+      if (data.modelVersion) setModel(data.modelVersion);
+      setChat(p => [...p, { role: "assistant", content: text }]);
     } catch (e) {
       setErr(e.message);
-      setChat(p => [...p, { role: "assistant", content: `❌ Erro inesperado: ${e.message}` }]);
+      setChat(p => [...p, { role: "assistant", content: `❌ ${e.message}` }]);
     }
 
     setLoading(false);
@@ -140,7 +159,7 @@ export default function PageAI({ user }) {
               C4 <span style={{ color: L.teal }}>AI</span>
               {model && <span style={{ fontSize: 9, color: L.t4, fontFamily: "'JetBrains Mono',monospace", marginLeft: 6, fontWeight: 400 }}>{model}</span>}
             </div>
-            <div style={{ fontSize: 10, color: L.t3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Powered by Claude · Inteligência de negócios</div>
+            <div style={{ fontSize: 10, color: L.t3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Powered by Gemini · Inteligência de negócios</div>
           </div>
           <button onClick={clearChat} title="Limpar conversa" style={{ background: "none", border: `1px solid ${L.line}`, borderRadius: 7, cursor: "pointer", color: L.t4, fontSize: 11, padding: "4px 9px", fontFamily: "inherit", transition: "all .12s", flexShrink: 0 }} onMouseEnter={e => { e.currentTarget.style.color = L.red; e.currentTarget.style.borderColor = L.red + "88"; }} onMouseLeave={e => { e.currentTarget.style.color = L.t4; e.currentTarget.style.borderColor = L.line; }}>
             ↺ Limpar

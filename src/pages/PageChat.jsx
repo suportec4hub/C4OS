@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { L } from "../constants/theme";
 import { Av, Row, IBtn } from "../components/ui";
 import { supabase } from "../lib/supabase";
+import { useBreakpoint } from "../hooks/useBreakpoint";
 
 const fmtHora = (iso) => {
   if (!iso) return "";
@@ -23,6 +24,7 @@ export default function PageChat({ user }) {
   const [novaModal,  setNovaModal]  = useState(false);
   const [novaForm,   setNovaForm]   = useState({ nome:"", telefone:"", empresa_contato:"" });
   const bottomRef = useRef(null);
+  const { isMobile } = useBreakpoint();
 
   // ── Carrega conversas
   useEffect(() => { if (user?.empresa_id) loadConversas(); }, [user?.empresa_id]);
@@ -150,10 +152,11 @@ export default function PageChat({ user }) {
   const totalNaoLidas = conversas.reduce((s, c) => s + (c.nao_lidas || 0), 0);
 
   return (
-    <div style={{display:"flex",height:"calc(100vh - 130px)",background:L.white,borderRadius:12,border:`1px solid ${L.line}`,overflow:"hidden",animation:"in .3s ease",boxShadow:"0 1px 4px rgba(0,0,0,0.05)"}}>
+    <div style={{display:"flex",height:isMobile?"calc(100dvh - 86px)":"calc(100vh - 130px)",background:L.white,borderRadius:12,border:`1px solid ${L.line}`,overflow:"hidden",animation:"in .3s ease",boxShadow:"0 1px 4px rgba(0,0,0,0.05)"}}>
 
-      {/* ── LISTA ── */}
-      <div style={{width:272,minWidth:272,borderRight:`1px solid ${L.line}`,display:"flex",flexDirection:"column"}}>
+      {/* ── LISTA — oculta no mobile quando há conversa ativa ── */}
+      {(!isMobile || !activeConv) && (
+      <div style={{width:isMobile?"100%":272,minWidth:isMobile?0:272,borderRight:isMobile?"none":`1px solid ${L.line}`,display:"flex",flexDirection:"column"}}>
         <div style={{padding:"12px 14px",borderBottom:`1px solid ${L.lineSoft}`}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
             <div style={{display:"flex",alignItems:"center",gap:8}}>
@@ -216,12 +219,19 @@ export default function PageChat({ user }) {
           ))}
         </div>
       </div>
+      )}
 
-      {/* ── MENSAGENS ── */}
-      {activeConv ? (
+      {/* ── MENSAGENS — oculta no mobile quando não há conversa ativa ── */}
+      {(!isMobile || activeConv) && (activeConv ? (
         <div style={{flex:1,display:"flex",flexDirection:"column",minWidth:0,background:"#f0f2f5"}}>
           <div style={{padding:"11px 18px",borderBottom:`1px solid ${L.line}`,display:"flex",justifyContent:"space-between",alignItems:"center",flexShrink:0,background:L.white}}>
             <Row gap={10}>
+              {isMobile && (
+                <button onClick={()=>setActiveConv(null)}
+                  style={{background:"none",border:`1px solid ${L.line}`,borderRadius:7,padding:"5px 9px",cursor:"pointer",color:L.t2,fontSize:12,fontFamily:"inherit",flexShrink:0}}>
+                  ←
+                </button>
+              )}
               <Av name={activeConv.contato_nome} color={L.t1} size={36}/>
               <div>
                 <div style={{fontSize:13,fontWeight:600,color:L.t1}}>{activeConv.contato_nome}</div>
@@ -237,7 +247,7 @@ export default function PageChat({ user }) {
                   WhatsApp
                 </IBtn>
               )}
-              <IBtn c={L.t3}>Perfil</IBtn>
+              {!isMobile && <IBtn c={L.t3}>Perfil</IBtn>}
             </Row>
           </div>
 
@@ -291,7 +301,7 @@ export default function PageChat({ user }) {
             <div style={{fontSize:12}}>ou clique em "+ Nova" para iniciar</div>
           </div>
         </div>
-      )}
+      ))}
 
       {/* ── MODAL NOVA ── */}
       {novaModal && (

@@ -49,6 +49,12 @@ export const globalCSS = `
     .table-scroll table{min-width:580px}
     .stack-mobile{flex-direction:column!important;align-items:stretch!important;gap:8px!important}
     .wrap-mobile{flex-wrap:wrap!important}
+    /* Modais full-width no mobile */
+    .modal-box{width:calc(100vw - 32px)!important;max-width:100%!important;margin:16px!important;max-height:90dvh;overflow-y:auto}
+    /* Kanban / colunas horizontais: scroll */
+    .kanban-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:12px}
+    /* Botões de ação que ficam apertados */
+    .action-row{flex-wrap:wrap!important;gap:6px!important}
   }
   /* Tablet 640–1023px */
   @media(min-width:640px) and (max-width:1023px){
@@ -56,6 +62,7 @@ export const globalCSS = `
     .hide-tablet{display:none!important}
     .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
     .table-scroll table{min-width:580px}
+    .modal-box{width:min(520px,calc(100vw - 48px))!important}
   }
   /* TV ≥ 1920px */
   @media(min-width:1920px){
