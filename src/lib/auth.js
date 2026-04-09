@@ -20,13 +20,13 @@ const CARGO_GROUP_MAP = [
 // Páginas acessíveis por grupo
 const PAGE_ACCESS_MAP = {
   full:       null, // null = tudo liberado
-  vendas:     new Set(["dashboard","leads","pipeline","whatsapp","broadcast","followup","reports","ai","empresa"]),
-  marketing:  new Set(["dashboard","leads","broadcast","followup","reports","ai","empresa","marketing"]),
-  trafego:    new Set(["dashboard","leads","reports","ai","marketing"]),
-  digital:    new Set(["dashboard","leads","broadcast","reports","ai","empresa","digital","marketing"]),
-  financeiro: new Set(["dashboard","reports","empresa","financeiro"]),
-  rh:         new Set(["dashboard","equipe","departs","empresa","rh"]),
-  suporte:    new Set(["dashboard","whatsapp","leads","followup","ai","empresa"]),
+  vendas:     new Set(["dashboard","leads","pipeline","whatsapp","broadcast","followup","reports","ai","empresa","propostas","agenda","workspace"]),
+  marketing:  new Set(["dashboard","leads","broadcast","followup","reports","ai","empresa","marketing","agenda","workspace"]),
+  trafego:    new Set(["dashboard","leads","reports","ai","marketing","workspace"]),
+  digital:    new Set(["dashboard","leads","broadcast","reports","ai","empresa","digital","marketing","agenda","workspace"]),
+  financeiro: new Set(["dashboard","reports","empresa","financeiro","contratos","propostas","estoque","workspace"]),
+  rh:         new Set(["dashboard","equipe","departs","empresa","rh","agenda","workspace"]),
+  suporte:    new Set(["dashboard","whatsapp","leads","followup","ai","empresa","agenda","workspace"]),
 };
 
 export function getCargoGroup(user) {

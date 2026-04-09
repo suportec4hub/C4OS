@@ -21,6 +21,11 @@ import PageFinanceiro from "../pages/PageFinanceiro";
 import PageRH         from "../pages/PageRH";
 import PageMarketing  from "../pages/PageMarketing";
 import PageDigital    from "../pages/PageDigital";
+import PageWorkspace  from "../pages/PageWorkspace";
+import PageAgenda     from "../pages/PageAgenda";
+import PageContratos  from "../pages/PageContratos";
+import PagePropostas  from "../pages/PagePropostas";
+import PageEstoque    from "../pages/PageEstoque";
 import PageClientes   from "../pages/PageClientes";
 import PageLogs       from "../pages/PageLogs";
 import PageSuporte    from "../pages/PageSuporte";
@@ -33,11 +38,16 @@ const NAV_ITEMS = [
   {id:"pipeline",   label:"Funil",        ico:"⬡", g:"principal"},
   {id:"whatsapp",   label:"Chat",         ico:"◈", g:"comunicação"},
   {id:"broadcast",  label:"Disparos",     ico:"◉", g:"comunicação"},
+  {id:"workspace",  label:"Workspace",    ico:"◫", g:"comunicação"},
   {id:"followup",   label:"Follow-ups",   ico:"◷", g:"atividades"},
+  {id:"agenda",     label:"Agenda",       ico:"◷", g:"atividades"},
   {id:"financeiro", label:"Financeiro",   ico:"◈", g:"gestão"},
   {id:"rh",         label:"RH / Pessoas", ico:"◉", g:"gestão"},
   {id:"marketing",  label:"Marketing",    ico:"◎", g:"crescimento"},
   {id:"digital",    label:"Digital",      ico:"⊞", g:"crescimento"},
+  {id:"propostas",  label:"Propostas",    ico:"◎", g:"negócios"},
+  {id:"contratos",  label:"Contratos",    ico:"◫", g:"negócios"},
+  {id:"estoque",    label:"Estoque",      ico:"⬡", g:"operações"},
   {id:"reports",    label:"Relatórios",   ico:"◫", g:"analytics"},
   {id:"ai",         label:"C4 AI",        ico:"✦", g:"analytics"},
   {id:"empresa",    label:"Minha Empresa",ico:"⊞", g:"empresa"},
@@ -252,6 +262,11 @@ export default function Shell({user,onLogout,onProfileUpdate}) {
           {safe==="rh"        && <PageRH        user={user}/>}
           {safe==="marketing" && <PageMarketing user={user}/>}
           {safe==="digital"   && <PageDigital   user={user}/>}
+          {safe==="workspace" && <PageWorkspace user={user}/>}
+          {safe==="agenda"    && <PageAgenda    user={user}/>}
+          {safe==="contratos" && <PageContratos user={user}/>}
+          {safe==="propostas" && <PagePropostas user={user}/>}
+          {safe==="estoque"   && <PageEstoque   user={user}/>}
           {safe==="empresa"   && <PageEmpresa   user={user} empresa={user.empresa}/>}
           {safe==="equipe"    && <PageEquipe    user={user}/>}
           {safe==="departs"   && <PageDeps      user={user}/>}
