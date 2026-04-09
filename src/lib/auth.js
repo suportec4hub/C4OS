@@ -21,11 +21,11 @@ const CARGO_GROUP_MAP = [
 const PAGE_ACCESS_MAP = {
   full:       null, // null = tudo liberado
   vendas:     new Set(["dashboard","leads","pipeline","whatsapp","broadcast","followup","reports","ai","empresa"]),
-  marketing:  new Set(["dashboard","leads","broadcast","followup","reports","ai","empresa"]),
-  trafego:    new Set(["dashboard","leads","reports","ai"]),
-  digital:    new Set(["dashboard","leads","broadcast","reports","ai","empresa"]),
-  financeiro: new Set(["dashboard","reports","empresa"]),
-  rh:         new Set(["dashboard","equipe","departs","empresa"]),
+  marketing:  new Set(["dashboard","leads","broadcast","followup","reports","ai","empresa","marketing"]),
+  trafego:    new Set(["dashboard","leads","reports","ai","marketing"]),
+  digital:    new Set(["dashboard","leads","broadcast","reports","ai","empresa","digital","marketing"]),
+  financeiro: new Set(["dashboard","reports","empresa","financeiro"]),
+  rh:         new Set(["dashboard","equipe","departs","empresa","rh"]),
   suporte:    new Set(["dashboard","whatsapp","leads","followup","ai","empresa"]),
 };
 

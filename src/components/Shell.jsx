@@ -17,6 +17,10 @@ import PageAI         from "../pages/PageAI";
 import PageEmpresa    from "../pages/PageEmpresa";
 import PageEquipe     from "../pages/PageEquipe";
 import PageDeps       from "../pages/PageDeps";
+import PageFinanceiro from "../pages/PageFinanceiro";
+import PageRH         from "../pages/PageRH";
+import PageMarketing  from "../pages/PageMarketing";
+import PageDigital    from "../pages/PageDigital";
 import PageClientes   from "../pages/PageClientes";
 import PageLogs       from "../pages/PageLogs";
 import PageSuporte    from "../pages/PageSuporte";
@@ -24,17 +28,21 @@ import PageUsers      from "../pages/PageUsers";
 import PagePlanos     from "../pages/PagePlanos";
 
 const NAV_ITEMS = [
-  {id:"dashboard",label:"Dashboard",    ico:"▦", g:"principal"},
-  {id:"leads",    label:"Leads",        ico:"◎", g:"principal"},
-  {id:"pipeline", label:"Funil",        ico:"⬡", g:"principal"},
-  {id:"whatsapp", label:"Chat",         ico:"◈", g:"comunicação"},
-  {id:"broadcast",label:"Disparos",     ico:"◉", g:"comunicação"},
-  {id:"followup", label:"Follow-ups",   ico:"◷", g:"atividades"},
-  {id:"reports",  label:"Relatórios",   ico:"◫", g:"analytics"},
-  {id:"ai",       label:"C4 AI",        ico:"✦", g:"analytics"},
-  {id:"empresa",  label:"Minha Empresa",ico:"⊞", g:"empresa"},
-  {id:"equipe",   label:"Equipe",       ico:"◉", g:"empresa"},
-  {id:"departs",  label:"Departamentos",ico:"⬡", g:"empresa"},
+  {id:"dashboard",  label:"Dashboard",    ico:"▦", g:"principal"},
+  {id:"leads",      label:"Leads",        ico:"◎", g:"principal"},
+  {id:"pipeline",   label:"Funil",        ico:"⬡", g:"principal"},
+  {id:"whatsapp",   label:"Chat",         ico:"◈", g:"comunicação"},
+  {id:"broadcast",  label:"Disparos",     ico:"◉", g:"comunicação"},
+  {id:"followup",   label:"Follow-ups",   ico:"◷", g:"atividades"},
+  {id:"financeiro", label:"Financeiro",   ico:"◈", g:"gestão"},
+  {id:"rh",         label:"RH / Pessoas", ico:"◉", g:"gestão"},
+  {id:"marketing",  label:"Marketing",    ico:"◎", g:"crescimento"},
+  {id:"digital",    label:"Digital",      ico:"⊞", g:"crescimento"},
+  {id:"reports",    label:"Relatórios",   ico:"◫", g:"analytics"},
+  {id:"ai",         label:"C4 AI",        ico:"✦", g:"analytics"},
+  {id:"empresa",    label:"Minha Empresa",ico:"⊞", g:"empresa"},
+  {id:"equipe",     label:"Equipe",       ico:"◉", g:"empresa"},
+  {id:"departs",    label:"Departamentos",ico:"⬡", g:"empresa"},
 ];
 
 const ADMIN_ITEMS = [
@@ -240,6 +248,10 @@ export default function Shell({user,onLogout,onProfileUpdate}) {
           {safe==="followup"  && <PageFollowUp  user={user}/>}
           {safe==="reports"   && <PageReports   user={user}/>}
           {safe==="ai"        && <PageAI        user={user}/>}
+          {safe==="financeiro" && <PageFinanceiro user={user}/>}
+          {safe==="rh"        && <PageRH        user={user}/>}
+          {safe==="marketing" && <PageMarketing user={user}/>}
+          {safe==="digital"   && <PageDigital   user={user}/>}
           {safe==="empresa"   && <PageEmpresa   user={user} empresa={user.empresa}/>}
           {safe==="equipe"    && <PageEquipe    user={user}/>}
           {safe==="departs"   && <PageDeps      user={user}/>}
