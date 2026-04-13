@@ -34,7 +34,12 @@ export default function PageClientes({ user }) {
     setSaving(true); setErr("");
 
     const { admin_nome, admin_email, admin_senha, ...empresaFields } = form;
-    const payload = { ...empresaFields, is_c4hub: false, assinatura_ativa: form.status === "ativo" };
+    const payload = {
+      ...empresaFields,
+      is_c4hub: false,
+      assinatura_ativa: form.status === "ativo",
+      mrr: form.mrr === "" || form.mrr === null || form.mrr === undefined ? null : parseFloat(form.mrr),
+    };
 
     const { data: novaEmpresa, error } = edit ? await update(edit, payload) : await insert(payload);
     if (error) { setErr(error.message || "Erro ao salvar."); setSaving(false); return; }
