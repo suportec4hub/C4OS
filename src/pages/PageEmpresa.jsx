@@ -52,9 +52,10 @@ const EVO_WEBHOOK_URL = "https://zexjmlthyxtunioojlga.supabase.co/functions/v1/e
 
 // ── Componente de conexão WhatsApp via Evolution GO ──────────────────────────
 function EvolutionCard({ user, empData, onRefresh }) {
-  const [phase,    setPhase]    = useState("idle");   // idle | loading | qr | connected | error
-  const [qrImg,    setQrImg]    = useState(null);
-  const [errMsg,   setErrMsg]   = useState("");
+  const [phase,       setPhase]       = useState("idle");   // idle | loading | qr | connected | error
+  const [qrImg,       setQrImg]       = useState(null);
+  const [pairingCode, setPairingCode] = useState("");
+  const [errMsg,      setErrMsg]      = useState("");
   const pollRef = useRef(null);
   const timeoutRef = useRef(null);
 
@@ -109,14 +110,16 @@ function EvolutionCard({ user, empData, onRefresh }) {
   }, [callEvo, onRefresh, phase]);
 
   const conectar = async () => {
-    setPhase("loading"); setErrMsg(""); setQrImg(null);
+    setPhase("loading"); setErrMsg(""); setQrImg(null); setPairingCode("");
     try {
       // Cria instância se não existe token
       if (!empData.evolution_instance_token) {
         await callEvo("create");
       }
-      // Conecta e configura webhook
-      await callEvo("connect");
+      // Conecta — pode retornar QR e pairing code diretamente
+      const connRes = await callEvo("connect");
+      if (connRes?.qrBase64) setQrImg(connRes.qrBase64.split("|")[0]);
+      if (connRes?.pairingCode) setPairingCode(connRes.pairingCode);
       setPhase("qr");
       startPolling();
     } catch (e) {
@@ -140,9 +143,11 @@ function EvolutionCard({ user, empData, onRefresh }) {
   };
 
   const reconectar = async () => {
-    setPhase("loading"); setErrMsg(""); setQrImg(null);
+    setPhase("loading"); setErrMsg(""); setQrImg(null); setPairingCode("");
     try {
-      await callEvo("connect");
+      const connRes = await callEvo("connect");
+      if (connRes?.qrBase64) setQrImg(connRes.qrBase64.split("|")[0]);
+      if (connRes?.pairingCode) setPairingCode(connRes.pairingCode);
       setPhase("qr");
       startPolling();
     } catch (e) {
@@ -203,6 +208,12 @@ function EvolutionCard({ user, empData, onRefresh }) {
               <div style={{ display: "inline-block", padding: 12, background: L.white, borderRadius: 14, border: `1px solid ${L.line}`, boxShadow: "0 2px 12px rgba(0,0,0,0.08)" }}>
                 <img src={qrImg} alt="QR Code WhatsApp" style={{ width: 220, height: 220, display: "block" }} />
               </div>
+              {pairingCode && (
+                <div style={{ marginTop: 14, background: L.surface, borderRadius: 10, padding: "10px 16px", display: "inline-block", border: `1px solid ${L.line}` }}>
+                  <div style={{ fontSize: 10, color: L.t4, marginBottom: 4 }}>Código de Pareamento</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", color: L.t1, letterSpacing: 3 }}>{pairingCode}</div>
+                </div>
+              )}
               <div style={{ fontSize: 10, color: L.t4, marginTop: 10, fontFamily: "'JetBrains Mono',monospace" }}>
                 QR code atualiza a cada 4 segundos
               </div>
