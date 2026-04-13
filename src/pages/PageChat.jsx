@@ -23,8 +23,19 @@ export default function PageChat({ user }) {
   const [busca,      setBusca]      = useState("");
   const [novaModal,  setNovaModal]  = useState(false);
   const [novaForm,   setNovaForm]   = useState({ nome:"", telefone:"", empresa_contato:"" });
+  const [evoConnected, setEvoConnected] = useState(null); // null=carregando, true=conectado, false=desconectado
   const bottomRef = useRef(null);
   const { isMobile } = useBreakpoint();
+
+  // Verificar status Evolution GO ao montar
+  useEffect(() => {
+    if (!user?.empresa_id) return;
+    supabase.from("empresas")
+      .select("evolution_connected, evolution_phone")
+      .eq("id", user.empresa_id)
+      .single()
+      .then(({ data }) => setEvoConnected(data?.evolution_connected ?? false));
+  }, [user?.empresa_id]);
 
   // ── Carrega conversas
   useEffect(() => { if (user?.empresa_id) loadConversas(); }, [user?.empresa_id]);
@@ -118,10 +129,10 @@ export default function PageChat({ user }) {
     await supabase.from("conversas").update({ ultima_mensagem: texto, ultima_hora: now }).eq("id", activeConv.id);
     setConversas(p => p.map(c => c.id === activeConv.id ? { ...c, ultima_mensagem: texto, ultima_hora: now } : c));
 
-    // Enviar via WhatsApp API (silent fail — mensagem já salva)
+    // Enviar via Evolution GO (silent fail — mensagem já salva no banco)
     if (activeConv.contato_telefone?.trim()) {
-      supabase.functions.invoke("waba-send", {
-        body: { empresa_id: user.empresa_id, phone: activeConv.contato_telefone, message: texto }
+      supabase.functions.invoke("evolution-action", {
+        body: { action: "send", empresa_id: user.empresa_id, phone: activeConv.contato_telefone, message: texto }
       }).catch(() => {});
     }
 
@@ -152,7 +163,21 @@ export default function PageChat({ user }) {
   const totalNaoLidas = conversas.reduce((s, c) => s + (c.nao_lidas || 0), 0);
 
   return (
-    <div style={{display:"flex",height:isMobile?"calc(100dvh - 86px)":"calc(100vh - 130px)",background:L.white,borderRadius:12,border:`1px solid ${L.line}`,overflow:"hidden",animation:"in .3s ease",boxShadow:"0 1px 4px rgba(0,0,0,0.05)"}}>
+    <div style={{display:"flex",flexDirection:"column",gap:0}}>
+    {/* Banner de status Evolution GO */}
+    {evoConnected === false && (
+      <div style={{padding:"8px 16px",background:"#fffbf0",border:`1px solid ${L.yellow}44`,borderRadius:10,marginBottom:10,display:"flex",alignItems:"center",justifyContent:"space-between",fontSize:12}}>
+        <span style={{color:L.t2}}>⚠️ <b>WhatsApp desconectado.</b> Conecte em <b>Minha Empresa → Integrações</b> para enviar e receber mensagens.</span>
+      </div>
+    )}
+    {evoConnected === true && (
+      <div style={{padding:"6px 16px",background:L.greenBg,border:`1px solid ${L.green}33`,borderRadius:10,marginBottom:10,display:"flex",alignItems:"center",gap:8,fontSize:11}}>
+        <span style={{width:7,height:7,borderRadius:"50%",background:L.green,display:"inline-block",flexShrink:0}}/>
+        <span style={{color:L.green,fontWeight:600}}>WhatsApp conectado</span>
+        <span style={{color:L.t3}}>· mensagens entrantes e saintes via Evolution GO</span>
+      </div>
+    )}
+    <div style={{display:"flex",height:isMobile?"calc(100dvh - 130px)":"calc(100vh - 170px)",background:L.white,borderRadius:12,border:`1px solid ${L.line}`,overflow:"hidden",animation:"in .3s ease",boxShadow:"0 1px 4px rgba(0,0,0,0.05)"}}>
 
       {/* ── LISTA — oculta no mobile quando há conversa ativa ── */}
       {(!isMobile || !activeConv) && (
@@ -303,6 +328,8 @@ export default function PageChat({ user }) {
         </div>
       ))}
 
+    </div>
+
       {/* ── MODAL NOVA ── */}
       {novaModal && (
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000}}
@@ -334,5 +361,5 @@ export default function PageChat({ user }) {
         </div>
       )}
     </div>
-  );
+  ); // end outer wrapper
 }

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import Logo from "../components/Logo";
 import { L } from "../constants/theme";
 import { useTable } from "../hooks/useData";
@@ -47,7 +47,236 @@ function LabelInput({ label, value, onChange, placeholder, type="text", readOnly
   );
 }
 
-const WEBHOOK_URL = "https://zexjmlthyxtunioojlga.supabase.co/functions/v1/waba-webhook";
+const WEBHOOK_URL     = "https://zexjmlthyxtunioojlga.supabase.co/functions/v1/waba-webhook";
+const EVO_WEBHOOK_URL = "https://zexjmlthyxtunioojlga.supabase.co/functions/v1/evolution-webhook";
+
+// ── Componente de conexão WhatsApp via Evolution GO ──────────────────────────
+function EvolutionCard({ user, empData, onRefresh }) {
+  const [phase,    setPhase]    = useState("idle");   // idle | loading | qr | connected | error
+  const [qrImg,    setQrImg]    = useState(null);
+  const [apiUrl,   setApiUrl]   = useState(empData.evolution_api_url || "");
+  const [errMsg,   setErrMsg]   = useState("");
+  const pollRef = useRef(null);
+  const timeoutRef = useRef(null);
+
+  // Sincroniza status inicial
+  useEffect(() => {
+    setPhase(empData.evolution_connected ? "connected" : "idle");
+    setApiUrl(empData.evolution_api_url || "");
+  }, [empData.evolution_connected, empData.evolution_api_url]);
+
+  // Limpa polling ao desmontar
+  useEffect(() => () => { clearInterval(pollRef.current); clearTimeout(timeoutRef.current); }, []);
+
+  const callEvo = useCallback(async (action, extra = {}) => {
+    const { data, error } = await supabase.functions.invoke("evolution-action", {
+      body: { action, empresa_id: user.empresa_id, ...extra },
+    });
+    if (error) throw new Error(error.message);
+    if (data?.error) throw new Error(data.error);
+    return data;
+  }, [user.empresa_id]);
+
+  const startPolling = useCallback(() => {
+    clearInterval(pollRef.current);
+    clearTimeout(timeoutRef.current);
+
+    pollRef.current = setInterval(async () => {
+      try {
+        // Busca QR
+        const qrRes = await callEvo("qr");
+        const raw = qrRes?.data?.Qrcode || qrRes?.data?.qrcode || "";
+        if (raw) setQrImg(raw.split("|")[0]);
+
+        // Verifica status
+        const stRes = await callEvo("status");
+        if (stRes?.data?.Connected && stRes?.data?.LoggedIn) {
+          clearInterval(pollRef.current);
+          clearTimeout(timeoutRef.current);
+          setPhase("connected");
+          setQrImg(null);
+          onRefresh?.();
+        }
+      } catch (_) { /* ignora erros de polling silenciosamente */ }
+    }, 4000);
+
+    // Timeout de 3 minutos
+    timeoutRef.current = setTimeout(() => {
+      clearInterval(pollRef.current);
+      if (phase !== "connected") {
+        setPhase("error");
+        setErrMsg("Tempo esgotado. O QR code expirou. Tente novamente.");
+      }
+    }, 180000);
+  }, [callEvo, onRefresh, phase]);
+
+  const conectar = async () => {
+    setPhase("loading"); setErrMsg(""); setQrImg(null);
+    try {
+      // Salva a URL se foi alterada
+      if (apiUrl.trim() !== (empData.evolution_api_url || "")) {
+        await supabase.from("empresas").update({ evolution_api_url: apiUrl.trim() }).eq("id", user.empresa_id);
+      }
+      // Cria instância se não existe token
+      if (!empData.evolution_instance_token) {
+        await callEvo("create");
+      }
+      // Conecta e configura webhook
+      await callEvo("connect");
+      setPhase("qr");
+      startPolling();
+    } catch (e) {
+      setPhase("error");
+      setErrMsg(e.message || "Erro ao conectar. Verifique a URL do servidor.");
+    }
+  };
+
+  const desconectar = async () => {
+    if (!confirm("Desconectar WhatsApp? A sessão será encerrada.")) return;
+    setPhase("loading");
+    try {
+      await callEvo("logout");
+      setPhase("idle");
+      setQrImg(null);
+      onRefresh?.();
+    } catch (e) {
+      setPhase("error");
+      setErrMsg(e.message);
+    }
+  };
+
+  const reconectar = async () => {
+    setPhase("loading"); setErrMsg(""); setQrImg(null);
+    try {
+      await callEvo("connect");
+      setPhase("qr");
+      startPolling();
+    } catch (e) {
+      setPhase("error");
+      setErrMsg(e.message);
+    }
+  };
+
+  const isConnected = phase === "connected" || empData.evolution_connected;
+
+  return (
+    <div style={{ background: L.white, borderRadius: 12, border: `1.5px solid ${isConnected ? L.green + "44" : L.line}`, padding: 20, boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
+      <Row between mb={16}>
+        <Row gap={12}>
+          <div style={{ width: 42, height: 42, borderRadius: 11, background: "#25D36618", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>
+            {isConnected ? "✅" : "📱"}
+          </div>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: L.t1 }}>WhatsApp via Evolution GO</div>
+            <div style={{ fontSize: 11, color: L.t3, marginTop: 2 }}>
+              {isConnected
+                ? `Conectado${empData.evolution_phone ? ` · ${empData.evolution_phone}` : ""}`
+                : "Escaneie o QR code para conectar"}
+            </div>
+          </div>
+        </Row>
+        <Tag
+          color={isConnected ? L.green : L.t4}
+          bg={isConnected ? L.greenBg : L.surface}>
+          {isConnected ? "Conectado" : "Desconectado"}
+        </Tag>
+      </Row>
+
+      {/* Webhook info */}
+      <div style={{ background: L.surface, borderRadius: 9, padding: "9px 12px", marginBottom: 14, border: `1px solid ${L.lineSoft}` }}>
+        <div style={{ fontSize: 10, color: L.t4, marginBottom: 4, fontFamily: "'JetBrains Mono',monospace" }}>URL do Webhook (Evolution GO)</div>
+        <Row gap={8}>
+          <div style={{ flex: 1, fontSize: 10.5, fontFamily: "'JetBrains Mono',monospace", color: L.t2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{EVO_WEBHOOK_URL}</div>
+          <CopyBtn value={EVO_WEBHOOK_URL} />
+        </Row>
+      </div>
+
+      {/* Campo URL do servidor */}
+      {!isConnected && (
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ fontSize: 10, fontWeight: 700, color: L.t3, textTransform: "uppercase", letterSpacing: "1.2px", display: "block", marginBottom: 5, fontFamily: "'JetBrains Mono',monospace" }}>
+            URL do Servidor Evolution GO *
+          </label>
+          <input
+            value={apiUrl}
+            onChange={e => setApiUrl(e.target.value)}
+            placeholder="Ex: https://evo.suaempresa.com.br ou http://1.2.3.4:8080"
+            disabled={phase === "loading" || phase === "qr"}
+            style={{ width: "100%", background: L.surface, border: `1.5px solid ${L.line}`, borderRadius: 9, padding: "9px 12px", color: L.t1, fontSize: 12.5, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }}
+            onFocus={e => e.target.style.borderColor = L.teal}
+            onBlur={e => e.target.style.borderColor = L.line}
+          />
+        </div>
+      )}
+
+      {/* Erros */}
+      {errMsg && (
+        <div style={{ padding: "8px 12px", background: L.redBg, borderRadius: 8, fontSize: 12, color: L.red, marginBottom: 14 }}>
+          ⚠️ {errMsg}
+        </div>
+      )}
+
+      {/* QR Code */}
+      {phase === "qr" && (
+        <div style={{ textAlign: "center", padding: "20px 0", marginBottom: 14 }}>
+          {qrImg ? (
+            <>
+              <div style={{ fontSize: 12, color: L.t3, marginBottom: 12 }}>
+                Abra o WhatsApp no celular → <b>Dispositivos Conectados</b> → <b>Conectar dispositivo</b>
+              </div>
+              <div style={{ display: "inline-block", padding: 12, background: L.white, borderRadius: 14, border: `1px solid ${L.line}`, boxShadow: "0 2px 12px rgba(0,0,0,0.08)" }}>
+                <img src={qrImg} alt="QR Code WhatsApp" style={{ width: 220, height: 220, display: "block" }} />
+              </div>
+              <div style={{ fontSize: 10, color: L.t4, marginTop: 10, fontFamily: "'JetBrains Mono',monospace" }}>
+                QR code atualiza a cada 4 segundos
+              </div>
+            </>
+          ) : (
+            <div style={{ padding: 30, color: L.t4 }}>
+              <div style={{ fontSize: 28, marginBottom: 8, animation: "spin 1.5s linear infinite", display: "inline-block" }}>⟳</div>
+              <div style={{ fontSize: 12 }}>Gerando QR code...</div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Loading */}
+      {phase === "loading" && (
+        <div style={{ textAlign: "center", padding: "20px 0", color: L.t3, fontSize: 12, marginBottom: 14 }}>
+          <span style={{ animation: "spin 1.2s linear infinite", display: "inline-block", marginRight: 8 }}>⟳</span>
+          Conectando ao servidor...
+        </div>
+      )}
+
+      {/* Ações */}
+      <Row gap={8}>
+        {!isConnected && phase !== "qr" && phase !== "loading" && (
+          <PBtn onClick={conectar} style={{ flex: 1 }}>
+            📱 Conectar WhatsApp
+          </PBtn>
+        )}
+        {phase === "qr" && (
+          <button onClick={() => { clearInterval(pollRef.current); clearTimeout(timeoutRef.current); setPhase("idle"); setQrImg(null); }}
+            style={{ flex: 1, padding: "9px 16px", borderRadius: 9, background: L.surface, border: `1px solid ${L.line}`, color: L.t2, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 500 }}>
+            Cancelar
+          </button>
+        )}
+        {isConnected && (
+          <>
+            <button onClick={reconectar}
+              style={{ padding: "9px 16px", borderRadius: 9, background: L.surface, border: `1px solid ${L.line}`, color: L.t2, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 500 }}>
+              🔄 Reconectar
+            </button>
+            <button onClick={desconectar}
+              style={{ padding: "9px 16px", borderRadius: 9, background: L.redBg, border: `1px solid ${L.red}22`, color: L.red, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 600 }}>
+              Desconectar
+            </button>
+          </>
+        )}
+      </Row>
+    </div>
+  );
+}
 
 export default function PageEmpresa({ empresa, user }) {
   const [tab, setTab] = useState("info");
@@ -55,9 +284,8 @@ export default function PageEmpresa({ empresa, user }) {
   const [savingWaba, setSavingWaba] = useState(false);
   const [succ, setSucc] = useState("");
   const [succWaba, setSuccWaba] = useState("");
-  const [wabaInteg, setWabaInteg] = useState(null); // "modal" | null
 
-  const { data: empresas } = useTable("empresas", {});
+  const { data: empresas, refetch: refetchEmpresas } = useTable("empresas", {});
   const empData = empresas.find(e => e.id === user?.empresa_id) || {};
 
   const [infoForm, setInfoForm] = useState({});
@@ -199,75 +427,8 @@ export default function PageEmpresa({ empresa, user }) {
       {tab==="integrações" && (
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
 
-          {/* WhatsApp Business — expanded card */}
-          <div style={{background:L.white,borderRadius:12,border:`1.5px solid ${empData.waba_phone_number_id?L.teal+"33":L.line}`,padding:20,boxShadow:"0 1px 4px rgba(0,0,0,0.04)"}}>
-            <Row between mb={16}>
-              <Row gap={12}>
-                <div style={{width:42,height:42,borderRadius:11,background:L.tealBg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>💬</div>
-                <div>
-                  <div style={{fontSize:14,fontWeight:700,color:L.t1}}>WhatsApp Business API</div>
-                  <div style={{fontSize:11,color:L.t3,marginTop:2}}>Meta / Graph API v19.0</div>
-                </div>
-              </Row>
-              <Tag color={empData.waba_phone_number_id?L.green:L.red} bg={empData.waba_phone_number_id?L.greenBg:L.redBg}>
-                {wabaStatus}
-              </Tag>
-            </Row>
-
-            {/* Webhook info (readonly) */}
-            <div style={{background:L.surface,borderRadius:10,padding:14,marginBottom:16,border:`1px solid ${L.line}`}}>
-              <div style={{fontSize:11,fontWeight:700,color:L.t3,textTransform:"uppercase",letterSpacing:"1px",marginBottom:10,fontFamily:"'JetBrains Mono',monospace"}}>Configuração do Webhook (Meta Developer Console)</div>
-              <div style={{marginBottom:10}}>
-                <div style={{fontSize:10,color:L.t4,marginBottom:4}}>URL do Webhook</div>
-                <Row gap={8}>
-                  <div style={{flex:1,background:L.white,border:`1px solid ${L.line}`,borderRadius:8,padding:"7px 10px",fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:L.t2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{WEBHOOK_URL}</div>
-                  <CopyBtn value={WEBHOOK_URL}/>
-                </Row>
-              </div>
-              <div>
-                <div style={{fontSize:10,color:L.t4,marginBottom:4}}>Verify Token (cole no Meta)</div>
-                <Row gap={8}>
-                  <div style={{flex:1,background:L.white,border:`1px solid ${L.line}`,borderRadius:8,padding:"7px 10px",fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:L.t2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                    {wabaForm.waba_verify_token || <span style={{color:L.t4}}>—  (preencha abaixo e salve primeiro)</span>}
-                  </div>
-                  {wabaForm.waba_verify_token && <CopyBtn value={wabaForm.waba_verify_token}/>}
-                </Row>
-              </div>
-            </div>
-
-            {/* Instructions */}
-            <div style={{background:"#fffbf0",border:`1px solid ${L.yellow}44`,borderRadius:10,padding:12,marginBottom:16,fontSize:11,color:L.t2,lineHeight:1.7}}>
-              <div style={{fontWeight:700,color:L.yellow,marginBottom:6,fontSize:11}}>⚡ Como configurar no Meta Developer Console</div>
-              <ol style={{paddingLeft:18,margin:0}}>
-                <li>Acesse <b>Meta for Developers</b> → seu App → WhatsApp → Configuração</li>
-                <li>Em <b>Webhooks</b>, clique em <b>Editar</b></li>
-                <li>Cole a URL e o Verify Token acima</li>
-                <li>Assine os eventos: <b>messages</b></li>
-                <li>Salve o <b>Phone Number ID</b> e <b>Access Token</b> nos campos abaixo</li>
-              </ol>
-            </div>
-
-            {/* Editable fields */}
-            {succWaba && (
-              <div style={{padding:"8px 12px",background:succWaba.startsWith("Erro")?L.redBg:L.greenBg,borderRadius:8,fontSize:12,color:succWaba.startsWith("Erro")?L.red:L.green,marginBottom:14}}>
-                {succWaba}
-              </div>
-            )}
-            <Grid cols={2} gap={12} responsive>
-              <LabelInput label="Phone Number ID" value={wabaForm.waba_phone_number_id}
-                onChange={e=>setWabaForm(p=>({...p,waba_phone_number_id:e.target.value}))}
-                placeholder="Ex: 123456789012345"/>
-              <LabelInput label="Verify Token (crie um token secreto)" value={wabaForm.waba_verify_token}
-                onChange={e=>setWabaForm(p=>({...p,waba_verify_token:e.target.value}))}
-                placeholder="Ex: meu_token_secreto_123"/>
-              <div style={{gridColumn:"1/-1"}}>
-                <LabelInput label="Access Token (permanente do App)" value={wabaForm.waba_access_token}
-                  onChange={e=>setWabaForm(p=>({...p,waba_access_token:e.target.value}))}
-                  placeholder="EAAxxxxxxxx..." type="password"/>
-              </div>
-            </Grid>
-            <PBtn onClick={saveWaba}>{savingWaba?"Salvando...":"Salvar Configurações WhatsApp"}</PBtn>
-          </div>
+          {/* ── WhatsApp via Evolution GO ── */}
+          <EvolutionCard user={user} empData={empData} onRefresh={refetchEmpresas} />
 
           {/* ── META ADS + PIXEL + CONVERSIONS API ── */}
           <div style={{background:L.white,borderRadius:12,border:`1.5px solid ${empData.meta_pixel_id?L.blue+"33":L.line}`,padding:20,boxShadow:"0 1px 4px rgba(0,0,0,0.04)"}}>
