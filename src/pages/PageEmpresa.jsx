@@ -54,7 +54,6 @@ const EVO_WEBHOOK_URL = "https://zexjmlthyxtunioojlga.supabase.co/functions/v1/e
 function EvolutionCard({ user, empData, onRefresh }) {
   const [phase,    setPhase]    = useState("idle");   // idle | loading | qr | connected | error
   const [qrImg,    setQrImg]    = useState(null);
-  const [apiUrl,   setApiUrl]   = useState(empData.evolution_api_url || "");
   const [errMsg,   setErrMsg]   = useState("");
   const pollRef = useRef(null);
   const timeoutRef = useRef(null);
@@ -62,8 +61,7 @@ function EvolutionCard({ user, empData, onRefresh }) {
   // Sincroniza status inicial
   useEffect(() => {
     setPhase(empData.evolution_connected ? "connected" : "idle");
-    setApiUrl(empData.evolution_api_url || "");
-  }, [empData.evolution_connected, empData.evolution_api_url]);
+  }, [empData.evolution_connected]);
 
   // Limpa polling ao desmontar
   useEffect(() => () => { clearInterval(pollRef.current); clearTimeout(timeoutRef.current); }, []);
@@ -113,10 +111,6 @@ function EvolutionCard({ user, empData, onRefresh }) {
   const conectar = async () => {
     setPhase("loading"); setErrMsg(""); setQrImg(null);
     try {
-      // Salva a URL se foi alterada
-      if (apiUrl.trim() !== (empData.evolution_api_url || "")) {
-        await supabase.from("empresas").update({ evolution_api_url: apiUrl.trim() }).eq("id", user.empresa_id);
-      }
       // Cria instância se não existe token
       if (!empData.evolution_instance_token) {
         await callEvo("create");
@@ -190,24 +184,6 @@ function EvolutionCard({ user, empData, onRefresh }) {
           <CopyBtn value={EVO_WEBHOOK_URL} />
         </Row>
       </div>
-
-      {/* Campo URL do servidor */}
-      {!isConnected && (
-        <div style={{ marginBottom: 14 }}>
-          <label style={{ fontSize: 10, fontWeight: 700, color: L.t3, textTransform: "uppercase", letterSpacing: "1.2px", display: "block", marginBottom: 5, fontFamily: "'JetBrains Mono',monospace" }}>
-            URL do Servidor Evolution GO *
-          </label>
-          <input
-            value={apiUrl}
-            onChange={e => setApiUrl(e.target.value)}
-            placeholder="Ex: https://evo.suaempresa.com.br ou http://1.2.3.4:8080"
-            disabled={phase === "loading" || phase === "qr"}
-            style={{ width: "100%", background: L.surface, border: `1.5px solid ${L.line}`, borderRadius: 9, padding: "9px 12px", color: L.t1, fontSize: 12.5, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }}
-            onFocus={e => e.target.style.borderColor = L.teal}
-            onBlur={e => e.target.style.borderColor = L.line}
-          />
-        </div>
-      )}
 
       {/* Erros */}
       {errMsg && (
