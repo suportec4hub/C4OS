@@ -38,7 +38,8 @@ export default function PageClientes({ user }) {
       ...empresaFields,
       is_c4hub: false,
       assinatura_ativa: form.status === "ativo",
-      mrr: form.mrr === "" || form.mrr === null || form.mrr === undefined ? null : parseFloat(form.mrr),
+      mrr:      form.mrr      === "" || form.mrr      == null ? null : parseFloat(form.mrr),
+      plano_id: form.plano_id === "" || form.plano_id == null ? null : form.plano_id,
     };
 
     const { data: novaEmpresa, error } = edit ? await update(edit, payload) : await insert(payload);
