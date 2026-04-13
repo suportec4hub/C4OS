@@ -89,7 +89,7 @@ function EvolutionCard({ user, empData, onRefresh }) {
 
         // Verifica status
         const stRes = await callEvo("status");
-        if (stRes?.data?.Connected && stRes?.data?.LoggedIn) {
+        if (stRes?.data?.Connected) {
           clearInterval(pollRef.current);
           clearTimeout(timeoutRef.current);
           setPhase("connected");
