@@ -11,6 +11,7 @@ import PageLeads      from "../pages/PageLeads";
 import PagePipeline   from "../pages/PagePipeline";
 import PageChat       from "../pages/PageChat";
 import PageBroadcast  from "../pages/PageBroadcast";
+import PageChatbot    from "../pages/PageChatbot";
 import PageFollowUp   from "../pages/PageFollowUp";
 import PageReports    from "../pages/PageReports";
 import PageAI         from "../pages/PageAI";
@@ -37,6 +38,7 @@ const NAV_ITEMS = [
   {id:"leads",      label:"Leads",        ico:"◎", g:"principal"},
   {id:"pipeline",   label:"Funil",        ico:"⬡", g:"principal"},
   {id:"whatsapp",   label:"Chat",         ico:"◈", g:"comunicação"},
+  {id:"chatbot",    label:"Chatbot",      ico:"🤖", g:"comunicação"},
   {id:"broadcast",  label:"Disparos",     ico:"◉", g:"comunicação"},
   {id:"workspace",  label:"Workspace",    ico:"◫", g:"comunicação"},
   {id:"followup",   label:"Follow-ups",   ico:"◷", g:"atividades"},
@@ -255,6 +257,7 @@ export default function Shell({user,onLogout,onProfileUpdate}) {
           {safe==="pipeline"  && <PagePipeline  user={user}/>}
           {safe==="whatsapp"  && <PageChat      user={user}/>}
           {safe==="broadcast" && <PageBroadcast user={user}/>}
+          {safe==="chatbot"   && <PageChatbot   user={user}/>}
           {safe==="followup"  && <PageFollowUp  user={user}/>}
           {safe==="reports"   && <PageReports   user={user}/>}
           {safe==="ai"        && <PageAI        user={user}/>}
