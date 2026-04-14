@@ -70,12 +70,29 @@ function EvolutionCard({ user, empData, onRefresh }) {
     ? `${EVO_WEBHOOK_BASE}?token=${empData.evolution_instance_token}`
     : EVO_WEBHOOK_BASE;
 
-  // Sincroniza status inicial
+  // Sincroniza status inicial + auto-verifica no Evolution GO se tiver token mas não conectado
   useEffect(() => {
-    const p = empData.evolution_connected ? "connected" : "idle";
-    setPhase(p);
-    phaseRef.current = p;
-  }, [empData.evolution_connected]);
+    if (empData.evolution_connected) {
+      setPhase("connected");
+      phaseRef.current = "connected";
+      return;
+    }
+    // Se tem instância configurada mas DB diz desconectado, verifica status real (silenciosamente)
+    if (empData.evolution_instance_token && phaseRef.current === "idle") {
+      callEvo("status")
+        .then(res => {
+          if (res?.data?.Connected) {
+            phaseRef.current = "connected";
+            setPhase("connected");
+            onRefresh?.();
+          }
+        })
+        .catch(() => {});
+    }
+    setPhase("idle");
+    phaseRef.current = "idle";
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [empData.evolution_instance_id, empData.evolution_connected]);
 
   // Limpa polling ao desmontar
   useEffect(() => () => { clearInterval(pollRef.current); clearTimeout(timeoutRef.current); }, []);
@@ -222,18 +239,30 @@ function EvolutionCard({ user, empData, onRefresh }) {
       evolution_connected:      false,
     }).eq("id", user.empresa_id);
     if (error) { setErrMsg("Erro ao salvar: " + error.message); setSavingManual(false); return; }
-    // Configura webhook automaticamente na instância vinculada
+
+    // 1. Configura webhook
+    try { await callEvo("resetWebhook"); } catch (_) {}
+
+    // 2. Verifica se a instância já está conectada no Evolution GO
+    let jaConectado = false;
     try {
-      await callEvo("resetWebhook");
-      setSuccMsg("✓ Instância vinculada e webhook configurado!");
-    } catch (_) {
-      setSuccMsg("✓ Instância vinculada. Configure o webhook manualmente se necessário.");
+      const statusRes = await callEvo("status");
+      jaConectado = statusRes?.data?.Connected === true;
+    } catch (_) {}
+
+    if (jaConectado) {
+      setSuccMsg("✓ Instância vinculada e já conectada! Webhook configurado automaticamente.");
+      phaseRef.current = "connected";
+      setPhase("connected");
+    } else {
+      setSuccMsg("✓ Instância vinculada! Clique em 'Gerar QR Code' para conectar o WhatsApp.");
     }
+
     setSavingManual(false);
     setShowManual(false);
     setManualName(""); setManualToken("");
     onRefresh?.();
-    setTimeout(() => setSuccMsg(""), 6000);
+    setTimeout(() => setSuccMsg(""), 7000);
   };
 
   const isConnected = phase === "connected" || empData.evolution_connected;

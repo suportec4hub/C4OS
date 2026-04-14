@@ -229,8 +229,24 @@ export default function PageChat({ user }) {
   // ── load initial data ─────────────────────────────────────────────────────
   useEffect(() => {
     if (!user?.empresa_id) return;
-    supabase.from("empresas").select("evolution_connected").eq("id", user.empresa_id).single()
-      .then(({ data }) => setEvoConnected(data?.evolution_connected ?? false));
+    // Verifica status real do WhatsApp — lê DB e confirma com Evolution GO se necessário
+    supabase.from("empresas")
+      .select("evolution_connected, evolution_instance_token")
+      .eq("id", user.empresa_id).single()
+      .then(({ data }) => {
+        if (data?.evolution_connected) {
+          setEvoConnected(true);
+        } else if (data?.evolution_instance_token) {
+          // Tem instância configurada — verifica status real na API
+          supabase.functions.invoke("evolution-action", {
+            body: { action: "status", empresa_id: user.empresa_id },
+          }).then(({ data: res }) => {
+            setEvoConnected(res?.data?.Connected ?? false);
+          }).catch(() => setEvoConnected(false));
+        } else {
+          setEvoConnected(false);
+        }
+      });
     supabase.from("usuarios").select("id, nome, cor, foto_url").eq("empresa_id", user.empresa_id).eq("ativo", true)
       .then(({ data }) => setAtendentes(data || []));
     supabase.from("setores").select("*").eq("empresa_id", user.empresa_id).eq("ativo", true).order("ordem")
