@@ -140,29 +140,26 @@ function EvolutionCard({ user, empData, onRefresh }) {
     phaseRef.current = "loading";
     setPhase("loading"); setErrMsg(""); setQrImg(null); setSuccMsg("");
     try {
-      // Cria instância nova se ainda não existe
-      if (!empData.evolution_instance_token) {
-        await callEvo("create");
-        await new Promise(r => setTimeout(r, 2000));
-        onRefresh?.();
-      }
-      // Gera QR Code
+      // O edge function cuida de tudo:
+      // - Se instância existe e está desconectada → retorna QR
+      // - Se instância foi deletada ou nunca existiu → cria nova e retorna QR
+      // - Se instância já está conectada → retorna alreadyConnected
       const connRes = await callEvo("connect");
 
-      // Instância já estava conectada (ex: re-abriu a página)
       if (connRes?.alreadyConnected) {
         phaseRef.current = "connected";
         setPhase("connected");
         await autoConfigureWebhook();
+        onRefresh?.();
         return;
       }
 
       const qr = connRes?.qrBase64 || "";
-      if (!qr) {
-        // Sem QR e sem erro explícito — isso não deveria acontecer,
-        // mas tratamos como erro para não ficar girando
-        throw new Error("QR code não retornado pelo servidor. Verifique se a instância está configurada corretamente.");
-      }
+      if (!qr) throw new Error("QR code não retornado pelo servidor. Tente novamente.");
+
+      // Atualiza empData caso uma nova instância tenha sido criada
+      if (connRes?.newInstance) onRefresh?.();
+
       setQrImg(qr.startsWith("data:") ? qr : qr.split("|")[0]);
       phaseRef.current = "qr";
       setPhase("qr");
