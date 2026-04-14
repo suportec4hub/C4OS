@@ -47,8 +47,8 @@ function LabelInput({ label, value, onChange, placeholder, type="text", readOnly
   );
 }
 
-const WEBHOOK_URL     = "https://zexjmlthyxtunioojlga.supabase.co/functions/v1/waba-webhook";
-const EVO_WEBHOOK_URL = "https://zexjmlthyxtunioojlga.supabase.co/functions/v1/evolution-webhook";
+const WEBHOOK_URL     = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/waba-webhook`;
+const EVO_WEBHOOK_BASE = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/evolution-webhook`;
 
 // ── Componente de conexão WhatsApp via Evolution GO ──────────────────────────
 function EvolutionCard({ user, empData, onRefresh }) {
@@ -56,12 +56,20 @@ function EvolutionCard({ user, empData, onRefresh }) {
   const [qrImg,       setQrImg]       = useState(null);
   const [pairingCode, setPairingCode] = useState("");
   const [errMsg,      setErrMsg]      = useState("");
-  const pollRef = useRef(null);
+  const pollRef    = useRef(null);
   const timeoutRef = useRef(null);
+  const phaseRef   = useRef("idle");
+
+  // URL do webhook com token (para configuração manual no Evolution GO)
+  const webhookDisplayUrl = empData.evolution_instance_token
+    ? `${EVO_WEBHOOK_BASE}?token=${empData.evolution_instance_token}`
+    : EVO_WEBHOOK_BASE;
 
   // Sincroniza status inicial
   useEffect(() => {
-    setPhase(empData.evolution_connected ? "connected" : "idle");
+    const p = empData.evolution_connected ? "connected" : "idle";
+    setPhase(p);
+    phaseRef.current = p;
   }, [empData.evolution_connected]);
 
   // Limpa polling ao desmontar
@@ -82,16 +90,17 @@ function EvolutionCard({ user, empData, onRefresh }) {
 
     pollRef.current = setInterval(async () => {
       try {
-        // Busca QR
+        // Busca QR atualizado
         const qrRes = await callEvo("qr");
         const raw = qrRes?.data?.Qrcode || qrRes?.data?.qrcode || "";
         if (raw) setQrImg(raw.split("|")[0]);
 
-        // Verifica status
+        // Verifica se já conectou
         const stRes = await callEvo("status");
-        if (stRes?.data?.Connected) {
+        if (stRes?.data?.Connected || stRes?.data?.LoggedIn) {
           clearInterval(pollRef.current);
           clearTimeout(timeoutRef.current);
+          phaseRef.current = "connected";
           setPhase("connected");
           setQrImg(null);
           onRefresh?.();
@@ -102,27 +111,34 @@ function EvolutionCard({ user, empData, onRefresh }) {
     // Timeout de 3 minutos
     timeoutRef.current = setTimeout(() => {
       clearInterval(pollRef.current);
-      if (phase !== "connected") {
+      if (phaseRef.current !== "connected") {
+        phaseRef.current = "error";
         setPhase("error");
         setErrMsg("Tempo esgotado. O QR code expirou. Tente novamente.");
       }
     }, 180000);
-  }, [callEvo, onRefresh, phase]);
+  }, [callEvo, onRefresh]);
 
   const conectar = async () => {
+    phaseRef.current = "loading";
     setPhase("loading"); setErrMsg(""); setQrImg(null); setPairingCode("");
     try {
-      // Cria instância se não existe token
+      // Cria instância se ainda não existe
       if (!empData.evolution_instance_token) {
         await callEvo("create");
+        // Aguarda um momento para a instância ficar pronta
+        await new Promise(r => setTimeout(r, 1500));
+        onRefresh?.();
       }
-      // Conecta — pode retornar QR e pairing code diretamente
+      // Conecta — retorna QR e pairing code (já com retry interno)
       const connRes = await callEvo("connect");
       if (connRes?.qrBase64) setQrImg(connRes.qrBase64.split("|")[0]);
       if (connRes?.pairingCode) setPairingCode(connRes.pairingCode);
+      phaseRef.current = "qr";
       setPhase("qr");
       startPolling();
     } catch (e) {
+      phaseRef.current = "error";
       setPhase("error");
       setErrMsg(e.message || "Erro ao conectar. Verifique a URL do servidor.");
     }
@@ -143,14 +159,18 @@ function EvolutionCard({ user, empData, onRefresh }) {
   };
 
   const reconectar = async () => {
+    phaseRef.current = "loading";
     setPhase("loading"); setErrMsg(""); setQrImg(null); setPairingCode("");
     try {
+      // Reconfigura webhook + gera novo QR
       const connRes = await callEvo("connect");
       if (connRes?.qrBase64) setQrImg(connRes.qrBase64.split("|")[0]);
       if (connRes?.pairingCode) setPairingCode(connRes.pairingCode);
+      phaseRef.current = "qr";
       setPhase("qr");
       startPolling();
     } catch (e) {
+      phaseRef.current = "error";
       setPhase("error");
       setErrMsg(e.message);
     }
@@ -183,10 +203,13 @@ function EvolutionCard({ user, empData, onRefresh }) {
 
       {/* Webhook info */}
       <div style={{ background: L.surface, borderRadius: 9, padding: "9px 12px", marginBottom: 14, border: `1px solid ${L.lineSoft}` }}>
-        <div style={{ fontSize: 10, color: L.t4, marginBottom: 4, fontFamily: "'JetBrains Mono',monospace" }}>URL do Webhook (Evolution GO)</div>
+        <div style={{ fontSize: 10, color: L.t4, marginBottom: 4, fontFamily: "'JetBrains Mono',monospace" }}>
+          URL do Webhook (Evolution GO)
+          {empData.evolution_instance_token && <span style={{ color: L.green, marginLeft: 6 }}>· com token configurado</span>}
+        </div>
         <Row gap={8}>
-          <div style={{ flex: 1, fontSize: 10.5, fontFamily: "'JetBrains Mono',monospace", color: L.t2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{EVO_WEBHOOK_URL}</div>
-          <CopyBtn value={EVO_WEBHOOK_URL} />
+          <div style={{ flex: 1, fontSize: 10.5, fontFamily: "'JetBrains Mono',monospace", color: L.t2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{webhookDisplayUrl}</div>
+          <CopyBtn value={webhookDisplayUrl} />
         </Row>
       </div>
 
@@ -243,7 +266,7 @@ function EvolutionCard({ user, empData, onRefresh }) {
           </PBtn>
         )}
         {phase === "qr" && (
-          <button onClick={() => { clearInterval(pollRef.current); clearTimeout(timeoutRef.current); setPhase("idle"); setQrImg(null); }}
+          <button onClick={() => { clearInterval(pollRef.current); clearTimeout(timeoutRef.current); phaseRef.current = "idle"; setPhase("idle"); setQrImg(null); }}
             style={{ flex: 1, padding: "9px 16px", borderRadius: 9, background: L.surface, border: `1px solid ${L.line}`, color: L.t2, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 500 }}>
             Cancelar
           </button>
