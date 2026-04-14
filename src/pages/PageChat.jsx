@@ -241,7 +241,7 @@ export default function PageChat({ user }) {
     // Insere no banco
     const { data: msg, error: dbErr } = await supabase
       .from("mensagens")
-      .insert({ conversa_id: activeConv.id, de: "me", remetente: "me", texto, hora: new Date().toISOString(), status: "enviado" })
+      .insert({ conversa_id: activeConv.id, empresa_id: activeConv.empresa_id || user.empresa_id, de: "me", remetente: "me", texto, hora: new Date().toISOString(), status: "enviado" })
       .select()
       .single();
 
@@ -249,7 +249,7 @@ export default function PageChat({ user }) {
       // Tenta sem campos que podem não existir
       const { data: msg2, error: dbErr2 } = await supabase
         .from("mensagens")
-        .insert({ conversa_id: activeConv.id, remetente: "atendente", texto, status: "enviado" })
+        .insert({ conversa_id: activeConv.id, empresa_id: activeConv.empresa_id || user.empresa_id, remetente: "atendente", texto, status: "enviado" })
         .select()
         .single();
       if (dbErr2) {
