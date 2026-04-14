@@ -23,6 +23,8 @@ Deno.serve(async (req) => {
 
     // Localiza empresa pelo token (URL param tem prioridade)
     const instanceToken = tokenFromUrl || body.apikey || body.instance?.apikey || body.instance?.token || "";
+    // Evolution GO pode enviar instanceName (nome) em vez de UUID
+    const instanceName  = body.instance?.instanceName || body.instance?.name || body.instanceName || "";
     const instanceId    = body.instance?.id || body.instanceId || "";
 
     let empresa_id: string | null = null;
@@ -30,12 +32,17 @@ Deno.serve(async (req) => {
       const { data: emp } = await supabase.from("empresas").select("id").eq("evolution_instance_token", instanceToken).maybeSingle();
       if (emp) empresa_id = emp.id;
     }
+    // Busca por instanceName (guardado em evolution_instance_id como string de nome)
+    if (!empresa_id && instanceName) {
+      const { data: emp } = await supabase.from("empresas").select("id").eq("evolution_instance_id", instanceName).maybeSingle();
+      if (emp) empresa_id = emp.id;
+    }
     if (!empresa_id && instanceId) {
       const { data: emp } = await supabase.from("empresas").select("id").eq("evolution_instance_id", instanceId).maybeSingle();
       if (emp) empresa_id = emp.id;
     }
     if (!empresa_id) {
-      console.error("[webhook] empresa nao encontrada | token:", instanceToken.slice(0, 8));
+      console.error("[webhook] empresa nao encontrada | token:", instanceToken.slice(0, 8), "| instanceName:", instanceName);
       return new Response("Instance not found", { status: 404 });
     }
 
@@ -50,12 +57,19 @@ Deno.serve(async (req) => {
 
     // ── CONEXÃO
     if (["CONNECTION","CONNECTION_UPDATE","Connected","Disconnected","connection.update"].includes(event)) {
-      const state = data?.state || (event === "Connected" ? "open" : event === "Disconnected" ? "close" : "");
+      // Evolution GO pode enviar state em data.state ou data.instance.state
+      const state =
+        data?.state || data?.instance?.state ||
+        (event === "Connected" ? "open" : event === "Disconnected" ? "close" : "");
       if (state === "open" || event === "Connected") {
-        const jid   = data?.jid || "";
+        const jid   = data?.jid || data?.instance?.jid || "";
         const phone = jid.replace(/@s\.whatsapp\.net$/, "").replace(/:.*$/, "");
-        await supabase.from("empresas").update({ evolution_connected: true, evolution_phone: phone || "", evolution_qr_temp: null }).eq("id", empresa_id);
-      } else if (state === "close" || event === "Disconnected") {
+        await supabase.from("empresas").update({
+          evolution_connected: true,
+          evolution_phone:     phone || "",
+          evolution_qr_temp:   null,
+        }).eq("id", empresa_id);
+      } else if (state === "close" || state === "connecting" || event === "Disconnected") {
         await supabase.from("empresas").update({ evolution_connected: false }).eq("id", empresa_id);
       }
       return new Response("OK");
@@ -256,7 +270,8 @@ async function processMessages(
             await fetch(`${evoUrl}/send/text`, {
               method: "POST",
               headers: { "Content-Type": "application/json", "apikey": instToken },
-              body: JSON.stringify({ id: instId, number: senderPhone, text: msgText }),
+              // instId pode ser instanceName (string) ou UUID — ambos suportados no body
+              body: JSON.stringify({ instanceName: instId, id: instId, number: senderPhone, text: msgText }),
             });
             if (conv?.id) {
               await supabase.from("mensagens").insert({

@@ -52,10 +52,15 @@ const EVO_WEBHOOK_BASE = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/evol
 
 // ── Componente de conexão WhatsApp via Evolution GO ──────────────────────────
 function EvolutionCard({ user, empData, onRefresh }) {
-  const [phase,       setPhase]       = useState("idle");   // idle | loading | qr | connected | error
-  const [qrImg,       setQrImg]       = useState(null);
-  const [pairingCode, setPairingCode] = useState("");
-  const [errMsg,      setErrMsg]      = useState("");
+  const [phase,        setPhase]        = useState("idle"); // idle | loading | qr | connected | error | configuring
+  const [qrImg,        setQrImg]        = useState(null);
+  const [errMsg,       setErrMsg]       = useState("");
+  const [succMsg,      setSuccMsg]      = useState("");
+  // Modo "vincular instância existente"
+  const [showManual,   setShowManual]   = useState(false);
+  const [manualName,   setManualName]   = useState("");
+  const [manualToken,  setManualToken]  = useState("");
+  const [savingManual, setSavingManual] = useState(false);
   const pollRef    = useRef(null);
   const timeoutRef = useRef(null);
   const phaseRef   = useRef("idle");
@@ -84,6 +89,20 @@ function EvolutionCard({ user, empData, onRefresh }) {
     return data;
   }, [user.empresa_id]);
 
+  // Após conexão detectada: configura webhook automaticamente
+  const autoConfigureWebhook = useCallback(async () => {
+    try {
+      phaseRef.current = "configuring";
+      setPhase("configuring");
+      await callEvo("resetWebhook");
+      setSuccMsg("✓ Webhook configurado automaticamente!");
+      setTimeout(() => setSuccMsg(""), 5000);
+    } catch (_) { /* best effort */ }
+    phaseRef.current = "connected";
+    setPhase("connected");
+    onRefresh?.();
+  }, [callEvo, onRefresh]);
+
   const startPolling = useCallback(() => {
     clearInterval(pollRef.current);
     clearTimeout(timeoutRef.current);
@@ -100,72 +119,72 @@ function EvolutionCard({ user, empData, onRefresh }) {
         if (stRes?.data?.Connected || stRes?.data?.LoggedIn) {
           clearInterval(pollRef.current);
           clearTimeout(timeoutRef.current);
-          phaseRef.current = "connected";
-          setPhase("connected");
           setQrImg(null);
-          onRefresh?.();
+          await autoConfigureWebhook();
         }
-      } catch (_) { /* ignora erros de polling silenciosamente */ }
+      } catch (_) { /* ignora erros silenciosamente */ }
     }, 4000);
 
     // Timeout de 3 minutos
     timeoutRef.current = setTimeout(() => {
       clearInterval(pollRef.current);
-      if (phaseRef.current !== "connected") {
+      if (phaseRef.current !== "connected" && phaseRef.current !== "configuring") {
         phaseRef.current = "error";
         setPhase("error");
-        setErrMsg("Tempo esgotado. O QR code expirou. Tente novamente.");
+        setErrMsg("QR code expirou (3 min). Clique em 'Novo QR' para tentar novamente.");
       }
     }, 180000);
-  }, [callEvo, onRefresh]);
+  }, [callEvo, autoConfigureWebhook]);
 
   const conectar = async () => {
     phaseRef.current = "loading";
-    setPhase("loading"); setErrMsg(""); setQrImg(null); setPairingCode("");
+    setPhase("loading"); setErrMsg(""); setQrImg(null); setSuccMsg("");
     try {
       // Cria instância se ainda não existe
       if (!empData.evolution_instance_token) {
+        setErrMsg(""); // limpa
         await callEvo("create");
-        // Aguarda um momento para a instância ficar pronta
-        await new Promise(r => setTimeout(r, 1500));
+        await new Promise(r => setTimeout(r, 2000));
         onRefresh?.();
       }
-      // Conecta — retorna QR e pairing code (já com retry interno)
+      // Gera QR Code
       const connRes = await callEvo("connect");
-      if (connRes?.qrBase64) setQrImg(connRes.qrBase64.split("|")[0]);
-      if (connRes?.pairingCode) setPairingCode(connRes.pairingCode);
+      const qr = connRes?.qrBase64 || connRes?.data?.Qrcode || "";
+      if (qr) setQrImg(qr.startsWith("data:") ? qr : qr.split("|")[0]);
       phaseRef.current = "qr";
       setPhase("qr");
       startPolling();
     } catch (e) {
       phaseRef.current = "error";
       setPhase("error");
-      setErrMsg(e.message || "Erro ao conectar. Verifique a URL do servidor.");
+      setErrMsg(e.message || "Erro ao conectar. Verifique a URL do servidor Evolution GO.");
     }
   };
 
   const desconectar = async () => {
     if (!confirm("Desconectar WhatsApp? A sessão será encerrada.")) return;
+    phaseRef.current = "loading";
     setPhase("loading");
+    clearInterval(pollRef.current);
+    clearTimeout(timeoutRef.current);
     try {
       await callEvo("logout");
-      setPhase("idle");
-      setQrImg(null);
-      onRefresh?.();
-    } catch (e) {
-      setPhase("error");
-      setErrMsg(e.message);
-    }
+    } catch (_) { /* best effort */ }
+    phaseRef.current = "idle";
+    setPhase("idle");
+    setQrImg(null);
+    onRefresh?.();
   };
 
   const reconectar = async () => {
+    clearInterval(pollRef.current);
+    clearTimeout(timeoutRef.current);
     phaseRef.current = "loading";
-    setPhase("loading"); setErrMsg(""); setQrImg(null); setPairingCode("");
+    setPhase("loading"); setErrMsg(""); setQrImg(null); setSuccMsg("");
     try {
-      // Reconfigura webhook + gera novo QR
       const connRes = await callEvo("connect");
-      if (connRes?.qrBase64) setQrImg(connRes.qrBase64.split("|")[0]);
-      if (connRes?.pairingCode) setPairingCode(connRes.pairingCode);
+      const qr = connRes?.qrBase64 || connRes?.data?.Qrcode || "";
+      if (qr) setQrImg(qr.startsWith("data:") ? qr : qr.split("|")[0]);
       phaseRef.current = "qr";
       setPhase("qr");
       startPolling();
@@ -174,12 +193,37 @@ function EvolutionCard({ user, empData, onRefresh }) {
       setPhase("error");
       setErrMsg(e.message);
     }
+  };
+
+  // Vincular instância existente (criada manualmente no dashboard Evolution GO)
+  const vincularInstancia = async () => {
+    if (!manualName.trim() || !manualToken.trim()) return;
+    setSavingManual(true); setErrMsg("");
+    const { error } = await supabase.from("empresas").update({
+      evolution_instance_id:    manualName.trim(),
+      evolution_instance_token: manualToken.trim(),
+      evolution_connected:      false,
+    }).eq("id", user.empresa_id);
+    if (error) { setErrMsg("Erro ao salvar: " + error.message); setSavingManual(false); return; }
+    // Configura webhook automaticamente na instância vinculada
+    try {
+      await callEvo("resetWebhook");
+      setSuccMsg("✓ Instância vinculada e webhook configurado!");
+    } catch (_) {
+      setSuccMsg("✓ Instância vinculada. Configure o webhook manualmente se necessário.");
+    }
+    setSavingManual(false);
+    setShowManual(false);
+    setManualName(""); setManualToken("");
+    onRefresh?.();
+    setTimeout(() => setSuccMsg(""), 6000);
   };
 
   const isConnected = phase === "connected" || empData.evolution_connected;
 
   return (
     <div style={{ background: L.white, borderRadius: 12, border: `1.5px solid ${isConnected ? L.green + "44" : L.line}`, padding: 20, boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
+      {/* Header */}
       <Row between mb={16}>
         <Row gap={12}>
           <div style={{ width: 42, height: 42, borderRadius: 11, background: "#25D36618", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>
@@ -189,23 +233,21 @@ function EvolutionCard({ user, empData, onRefresh }) {
             <div style={{ fontSize: 14, fontWeight: 700, color: L.t1 }}>WhatsApp via Evolution GO</div>
             <div style={{ fontSize: 11, color: L.t3, marginTop: 2 }}>
               {isConnected
-                ? `Conectado${empData.evolution_phone ? ` · ${empData.evolution_phone}` : ""}`
+                ? `Conectado${empData.evolution_phone ? ` · ${empData.evolution_phone}` : ""}${empData.evolution_instance_id ? ` · instância: ${empData.evolution_instance_id}` : ""}`
                 : "Escaneie o QR code para conectar"}
             </div>
           </div>
         </Row>
-        <Tag
-          color={isConnected ? L.green : L.t4}
-          bg={isConnected ? L.greenBg : L.surface}>
+        <Tag color={isConnected ? L.green : L.t4} bg={isConnected ? L.greenBg : L.surface}>
           {isConnected ? "Conectado" : "Desconectado"}
         </Tag>
       </Row>
 
-      {/* Webhook info */}
+      {/* Webhook URL */}
       <div style={{ background: L.surface, borderRadius: 9, padding: "9px 12px", marginBottom: 14, border: `1px solid ${L.lineSoft}` }}>
         <div style={{ fontSize: 10, color: L.t4, marginBottom: 4, fontFamily: "'JetBrains Mono',monospace" }}>
           URL do Webhook (Evolution GO)
-          {empData.evolution_instance_token && <span style={{ color: L.green, marginLeft: 6 }}>· com token configurado</span>}
+          {empData.evolution_instance_token && <span style={{ color: L.green, marginLeft: 6 }}>· token configurado ✓</span>}
         </div>
         <Row gap={8}>
           <div style={{ flex: 1, fontSize: 10.5, fontFamily: "'JetBrains Mono',monospace", color: L.t2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{webhookDisplayUrl}</div>
@@ -213,33 +255,40 @@ function EvolutionCard({ user, empData, onRefresh }) {
         </Row>
       </div>
 
-      {/* Erros */}
+      {/* Mensagem de sucesso */}
+      {succMsg && (
+        <div style={{ padding: "8px 12px", background: L.greenBg, borderRadius: 8, fontSize: 12, color: L.green, marginBottom: 14, fontWeight: 500 }}>
+          {succMsg}
+        </div>
+      )}
+
+      {/* Erro */}
       {errMsg && (
         <div style={{ padding: "8px 12px", background: L.redBg, borderRadius: 8, fontSize: 12, color: L.red, marginBottom: 14 }}>
           ⚠️ {errMsg}
         </div>
       )}
 
+      {/* Loading / Configuring */}
+      {(phase === "loading" || phase === "configuring") && (
+        <div style={{ textAlign: "center", padding: "16px 0", color: L.t3, fontSize: 12, marginBottom: 14 }}>
+          <span style={{ animation: "spin 1.2s linear infinite", display: "inline-block", marginRight: 8 }}>⟳</span>
+          {phase === "configuring" ? "Configurando webhook automaticamente..." : "Conectando ao servidor..."}
+        </div>
+      )}
+
       {/* QR Code */}
       {phase === "qr" && (
-        <div style={{ textAlign: "center", padding: "20px 0", marginBottom: 14 }}>
+        <div style={{ textAlign: "center", padding: "16px 0", marginBottom: 14 }}>
           {qrImg ? (
             <>
               <div style={{ fontSize: 12, color: L.t3, marginBottom: 12 }}>
-                Abra o WhatsApp no celular → <b>Dispositivos Conectados</b> → <b>Conectar dispositivo</b>
+                Abra o WhatsApp → <b>Dispositivos Conectados</b> → <b>Conectar dispositivo</b> → escaneie abaixo
               </div>
               <div style={{ display: "inline-block", padding: 12, background: L.white, borderRadius: 14, border: `1px solid ${L.line}`, boxShadow: "0 2px 12px rgba(0,0,0,0.08)" }}>
                 <img src={qrImg} alt="QR Code WhatsApp" style={{ width: 220, height: 220, display: "block" }} />
               </div>
-              {pairingCode && (
-                <div style={{ marginTop: 14, background: L.surface, borderRadius: 10, padding: "10px 16px", display: "inline-block", border: `1px solid ${L.line}` }}>
-                  <div style={{ fontSize: 10, color: L.t4, marginBottom: 4 }}>Código de Pareamento</div>
-                  <div style={{ fontSize: 20, fontWeight: 700, fontFamily: "'JetBrains Mono',monospace", color: L.t1, letterSpacing: 3 }}>{pairingCode}</div>
-                </div>
-              )}
-              <div style={{ fontSize: 10, color: L.t4, marginTop: 10, fontFamily: "'JetBrains Mono',monospace" }}>
-                QR code atualiza a cada 4 segundos
-              </div>
+              <div style={{ fontSize: 10, color: L.t4, marginTop: 10 }}>Aguardando leitura… atualiza a cada 4s</div>
             </>
           ) : (
             <div style={{ padding: 30, color: L.t4 }}>
@@ -250,32 +299,34 @@ function EvolutionCard({ user, empData, onRefresh }) {
         </div>
       )}
 
-      {/* Loading */}
-      {phase === "loading" && (
-        <div style={{ textAlign: "center", padding: "20px 0", color: L.t3, fontSize: 12, marginBottom: 14 }}>
-          <span style={{ animation: "spin 1.2s linear infinite", display: "inline-block", marginRight: 8 }}>⟳</span>
-          Conectando ao servidor...
-        </div>
-      )}
-
-      {/* Ações */}
-      <Row gap={8}>
-        {!isConnected && phase !== "qr" && phase !== "loading" && (
+      {/* Botões de ação */}
+      <Row gap={8} mb={14}>
+        {!isConnected && phase !== "qr" && phase !== "loading" && phase !== "configuring" && (
           <PBtn onClick={conectar} style={{ flex: 1 }}>
-            📱 Conectar WhatsApp
+            📷 Gerar QR Code
           </PBtn>
         )}
         {phase === "qr" && (
-          <button onClick={() => { clearInterval(pollRef.current); clearTimeout(timeoutRef.current); phaseRef.current = "idle"; setPhase("idle"); setQrImg(null); }}
-            style={{ flex: 1, padding: "9px 16px", borderRadius: 9, background: L.surface, border: `1px solid ${L.line}`, color: L.t2, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 500 }}>
-            Cancelar
-          </button>
+          <>
+            <button onClick={() => { clearInterval(pollRef.current); clearTimeout(timeoutRef.current); phaseRef.current = "idle"; setPhase("idle"); setQrImg(null); }}
+              style={{ padding: "9px 16px", borderRadius: 9, background: L.surface, border: `1px solid ${L.line}`, color: L.t2, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 500 }}>
+              Cancelar
+            </button>
+            <button onClick={reconectar}
+              style={{ flex: 1, padding: "9px 16px", borderRadius: 9, background: L.surface, border: `1px solid ${L.line}`, color: L.t2, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 500 }}>
+              🔄 Novo QR
+            </button>
+          </>
         )}
         {isConnected && (
           <>
             <button onClick={reconectar}
               style={{ padding: "9px 16px", borderRadius: 9, background: L.surface, border: `1px solid ${L.line}`, color: L.t2, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 500 }}>
               🔄 Reconectar
+            </button>
+            <button onClick={() => callEvo("resetWebhook").then(() => { setSuccMsg("✓ Webhook reconfigurado!"); setTimeout(() => setSuccMsg(""), 4000); }).catch(e => setErrMsg(e.message))}
+              style={{ padding: "9px 16px", borderRadius: 9, background: L.tealBg, border: `1px solid ${L.teal}33`, color: L.teal, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 500 }}>
+              ⚙️ Config. Webhook
             </button>
             <button onClick={desconectar}
               style={{ padding: "9px 16px", borderRadius: 9, background: L.redBg, border: `1px solid ${L.red}22`, color: L.red, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 600 }}>
@@ -284,6 +335,42 @@ function EvolutionCard({ user, empData, onRefresh }) {
           </>
         )}
       </Row>
+
+      {/* Vincular instância existente */}
+      <div style={{ borderTop: `1px solid ${L.lineSoft}`, paddingTop: 12 }}>
+        <button onClick={() => setShowManual(v => !v)}
+          style={{ background: "none", border: "none", cursor: "pointer", fontSize: 11, color: L.t3, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 5, padding: 0, fontWeight: 500 }}>
+          <span style={{ fontSize: 14 }}>{showManual ? "▾" : "▸"}</span>
+          Vincular instância existente do Evolution GO
+        </button>
+        {showManual && (
+          <div style={{ marginTop: 12, background: L.surface, borderRadius: 10, padding: 14, border: `1px solid ${L.lineSoft}` }}>
+            <div style={{ fontSize: 11, color: L.t3, marginBottom: 12 }}>
+              Se você já criou a instância manualmente no dashboard do Evolution GO, informe o nome e o token (API Key) dela abaixo. O webhook será configurado automaticamente.
+            </div>
+            <div style={{ marginBottom: 8 }}>
+              <label style={{ fontSize: 10, fontWeight: 700, color: L.t4, textTransform: "uppercase", letterSpacing: "1px", display: "block", marginBottom: 4, fontFamily: "'JetBrains Mono',monospace" }}>Nome da instância</label>
+              <input value={manualName} onChange={e => setManualName(e.target.value)} placeholder="ex: teste"
+                style={{ width: "100%", border: `1.5px solid ${L.line}`, borderRadius: 8, padding: "8px 10px", fontSize: 12.5, color: L.t1, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }}
+                onFocus={e => e.target.style.borderColor = L.teal}
+                onBlur={e => e.target.style.borderColor = L.line}
+              />
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 10, fontWeight: 700, color: L.t4, textTransform: "uppercase", letterSpacing: "1px", display: "block", marginBottom: 4, fontFamily: "'JetBrains Mono',monospace" }}>Token / API Key da instância</label>
+              <input value={manualToken} onChange={e => setManualToken(e.target.value)} placeholder="cole o token aqui" type="password"
+                style={{ width: "100%", border: `1.5px solid ${L.line}`, borderRadius: 8, padding: "8px 10px", fontSize: 12.5, color: L.t1, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }}
+                onFocus={e => e.target.style.borderColor = L.teal}
+                onBlur={e => e.target.style.borderColor = L.line}
+              />
+            </div>
+            <button onClick={vincularInstancia} disabled={savingManual || !manualName.trim() || !manualToken.trim()}
+              style={{ width: "100%", padding: "9px 0", borderRadius: 9, background: manualName.trim() && manualToken.trim() ? L.t1 : L.surface, color: manualName.trim() && manualToken.trim() ? "white" : L.t4, border: `1px solid ${L.line}`, cursor: savingManual || !manualName.trim() || !manualToken.trim() ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, transition: "all .12s" }}>
+              {savingManual ? "⟳ Vinculando..." : "🔗 Vincular Instância"}
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
