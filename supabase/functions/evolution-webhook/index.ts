@@ -15,18 +15,14 @@ Deno.serve(async (req) => {
     const tokenFromUrl = reqUrl.searchParams.get("token") || "";
     const body         = await req.json();
 
-    // Suporta tanto 'event' quanto 'eventString' (Evolution GO Go version)
+    // Evolution GO (Go version) usa 'eventString'; Evolution API (Node) usa 'event'
     const event = body.event || body.eventString || body.Event || "";
     const data  = body.data  || body.Data  || body;
 
-    // LOG COMPLETO para debug
-    console.log("[webhook] event:", event, "| token:", tokenFromUrl.slice(0, 8), "| keys:", Object.keys(body).join(","));
-    if (event === "MESSAGE" || event === "HISTORY_SYNC" || event === "MESSAGES_UPSERT") {
-      const sample = JSON.stringify(data).slice(0, 400);
-      console.log("[webhook] data sample:", sample);
-    }
+    console.log("[webhook] event:", event, "| keys:", Object.keys(body).join(","));
 
-    const instanceToken = tokenFromUrl || body.apikey || body.instanceToken || body.instance?.apikey || body.instance?.token || "";
+    // Localiza empresa pelo token (URL param tem prioridade)
+    const instanceToken = tokenFromUrl || body.apikey || body.instance?.apikey || body.instance?.token || "";
     const instanceId    = body.instance?.id || body.instanceId || "";
 
     let empresa_id: string | null = null;
@@ -46,13 +42,13 @@ Deno.serve(async (req) => {
     const now = new Date().toISOString();
 
     // ── QR CODE
-    if (event === "QRCODE" || event === "QRCODE_UPDATED") {
+    if (["QRCODE","QRCODE_UPDATED","qrcode.updated"].includes(event)) {
       const qr = data?.qrcode?.base64 || data?.base64 || data?.Qrcode || (typeof data?.qrcode === "string" ? data.qrcode : "");
       if (qr) await supabase.from("empresas").update({ evolution_qr_temp: qr }).eq("id", empresa_id);
       return new Response("OK");
     }
 
-    // ── CONEXAO
+    // ── CONEXÃO
     if (["CONNECTION","CONNECTION_UPDATE","Connected","Disconnected","connection.update"].includes(event)) {
       const state = data?.state || (event === "Connected" ? "open" : event === "Disconnected" ? "close" : "");
       if (state === "open" || event === "Connected") {
@@ -65,10 +61,9 @@ Deno.serve(async (req) => {
       return new Response("OK");
     }
 
-    // ── HISTORY SYNC (mensagens históricas na reconexão)
-    if (event === "HISTORY_SYNC" || event === "messaging-history.set") {
+    // ── HISTORY SYNC
+    if (["HISTORY_SYNC","messaging-history.set"].includes(event)) {
       console.log("[webhook] HISTORY_SYNC recebido");
-      // Estrutura pode ser: data.messages[] ou data.conversations[].messages[]
       const allMsgs: unknown[] = [];
       if (Array.isArray(data?.messages)) allMsgs.push(...data.messages);
       if (Array.isArray(data?.conversations)) {
@@ -76,42 +71,17 @@ Deno.serve(async (req) => {
           if (Array.isArray(conv?.messages)) allMsgs.push(...conv.messages);
         }
       }
-      // Processa como mensagens individuais
       if (allMsgs.length > 0) {
-        console.log("[webhook] HISTORY_SYNC processando", allMsgs.length, "mensagens");
+        console.log("[webhook] HISTORY_SYNC msgs:", allMsgs.length);
         await processMessages(allMsgs, empresa_id, supabase, GLOBAL_URL, now, true);
-      } else {
-        console.log("[webhook] HISTORY_SYNC sem mensagens no payload");
       }
       return new Response("OK");
     }
 
-    // ── MENSAGEM RECEBIDA
+    // ── MENSAGEM (Evolution GO usa "MESSAGE"; Evolution API usa "MESSAGES_UPSERT")
     if (["MESSAGE","MESSAGES_UPSERT","Message","messages.upsert"].includes(event)) {
       const msgs = Array.isArray(data) ? data : [data];
       await processMessages(msgs, empresa_id, supabase, GLOBAL_URL, now, false);
-      return new Response("OK");
-    }
-
-    // ── MENSAGEM ENVIADA (SEND_MESSAGE - evitar duplicata)
-    if (event === "SEND_MESSAGE") {
-      const remoteJid = data?.key?.remoteJid || "";
-      if (!remoteJid || remoteJid.endsWith("@g.us")) return new Response("OK");
-      const senderPhone = remoteJid.replace(/@s\.whatsapp\.net$/, "").replace(/:.*$/, "");
-      const msgContent  = data?.message || {};
-      const texto = msgContent.conversation || msgContent.extendedTextMessage?.text || "";
-      if (!texto) return new Response("OK");
-      const rawTs = data?.messageTimestamp;
-      const hora  = rawTs ? new Date(typeof rawTs === "number" && rawTs < 1e12 ? rawTs * 1000 : Number(rawTs)).toISOString() : now;
-      const { data: conv } = await supabase.from("conversas").select("id").eq("empresa_id", empresa_id).eq("contato_telefone", senderPhone).maybeSingle();
-      if (conv?.id) {
-        // Dedup: ignora se já existe mensagem similar nos últimos 15s
-        const { data: existing } = await supabase.from("mensagens").select("id").eq("conversa_id", conv.id).eq("de", "me").eq("texto", texto).gte("hora", new Date(Date.now() - 15000).toISOString()).maybeSingle();
-        if (!existing) {
-          await supabase.from("mensagens").insert({ conversa_id: conv.id, empresa_id, de: "me", texto, hora, status: "enviado", remetente: "me" });
-          await supabase.from("conversas").update({ ultima_mensagem: texto, ultima_hora: hora }).eq("id", conv.id);
-        }
-      }
       return new Response("OK");
     }
 
@@ -123,7 +93,32 @@ Deno.serve(async (req) => {
   }
 });
 
-// ── Processa array de mensagens (reutilizável para MESSAGE e HISTORY_SYNC)
+// ─────────────────────────────────────────────────────────────────────────────
+// Extrai timestamp de forma segura (aceita Unix number ou ISO string)
+// ─────────────────────────────────────────────────────────────────────────────
+function safeTimestamp(rawTs: unknown, fallback: string): string {
+  if (!rawTs) return fallback;
+  if (typeof rawTs === "number") {
+    const ms = rawTs < 1e12 ? rawTs * 1000 : rawTs;
+    const d = new Date(ms);
+    return isNaN(d.getTime()) ? fallback : d.toISOString();
+  }
+  if (typeof rawTs === "string") {
+    // ISO string (ex: "2026-04-14T07:19:08Z") ou "1776161768"
+    if (/^\d+$/.test(rawTs)) {
+      const n = parseInt(rawTs, 10);
+      return safeTimestamp(n, fallback);
+    }
+    const d = new Date(rawTs);
+    return isNaN(d.getTime()) ? fallback : d.toISOString();
+  }
+  return fallback;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Processa array de mensagens — suporta o formato Go (Info.X) e o formato
+// Baileys (key.x). O Evolution GO (versão Go) usa o formato Go.
+// ─────────────────────────────────────────────────────────────────────────────
 async function processMessages(
   msgs: unknown[], empresa_id: string, supabase: ReturnType<typeof createClient>,
   GLOBAL_URL: string, now: string, isHistory: boolean
@@ -132,35 +127,55 @@ async function processMessages(
     if (!msg || typeof msg !== "object") continue;
     const m = msg as Record<string, unknown>;
 
-    const key = (m.key || m.Key || {}) as Record<string, unknown>;
-    const fromMe = key.fromMe ?? (m.Info as Record<string,unknown>)?.IsFromMe ?? false;
+    // ── Detecta formato: Go (Info) vs Baileys (key) ──────────────────────────
+    const info    = (m.Info || m.info || {}) as Record<string, unknown>;
+    const key     = (m.key  || m.Key  || {}) as Record<string, unknown>;
 
-    // Para histórico: importa ambos (enviados e recebidos). Para tempo real: só recebidos.
+    // fromMe: Go usa Info.IsFromMe | Baileys usa key.fromMe
+    const fromMe  = Boolean(info.IsFromMe ?? key.fromMe ?? false);
+
+    // Para tempo real: ignora mensagens enviadas (só processa recebidas)
     if (!isHistory && fromMe) continue;
 
-    const remoteJid = (key.remoteJid || (m.Info as Record<string,unknown>)?.Sender || "") as string;
-    if (!remoteJid || remoteJid.endsWith("@g.us") || remoteJid.endsWith("@broadcast")) continue;
+    // remoteJid: Go usa Info.Chat | Baileys usa key.remoteJid
+    // Info.Chat é SEMPRE o JID da conversa (destinatário/remetente externo)
+    const remoteJid = ((info.Chat || key.remoteJid || "") as string);
+    if (!remoteJid) continue;
+    if (remoteJid.endsWith("@g.us") || remoteJid.endsWith("@broadcast")) continue;
 
     const senderPhone = remoteJid.replace(/@s\.whatsapp\.net$/, "").replace(/:.*$/, "");
-    const senderName  = ((m.pushName || m.PushName || (m.Info as Record<string,unknown>)?.PushName || senderPhone) as string);
-    const msgContent  = (m.message || m.Message || {}) as Record<string, unknown>;
-    const texto =
-      (msgContent.conversation as string) ||
-      ((msgContent.extendedTextMessage as Record<string,unknown>)?.text as string) ||
-      ((msgContent.imageMessage as Record<string,unknown>)?.caption as string) ||
-      ((msgContent.videoMessage as Record<string,unknown>)?.caption as string) ||
-      (msgContent.audioMessage   ? "[Áudio recebido 🎤]" : null) ||
-      (msgContent.stickerMessage ? "[Sticker recebido]" : null) ||
-      (msgContent.locationMessage? "[📍 Localização]" : null) ||
-      (msgContent.documentMessage? `[Documento: ${((msgContent.documentMessage as Record<string,unknown>)?.title || "arquivo")}]` : null) ||
+    if (!senderPhone) continue;
+
+    // Nome do contato: Go usa Info.PushName | Baileys usa pushName
+    const senderName = ((info.PushName || m.pushName || m.PushName || senderPhone) as string);
+
+    // Conteúdo: Go usa Message (capital) | Baileys usa message
+    const msgContent = (m.Message || m.message || {}) as Record<string, unknown>;
+
+    // Extrai texto (suporta todos os tipos comuns)
+    const ec    = (msgContent.extendedTextMessage || msgContent.ExtendedTextMessage || {}) as Record<string,unknown>;
+    const imgC  = (msgContent.imageMessage   || msgContent.ImageMessage   || {}) as Record<string,unknown>;
+    const vidC  = (msgContent.videoMessage   || msgContent.VideoMessage   || {}) as Record<string,unknown>;
+    const docC  = (msgContent.documentMessage|| msgContent.DocumentMessage|| {}) as Record<string,unknown>;
+    const texto: string =
+      (msgContent.conversation         as string) ||
+      (msgContent.Conversation         as string) ||
+      (ec.text                         as string) ||
+      (imgC.caption                    as string) ||
+      (vidC.caption                    as string) ||
+      (msgContent.audioMessage   || msgContent.AudioMessage   ? "[🎤 Áudio recebido]"  : "") ||
+      (msgContent.stickerMessage || msgContent.StickerMessage ? "[Sticker]"             : "") ||
+      (msgContent.locationMessage|| msgContent.LocationMessage? "[📍 Localização]"     : "") ||
+      (docC.title || docC.Title ? `[📄 ${docC.title || docC.Title}]`                   : "") ||
       "[Mensagem recebida]";
 
-    const rawTs = m.messageTimestamp || m.MessageTimestamp || (m.Info as Record<string,unknown>)?.Timestamp;
-    const hora  = rawTs ? new Date(typeof rawTs === "number" && rawTs < 1e12 ? rawTs * 1000 : Number(rawTs)).toISOString() : now;
+    // Timestamp: Go usa Info.Timestamp (ISO string) | Baileys usa messageTimestamp (Unix)
+    const rawTs = info.Timestamp || m.messageTimestamp || m.MessageTimestamp;
+    const hora  = safeTimestamp(rawTs, now);
 
-    console.log(`[webhook] ${isHistory?"HIST":"MSG"} phone:${senderPhone} fromMe:${fromMe} text:${texto.slice(0,40)}`);
+    console.log(`[webhook] ${isHistory?"HIST":"MSG"} from:${senderPhone} fromMe:${fromMe} ts:${hora} text:${texto.slice(0,60)}`);
 
-    // Busca ou cria conversa
+    // ── Busca ou cria conversa ────────────────────────────────────────────────
     let isNew = false;
     let { data: conv } = await supabase
       .from("conversas")
@@ -186,38 +201,33 @@ async function processMessages(
 
       // Auto-cria lead se não existe
       const { data: leadExist } = await supabase.from("leads")
-        .select("id")
-        .eq("empresa_id", empresa_id)
-        .eq("whatsapp", senderPhone)
-        .maybeSingle();
+        .select("id").eq("empresa_id", empresa_id).eq("whatsapp", senderPhone).maybeSingle();
       if (!leadExist) {
         await supabase.from("leads").insert({
           empresa_id, nome: senderName, whatsapp: senderPhone,
           origem: "WhatsApp", status: "novo", score: 20, ultima_atividade: hora,
         });
       }
-    } else if (!fromMe) {
-      // Só atualiza ultima_mensagem para recebidas (não sobrescreve com histórico)
-      if (!isHistory) {
-        await supabase.from("conversas").update({
-          ultima_mensagem: texto,
-          ultima_hora:     hora,
-          nao_lidas:       (conv.nao_lidas || 0) + 1,
-          contato_nome:    senderName || conv.contato_nome,
-        }).eq("id", conv.id);
-      }
+    } else if (!fromMe && !isHistory) {
+      // Atualiza última mensagem apenas para recebidas em tempo real
+      await supabase.from("conversas").update({
+        ultima_mensagem: texto,
+        ultima_hora:     hora,
+        nao_lidas:       (conv.nao_lidas || 0) + 1,
+        contato_nome:    senderName || conv.contato_nome,
+      }).eq("id", conv.id);
     }
 
     if (!conv?.id) continue;
 
-    // Dedup por hora + texto (evita duplicar mensagens)
+    // ── Dedup: evita inserir mensagem já existente ────────────────────────────
     const { data: existing } = await supabase.from("mensagens")
       .select("id")
       .eq("conversa_id", conv.id)
       .eq("hora", hora)
       .eq("texto", texto)
       .maybeSingle();
-    if (existing) continue;
+    if (existing) { console.log("[webhook] dedup: msg já existe, ignorando"); continue; }
 
     await supabase.from("mensagens").insert({
       conversa_id: conv.id,
@@ -229,15 +239,17 @@ async function processMessages(
       remetente: fromMe ? "me" : "contato",
     });
 
-    // Chatbot só para mensagens recebidas em tempo real
-    if (!fromMe && !isHistory && conv.bot_ativo !== false && conv.status !== "em_atendimento") {
+    // ── Chatbot (apenas mensagens recebidas em tempo real) ────────────────────
+    if (!fromMe && !isHistory && conv.status !== "em_atendimento") {
       try {
         const { data: cfg } = await supabase.from("chatbot_config").select("*").eq("empresa_id", empresa_id).maybeSingle();
         if (cfg?.ativo) {
-          const empresa = await supabase.from("empresas").select("evolution_instance_id, evolution_instance_token, evolution_api_url").eq("id", empresa_id).single();
-          const instId    = empresa.data?.evolution_instance_id;
-          const instToken = empresa.data?.evolution_instance_token;
-          const evoUrl    = ((empresa.data?.evolution_api_url || GLOBAL_URL) as string).replace(/\/$/, "");
+          const { data: empData } = await supabase.from("empresas")
+            .select("evolution_instance_id, evolution_instance_token, evolution_api_url")
+            .eq("id", empresa_id).single();
+          const instId    = empData?.evolution_instance_id;
+          const instToken = empData?.evolution_instance_token;
+          const evoUrl    = ((empData?.evolution_api_url || GLOBAL_URL) as string).replace(/\/$/, "");
 
           const sendBot = async (msgText: string) => {
             if (!instId || !instToken || !evoUrl) return;
@@ -251,7 +263,9 @@ async function processMessages(
                 conversa_id: conv.id, empresa_id, de: "me", texto: msgText,
                 hora: new Date().toISOString(), status: "enviado", remetente: "bot",
               });
-              await supabase.from("conversas").update({ ultima_mensagem: msgText, ultima_hora: new Date().toISOString() }).eq("id", conv!.id);
+              await supabase.from("conversas").update({
+                ultima_mensagem: msgText, ultima_hora: new Date().toISOString()
+              }).eq("id", conv!.id);
             }
           };
 
@@ -262,15 +276,13 @@ async function processMessages(
             continue;
           }
 
-          const agora   = new Date();
-          const dia     = agora.getDay();
-          const hAtual  = agora.getHours() * 60 + agora.getMinutes();
-          const [hIni, mIni] = (cfg.horario_inicio || "08:00").split(":").map(Number);
-          const [hFim, mFim] = (cfg.horario_fim   || "18:00").split(":").map(Number);
-          const hInicio = hIni * 60 + mIni;
-          const hFimMin = hFim * 60 + mFim;
-          const diasOk  = (cfg.dias_semana || [1,2,3,4,5]).includes(dia);
-          const dentroHorario = diasOk && hAtual >= hInicio && hAtual < hFimMin;
+          const agora = new Date();
+          const dia   = agora.getDay();
+          const hAtu  = agora.getHours() * 60 + agora.getMinutes();
+          const [hI, mI] = (cfg.horario_inicio || "08:00").split(":").map(Number);
+          const [hF, mF] = (cfg.horario_fim   || "18:00").split(":").map(Number);
+          const diasOk = (cfg.dias_semana || [1,2,3,4,5]).includes(dia);
+          const dentroHorario = diasOk && hAtu >= (hI*60+mI) && hAtu < (hF*60+mF);
 
           if (!dentroHorario) {
             if (isNew && cfg.mensagem_fora_horario) await sendBot(cfg.mensagem_fora_horario);
@@ -278,7 +290,8 @@ async function processMessages(
           }
           if (isNew && cfg.mensagem_boas_vindas) await sendBot(cfg.mensagem_boas_vindas);
 
-          const { data: regras } = await supabase.from("chatbot_regras").select("*").eq("empresa_id", empresa_id).eq("ativo", true).order("ordem");
+          const { data: regras } = await supabase.from("chatbot_regras")
+            .select("*").eq("empresa_id", empresa_id).eq("ativo", true).order("ordem");
           if (regras?.length) {
             const tl = texto.toLowerCase();
             for (const r of regras) {
