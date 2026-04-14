@@ -155,87 +155,99 @@ Deno.serve(async (req) => {
     if (!instToken) return json({ error: "Instância não criada. Clique em 'Conectar WhatsApp' primeiro." }, 400);
 
     // ────────────────────────────────────────────────────────────────────────
-    // CONNECT — gera QR Code OU Pairing Code (quando phone é fornecido)
+    // CONNECT — gera QR Code
     // ────────────────────────────────────────────────────────────────────────
     if (action === "connect") {
-      const { phone } = body; // número do WhatsApp para pairing code (ex: "5511999998888")
       const webhookUrl = `${SUPA_URL}/functions/v1/evolution-webhook?token=${instToken}`;
 
-      // Configura webhook (best-effort, não bloqueia)
+      // Configura webhook em paralelo (best-effort, não bloqueia)
       fetch(`${evoUrl}/webhook/set`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "apikey": instToken },
         body: JSON.stringify({ instanceName: instName, url: webhookUrl, events: WEBHOOK_EVENTS, enabled: true }),
       }).catch(() => {});
 
-      let qrBase64 = "", pairingCode = "";
+      let qrBase64 = "";
+      const tried: string[] = [];
 
-      // ── PAIRING CODE via telefone ────────────────────────────────────────
-      // Evolution GO: POST /instance/connect/{instanceName} com { phone } retorna pairing code
-      if (phone) {
-        const cleanPhone = String(phone).replace(/\D/g, "");
-        try {
-          const pcRes  = await iFetch(`/instance/connect/${instName}`, {
-            method: "POST",
-            body: JSON.stringify({ phone: cleanPhone }),
-          });
-          const pcData = await pcRes.json();
-          console.log("[connect/pairing] status:", pcRes.status, JSON.stringify(pcData).slice(0, 300));
-          pairingCode = pcData?.code || pcData?.Code || pcData?.pairingCode ||
-                        pcData?.data?.code || pcData?.data?.Code || "";
-          // Alguns builds retornam o QR mesmo com phone
-          qrBase64 = pcData?.base64 || pcData?.qrcode?.base64 || pcData?.Qrcode || "";
-        } catch (e) {
-          console.error("[connect/pairing] error:", e);
-        }
-        if (pairingCode) {
-          return json({ success: true, qrBase64, pairingCode, webhookUrl });
-        }
-        // Se não obteve pairing code, cai no fluxo QR normal abaixo
-      }
+      const extractQr = (d: Record<string, unknown>): string =>
+        (d?.base64 || d?.qrcode?.base64 || d?.Qrcode || d?.data?.Qrcode ||
+         d?.data?.qrcode || d?.instance?.qrcode?.base64 || "") as string;
 
-      // ── QR CODE ──────────────────────────────────────────────────────────
-      // Estratégia 1: GET /instance/connect/{instanceName}
+      // Estratégia 1: GET /instance/connect/{instanceName} com instToken
       try {
-        const qrRes  = await iFetch(`/instance/connect/${instName}`);
-        const qrData = await qrRes.json();
-        console.log("[connect] GET /instance/connect status:", qrRes.status, JSON.stringify(qrData).slice(0, 300));
-        qrBase64    = qrData?.base64 || qrData?.qrcode?.base64 || qrData?.Qrcode || qrData?.data?.Qrcode || "";
-        pairingCode = qrData?.code   || qrData?.Code           || qrData?.pairingCode || qrData?.data?.Code || "";
-      } catch (_) { /* next */ }
+        const r = await iFetch(`/instance/connect/${instName}`);
+        const d = await r.json();
+        console.log("[connect] S1 GET /instance/connect status:", r.status, JSON.stringify(d).slice(0, 400));
+        tried.push(`S1:${r.status}`);
+        qrBase64 = extractQr(d);
+        // Se instância já está conectada, retornar status especial
+        const state = d?.instance?.state || d?.state || d?.data?.state || "";
+        if (!qrBase64 && state === "open") {
+          await supabase.from("empresas").update({ evolution_connected: true, evolution_qr_temp: null }).eq("id", empresa_id);
+          return json({ success: true, alreadyConnected: true, webhookUrl });
+        }
+      } catch (e) { tried.push(`S1:err`); console.error("[connect] S1 error:", e); }
 
-      // Estratégia 2: POST /instance/connect com webhookUrl
+      // Estratégia 2: GET com global apikey (caso instToken não tenha permissão)
       if (!qrBase64) {
         try {
-          const connRes  = await iFetch("/instance/connect", {
+          const r = await gFetch(`/instance/connect/${instName}`);
+          const d = await r.json();
+          console.log("[connect] S2 GET global key status:", r.status, JSON.stringify(d).slice(0, 400));
+          tried.push(`S2:${r.status}`);
+          qrBase64 = extractQr(d);
+        } catch (e) { tried.push(`S2:err`); }
+      }
+
+      // Estratégia 3: POST /instance/connect com body
+      if (!qrBase64) {
+        try {
+          const r = await iFetch("/instance/connect", {
             method: "POST",
-            body: JSON.stringify({ id: instName, instanceName: instName, webhookUrl }),
+            body: JSON.stringify({ id: instName, instanceName: instName, webhookUrl, qrcode: true }),
           });
-          const connData = await connRes.json();
-          console.log("[connect] POST /instance/connect status:", connRes.status, JSON.stringify(connData).slice(0, 400));
-          qrBase64    = connData?.base64 || connData?.qrcode?.base64 || connData?.Qrcode ||
-                        connData?.data?.Qrcode || connData?.data?.qrcode || "";
-          pairingCode = connData?.code || connData?.Code || connData?.pairingCode || "";
-        } catch (_) { /* next */ }
+          const d = await r.json();
+          console.log("[connect] S3 POST status:", r.status, JSON.stringify(d).slice(0, 400));
+          tried.push(`S3:${r.status}`);
+          qrBase64 = extractQr(d);
+        } catch (e) { tried.push(`S3:err`); }
       }
 
-      // Estratégia 3: GET /instance/qr?id={instName} (fallback para variações de API)
+      // Estratégia 4: GET /instance/qr (endpoint alternativo)
       if (!qrBase64) {
         try {
-          await new Promise(r => setTimeout(r, 1000));
-          const qrRes  = await iFetch(`/instance/qr?id=${instName}`);
-          const qrData = await qrRes.json();
-          qrBase64    = qrData?.data?.Qrcode || qrData?.data?.qrcode || qrData?.Qrcode || "";
-          pairingCode = qrData?.data?.Code   || qrData?.data?.code   || qrData?.Code   || "";
-        } catch (_) { /* segue */ }
+          await new Promise(r => setTimeout(r, 800));
+          const r = await iFetch(`/instance/qr?id=${instName}`);
+          const d = await r.json();
+          console.log("[connect] S4 GET /instance/qr status:", r.status, JSON.stringify(d).slice(0, 400));
+          tried.push(`S4:${r.status}`);
+          qrBase64 = extractQr(d) || (d?.data?.Qrcode ?? "");
+        } catch (e) { tried.push(`S4:err`); }
       }
 
-      if (qrBase64) {
-        await supabase.from("empresas").update({ evolution_qr_temp: qrBase64 }).eq("id", empresa_id);
+      console.log("[connect] final qrBase64 length:", qrBase64.length, "tried:", tried.join(", "));
+
+      if (!qrBase64) {
+        // Tenta listar instâncias para diagnóstico
+        let instances = "";
+        try {
+          const lr = await gFetch("/instance/fetchInstances");
+          const ld = await lr.json();
+          const names = (Array.isArray(ld) ? ld : ld?.data || [])
+            .map((i: Record<string, unknown>) => i?.instance?.instanceName || i?.instanceName || i?.name).filter(Boolean);
+          instances = names.join(", ");
+          console.log("[connect] instances found:", instances);
+        } catch (_) {}
+
+        const msg = instances
+          ? `QR não obtido para "${instName}". Instâncias disponíveis: ${instances}. Use "Vincular instância existente" com o nome correto.`
+          : `QR não obtido para "${instName}". Verifique se a instância existe no Evolution GO e está desconectada. Tentativas: ${tried.join(", ")}`;
+        return json({ error: msg }, 400);
       }
 
-      console.log("[connect] qrBase64 length:", qrBase64.length, "pairing:", pairingCode);
-      return json({ success: true, qrBase64, pairingCode, webhookUrl });
+      await supabase.from("empresas").update({ evolution_qr_temp: qrBase64 }).eq("id", empresa_id);
+      return json({ success: true, qrBase64, webhookUrl });
     }
 
     // ────────────────────────────────────────────────────────────────────────
