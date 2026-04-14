@@ -71,41 +71,20 @@ Deno.serve(async (req) => {
         headers: { "Content-Type": "application/json", "apikey": instanceToken, ...(opts.headers || {}) },
       });
 
-    /** Configura o webhook do Evolution GO:
-     *  1. Tenta /webhook/set (versões mais recentes)
-     *  2. Fallback: passa webhookUrl no body do /instance/connect
+    /** Tenta configurar webhook via endpoint dedicado /webhook/set.
+     *  NÃO faz fallback para /instance/connect (evita double-connect que apaga webhookUrl).
      */
-    const configureWebhook = async (token: string, id: string, webhookUrl: string) => {
-      const headers = { "Content-Type": "application/json", "apikey": token };
-
-      // Tentativa 1: endpoint dedicado /webhook/set
+    const trySetWebhook = async (token: string, id: string, webhookUrl: string) => {
       try {
         const r = await fetch(`${evoUrl}/webhook/set`, {
-          method: "POST", headers,
+          method: "POST",
+          headers: { "Content-Type": "application/json", "apikey": token },
           body: JSON.stringify({ id, url: webhookUrl, events: WEBHOOK_EVENTS, enabled: true }),
         });
-        if (r.ok) {
-          console.log("[configureWebhook] /webhook/set OK");
-          return true;
-        }
-        const d = await r.json().catch(() => ({}));
-        console.log("[configureWebhook] /webhook/set status:", r.status, JSON.stringify(d).slice(0, 200));
-      } catch (e) {
-        console.log("[configureWebhook] /webhook/set erro:", e);
-      }
-
-      // Tentativa 2: passar webhookUrl no body de /instance/connect
-      try {
-        const r = await fetch(`${evoUrl}/instance/connect`, {
-          method: "POST", headers,
-          body: JSON.stringify({ id, webhookUrl }),
-        });
-        console.log("[configureWebhook] /instance/connect status:", r.status);
-        return r.ok;
-      } catch (e) {
-        console.log("[configureWebhook] /instance/connect erro:", e);
-        return false;
-      }
+        const ok = r.ok;
+        console.log("[trySetWebhook] /webhook/set status:", r.status, ok ? "OK" : "SKIP");
+        return ok;
+      } catch (_) { return false; }
     };
 
     // ── CREATE ──────────────────────────────────────────────────────────
@@ -144,9 +123,9 @@ Deno.serve(async (req) => {
         evolution_qr_temp:        null,
       }).eq("id", empresa_id);
 
-      // Configura webhook explicitamente após criação
+      // Tenta configurar webhook via endpoint dedicado (best-effort)
       if (createdId) {
-        await configureWebhook(createdToken, createdId, finalWebhookUrl);
+        await trySetWebhook(createdToken, createdId, finalWebhookUrl);
       }
 
       return json({ success: true, instanceId: createdId, token: createdToken, instanceName, webhookUrl: finalWebhookUrl });
@@ -160,37 +139,48 @@ Deno.serve(async (req) => {
 
       const webhookUrl = `${SUPA_URL}/functions/v1/evolution-webhook?token=${instanceToken}`;
 
-      // 1. Garante que o webhook está configurado antes de conectar
-      await configureWebhook(instanceToken, instanceId, webhookUrl);
+      // 1. Tenta configurar webhook via endpoint dedicado (best-effort, não bloqueia)
+      trySetWebhook(instanceToken, instanceId, webhookUrl).catch(() => {});
 
-      // 2. Dispara a conexão (gera QR)
+      // 2. ÚNICA chamada de connect — inclui webhookUrl no body para garantir configuração
+      //    (Evolution GO usa webhookUrl aqui para configurar webhook E gerar QR)
       const res  = await instanceFetch("/instance/connect", {
         method: "POST",
-        body: JSON.stringify({ id: instanceId }),
+        body: JSON.stringify({ id: instanceId, webhookUrl }),
       });
       const data = await res.json();
       console.log("[connect] status:", res.status, JSON.stringify(data).slice(0, 600));
 
       if (!res.ok) return json({ error: data.message || data.error || JSON.stringify(data) }, res.status);
 
-      // 3. Busca QR com retry (às vezes leva um momento para gerar)
-      let qrBase64 = "", pairingCode = "";
-      for (let attempt = 0; attempt < 3; attempt++) {
-        try {
-          if (attempt > 0) await new Promise(r => setTimeout(r, 1200));
-          const qrRes  = await instanceFetch(`/instance/qr?id=${instanceId}`);
-          const qrData = await qrRes.json();
-          qrBase64    = qrData?.data?.Qrcode || qrData?.data?.qrcode || qrData?.Qrcode || "";
-          pairingCode = qrData?.data?.Code   || qrData?.data?.code   || qrData?.Code   || "";
-          if (qrBase64) {
-            await supabase.from("empresas")
-              .update({ evolution_qr_temp: qrBase64 })
-              .eq("id", empresa_id);
-            break;
-          }
-        } catch (_) { /* retry */ }
+      // 3. QR pode vir direto na resposta do connect
+      let qrBase64 =
+        data?.data?.Qrcode || data?.data?.qrcode || data?.Qrcode || data?.qrcode || "";
+      let pairingCode =
+        data?.data?.Code   || data?.data?.code   || data?.Code   || data?.pairingCode || "";
+
+      // 4. Se não veio no connect, tenta endpoint /instance/qr com retry
+      if (!qrBase64) {
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            if (attempt > 0) await new Promise(r => setTimeout(r, 1200));
+            const qrRes  = await instanceFetch(`/instance/qr?id=${instanceId}`);
+            const qrData = await qrRes.json();
+            qrBase64    = qrData?.data?.Qrcode || qrData?.data?.qrcode || qrData?.Qrcode || "";
+            pairingCode = qrData?.data?.Code   || qrData?.data?.code   || qrData?.Code   || "";
+            if (qrBase64) break;
+          } catch (_) { /* retry */ }
+        }
       }
 
+      // 5. Se obteve QR, salva no banco (o webhook QRCODE_UPDATED também salva — dupla garantia)
+      if (qrBase64) {
+        await supabase.from("empresas")
+          .update({ evolution_qr_temp: qrBase64 })
+          .eq("id", empresa_id);
+      }
+
+      console.log("[connect] qrBase64 length:", qrBase64.length, "pairingCode:", pairingCode);
       return json({ success: true, qrBase64, pairingCode, data, webhookUrl });
     }
 
@@ -199,8 +189,16 @@ Deno.serve(async (req) => {
       if (!instanceId) return json({ error: "ID da instância não encontrado." }, 400);
       const webhookUrl = `${SUPA_URL}/functions/v1/evolution-webhook?token=${instanceToken}`;
       try {
-        const ok = await configureWebhook(instanceToken, instanceId, webhookUrl);
-        return json({ success: ok, webhookUrl });
+        // Tenta /webhook/set; se não funcionar, usa /instance/connect com webhookUrl
+        const ok1 = await trySetWebhook(instanceToken, instanceId, webhookUrl);
+        if (!ok1) {
+          const r = await instanceFetch("/instance/connect", {
+            method: "POST",
+            body: JSON.stringify({ id: instanceId, webhookUrl }),
+          });
+          console.log("[resetWebhook] fallback /instance/connect status:", r.status);
+        }
+        return json({ success: true, webhookUrl });
       } catch (e) {
         return json({ error: (e as Error).message }, 500);
       }
@@ -224,6 +222,22 @@ Deno.serve(async (req) => {
 
     // ── QR ───────────────────────────────────────────────────────────────
     if (action === "qr") {
+      // 1. Lê do banco primeiro (o webhook QRCODE_UPDATED já pode ter salvo)
+      const { data: freshEmp } = await supabase
+        .from("empresas")
+        .select("evolution_qr_temp, evolution_connected")
+        .eq("id", empresa_id)
+        .single();
+
+      if (freshEmp?.evolution_connected) {
+        return json({ data: { Connected: true } });
+      }
+
+      if (freshEmp?.evolution_qr_temp) {
+        return json({ data: { Qrcode: freshEmp.evolution_qr_temp, Code: "" } });
+      }
+
+      // 2. Banco vazio: tenta endpoint /instance/qr (pode não existir em todas as versões)
       if (instanceId) {
         try {
           const qrRes    = await instanceFetch(`/instance/qr?id=${instanceId}`);
@@ -236,17 +250,10 @@ Deno.serve(async (req) => {
               .eq("id", empresa_id);
             return json({ data: { Qrcode: qrBase64, Code: code } });
           }
-        } catch (_) { /* fallback to DB */ }
+        } catch (_) { /* sem QR disponível ainda */ }
       }
-      const { data: freshEmp } = await supabase
-        .from("empresas")
-        .select("evolution_qr_temp, evolution_connected")
-        .eq("id", empresa_id)
-        .single();
-      return json({ data: {
-        Qrcode:    freshEmp?.evolution_qr_temp || null,
-        Connected: freshEmp?.evolution_connected || false,
-      }});
+
+      return json({ data: { Qrcode: null, Connected: false } });
     }
 
     // ── STATUS ───────────────────────────────────────────────────────────
