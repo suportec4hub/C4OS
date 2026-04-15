@@ -170,6 +170,18 @@ Deno.serve(async (req) => {
       if (!effectiveToken) {
         const myToken    = crypto.randomUUID();
         const whUrl      = `${SUPA_URL}/functions/v1/evolution-webhook?token=${myToken}`;
+
+        // ── Salva token NO BANCO antes de chamar Evolution API ──────────────
+        // Evita race condition: Evolution API dispara webhook (HISTORY_SYNC,
+        // CONTACTS_SET, etc.) imediatamente ao criar instância. Se o token
+        // ainda não estiver no banco nesse momento, o webhook devolve 404 e
+        // perde o histórico. Salvando antes garantimos que o lookup funciona.
+        await supabase.from("empresas").update({
+          evolution_instance_id:    computedName,
+          evolution_instance_token: myToken,
+          evolution_connected:      false,
+        }).eq("id", empresa_id);
+
         const cr = await gFetch("/instance/create", {
           method: "POST",
           body: JSON.stringify({
@@ -180,12 +192,19 @@ Deno.serve(async (req) => {
         });
         const cd = await cr.json();
         console.log("[connect] auto-create status:", cr.status, JSON.stringify(cd).slice(0, 400));
-        if (!cr.ok) return json({ error: cd.message || cd.error || JSON.stringify(cd) }, 400);
+        if (!cr.ok) {
+          // Limpa o token salvo precocemente se a criação falhou
+          await supabase.from("empresas").update({
+            evolution_instance_id: null, evolution_instance_token: null,
+          }).eq("id", empresa_id);
+          return json({ error: cd.message || cd.error || JSON.stringify(cd) }, 400);
+        }
 
         effectiveToken = cd?.hash?.apikey || cd?.data?.token || cd?.token || myToken;
         effectiveName  = cd?.instance?.instanceName || cd?.data?.name || cd?.name || computedName;
         const immediateQr = cd?.qrcode?.base64 || cd?.data?.Qrcode || cd?.Qrcode || cd?.instance?.qrcode?.base64 || "";
 
+        // Atualiza com nome real retornado pela API (pode diferir de computedName)
         await supabase.from("empresas").update({
           evolution_instance_id:    effectiveName,
           evolution_instance_token: effectiveToken,
