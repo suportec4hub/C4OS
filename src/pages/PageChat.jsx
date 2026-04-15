@@ -201,6 +201,22 @@ export default function PageChat({ user }) {
   const [etiquetas,    setEtiquetas]    = useState([]);
   const [quickReplies, setQuickReplies] = useState([]);
 
+  // ── tipo filter (todos / contatos / grupos) ──────────────────────────────
+  const [tipoFiltro,   setTipoFiltro]   = useState("todos");
+
+  // ── import history ───────────────────────────────────────────────────────
+  const [importing,    setImporting]    = useState(false);
+  const [importInfo,   setImportInfo]   = useState(null); // { imported, total, nextPage }
+
+  // ── sidebar tabs (conversas | contatos) ──────────────────────────────────
+  const [sidebarTab,   setSidebarTab]   = useState("conversas");
+  const [wppContatos,  setWppContatos]  = useState([]);
+  const [contatosLoading, setContatosLoading] = useState(false);
+
+  // ── force sync ───────────────────────────────────────────────────────────
+  const [syncing,      setSyncing]      = useState(false);
+  const [syncMsg,      setSyncMsg]      = useState("");
+
   // ── right panel ───────────────────────────────────────────────────────────
   const [rightTab,     setRightTab]     = useState("info"); // info | etiquetas | agendadas | log
   const [convEtiquetas,setConvEtiquetas]= useState([]);
@@ -517,9 +533,16 @@ export default function PageChat({ user }) {
       if (activeConv.contato_telefone?.trim()) {
         supabase.functions.invoke("evolution-action", {
           body: { action: "send", empresa_id: user.empresa_id, phone: activeConv.contato_telefone, message: texto }
-        }).then(({ error: fnErr }) => {
-          if (fnErr) setSendErr("⚠️ Salvo mas não enviado ao WhatsApp: " + (fnErr.message || "verifique conexão."));
-        }).catch(() => setSendErr("⚠️ Salvo mas não enviado ao WhatsApp."));
+        }).then(({ data: fnData, error: fnErr }) => {
+          if (fnErr) {
+            // Tenta extrair detalhe real do erro (o body da edge function vem em fnErr.message como JSON string)
+            let detail = fnErr.message || "verifique conexão.";
+            try { const p = JSON.parse(detail); detail = p.error || p.message || detail; } catch (_) {}
+            setSendErr("⚠️ Salvo mas não enviado ao WhatsApp: " + detail);
+          } else if (fnData?.error) {
+            setSendErr("⚠️ Salvo mas não enviado ao WhatsApp: " + fnData.error);
+          }
+        }).catch((e) => setSendErr("⚠️ Salvo mas não enviado ao WhatsApp: " + (e?.message || "erro de rede.")));
       }
     }
     setSending(false);
@@ -543,6 +566,83 @@ export default function PageChat({ user }) {
   const cancelAgendada = async (id) => {
     await supabase.from("mensagens_agendadas").update({ status: "cancelado" }).eq("id", id);
     setAgendadas(p => p.filter(a => a.id !== id));
+  };
+
+  // ── sincronizar grupos ────────────────────────────────────────────────────
+  const syncGroups = async () => {
+    if (importing) return;
+    setImporting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("evolution-action", {
+        body: { action: "fetchGroups", empresa_id: user.empresa_id },
+      });
+      if (error) throw error;
+      setImportInfo({ imported: (data?.updated || 0) + (data?.created || 0), total: data?.total || 0, isGroups: true });
+      loadConversas(true);
+    } catch (e) {
+      console.error("[syncGroups]", e);
+      setImportInfo({ error: "Não foi possível buscar grupos. Verifique a conexão.", isGroups: true });
+    }
+    setImporting(false);
+  };
+
+  // ── importar histórico ────────────────────────────────────────────────────
+  const importHistory = async (page = 1) => {
+    if (importing) return;
+    setImporting(true);
+    try {
+      const { data } = await supabase.functions.invoke("evolution-action", {
+        body: { action: "importHistory", empresa_id: user.empresa_id, page },
+      });
+      setImportInfo(data);
+      if (data?.nextPage) {
+        // Continua automaticamente nas próximas páginas
+        setTimeout(() => importHistory(data.nextPage), 500);
+      } else {
+        setImporting(false);
+        loadConversas(true); // atualiza lista após import completo
+      }
+    } catch (e) {
+      setImporting(false);
+    }
+  };
+
+  // ── carregar contatos do WhatsApp (aba Contatos) ─────────────────────────
+  const loadWppContatos = useCallback(async () => {
+    if (!user?.empresa_id) return;
+    setContatosLoading(true);
+    const { data } = await supabase.from("conversas")
+      .select("id, contato_nome, contato_telefone")
+      .eq("empresa_id", user.empresa_id)
+      .order("contato_nome");
+    setWppContatos(data || []);
+    setContatosLoading(false);
+  }, [user?.empresa_id]);
+
+  useEffect(() => {
+    if (sidebarTab === "contatos") loadWppContatos();
+  }, [sidebarTab, loadWppContatos]);
+
+  // ── forçar sincronização ──────────────────────────────────────────────────
+  const forceSincronizar = async () => {
+    if (syncing) return;
+    setSyncing(true);
+    setSyncMsg("");
+    try {
+      await supabase.functions.invoke("evolution-action", {
+        body: { action: "fetchGroups", empresa_id: user.empresa_id },
+      });
+      await supabase.functions.invoke("evolution-action", {
+        body: { action: "importHistory", empresa_id: user.empresa_id, page: 1 },
+      });
+      await loadConversas(true);
+      setSyncMsg("✓ Sincronizado");
+      setTimeout(() => setSyncMsg(""), 3000);
+    } catch (e) {
+      setSyncMsg("Erro: " + (e?.message || "falha na sincronização"));
+      setTimeout(() => setSyncMsg(""), 4000);
+    }
+    setSyncing(false);
   };
 
   // ── keyboard shortcuts ────────────────────────────────────────────────────
@@ -581,7 +681,11 @@ export default function PageChat({ user }) {
       c.contato_empresa?.toLowerCase().includes(busca.toLowerCase()) ||
       c.contato_telefone?.includes(busca);
     const matchSetor = !setorFiltro || c.setor_id === setorFiltro;
-    return matchSearch && matchSetor;
+    const isGrpC = c.contato_telefone?.endsWith("@g.us");
+    const matchTipo  = tipoFiltro === "todos"    ? true
+                     : tipoFiltro === "grupos"   ? !!isGrpC
+                     : /* contatos */              !isGrpC;
+    return matchSearch && matchSetor && matchTipo;
   });
 
   const filteredQuick = quickReplies.filter(r =>
@@ -604,10 +708,33 @@ export default function PageChat({ user }) {
       )}
       {evoConnected === true && (
         <div style={{ padding: "6px 16px", background: L.greenBg, border: `1px solid ${L.green}33`,
-          borderRadius: 10, marginBottom: 10, display: "flex", alignItems: "center", gap: 8, fontSize: 11 }}>
+          borderRadius: 10, marginBottom: 10, display: "flex", alignItems: "center", gap: 8, fontSize: 11, flexWrap: "wrap" }}>
           <span style={{ width: 7, height: 7, borderRadius: "50%", background: L.green, display: "inline-block", flexShrink: 0 }} />
           <span style={{ color: L.green, fontWeight: 600 }}>WhatsApp conectado</span>
           <span style={{ color: L.t3 }}>· Evolution GO</span>
+          <span style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
+            {importInfo && (
+              <span style={{ color: importInfo.error ? L.red : L.t3, fontSize: 10 }}>
+                {importing
+                  ? `⏳ Sincronizando… ${importInfo.imported || 0}`
+                  : importInfo.error
+                    ? importInfo.error
+                    : importInfo.isGroups
+                      ? `✅ ${importInfo.total || 0} grupos sincronizados`
+                      : `✅ ${importInfo.imported || 0} msgs importadas`}
+              </span>
+            )}
+            <button onClick={() => syncGroups()} disabled={importing}
+              style={{ ...btnStyle(importing ? L.surface : L.blue, importing ? L.t4 : "white"),
+                fontSize: 10, padding: "3px 9px", opacity: importing ? 0.6 : 1 }}>
+              {importing ? "Sincronizando…" : "👥 Grupos"}
+            </button>
+            <button onClick={() => importHistory(1)} disabled={importing}
+              style={{ ...btnStyle(importing ? L.surface : L.t1, importing ? L.t4 : "white"),
+                fontSize: 10, padding: "3px 9px", opacity: importing ? 0.6 : 1 }}>
+              {importing ? "Importando…" : "⬇ Histórico"}
+            </button>
+          </span>
         </div>
       )}
 
@@ -632,54 +759,106 @@ export default function PageChat({ user }) {
                   )}
                 </Row>
                 <Row gap={5}>
+                  {syncMsg && (
+                    <span style={{ fontSize: 10, color: syncMsg.startsWith("Erro") ? L.red : L.green,
+                      fontWeight: 600, whiteSpace: "nowrap" }}>{syncMsg}</span>
+                  )}
+                  <button onClick={forceSincronizar} disabled={syncing} title="Forçar sincronização"
+                    style={{ ...btnStyle(syncing ? L.surface : L.blueBg, syncing ? L.t4 : L.blue),
+                      opacity: syncing ? 0.6 : 1, padding: "5px 8px" }}>
+                    {syncing ? "⟳" : "🔄"}
+                  </button>
                   <button onClick={() => loadConversas()} title="Atualizar" style={btnStyle()}>⟳</button>
                   <button onClick={() => setNovaModal(true)} style={btnStyle(L.t1, "white")}>+ Nova</button>
                 </Row>
               </Row>
 
-              {/* Busca */}
+              {/* Toggle Conversas / Contatos */}
+              <div style={{ display: "flex", gap: 3, marginBottom: 8 }}>
+                {[
+                  { id: "conversas", label: "💬 Conversas" },
+                  { id: "contatos",  label: "👥 Contatos"  },
+                ].map(t => (
+                  <button key={t.id} onClick={() => setSidebarTab(t.id)}
+                    style={{ flex: 1, padding: "5px 8px", borderRadius: 7, fontSize: 11, cursor: "pointer",
+                      fontFamily: "inherit", border: `1px solid ${sidebarTab === t.id ? L.teal : L.line}`,
+                      fontWeight: sidebarTab === t.id ? 700 : 400,
+                      background: sidebarTab === t.id ? L.tealBg : L.surface,
+                      color: sidebarTab === t.id ? L.teal : L.t3, transition: "all .1s" }}>
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Busca (unificada) */}
               <div style={{ display: "flex", alignItems: "center", gap: 7, background: L.surface,
                 border: `1px solid ${L.line}`, borderRadius: 8, padding: "5px 10px", marginBottom: 8 }}>
                 <span style={{ color: L.t4, fontSize: 13 }}>⌕</span>
-                <input value={busca} onChange={e => setBusca(e.target.value)} placeholder="Buscar contato..."
+                <input value={busca} onChange={e => setBusca(e.target.value)}
+                  placeholder={sidebarTab === "contatos" ? "Buscar contato..." : "Buscar conversa..."}
                   style={{ background: "none", border: "none", outline: "none", color: L.t1, fontSize: 12, width: "100%", fontFamily: "inherit" }} />
               </div>
 
-              {/* Filtro por setor */}
-              {setores.length > 0 && (
-                <select value={setorFiltro} onChange={e => setSetorFiltro(e.target.value)}
-                  style={{ width: "100%", border: `1px solid ${L.line}`, borderRadius: 7, padding: "4px 8px",
-                    fontSize: 11, color: L.t2, background: L.white, outline: "none", fontFamily: "inherit", marginBottom: 8 }}>
-                  <option value="">🏢 Todos os setores</option>
-                  {setores.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
-                </select>
-              )}
+              {/* Filtros só na aba Conversas */}
+              {sidebarTab === "conversas" && (
+                <>
+                  {/* Filtro por setor */}
+                  {setores.length > 0 && (
+                    <select value={setorFiltro} onChange={e => setSetorFiltro(e.target.value)}
+                      style={{ width: "100%", border: `1px solid ${L.line}`, borderRadius: 7, padding: "4px 8px",
+                        fontSize: 11, color: L.t2, background: L.white, outline: "none", fontFamily: "inherit", marginBottom: 8 }}>
+                      <option value="">🏢 Todos os setores</option>
+                      {setores.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
+                    </select>
+                  )}
 
-              {/* Abas de status */}
-              <div style={{ display: "flex", gap: 2, overflowX: "auto", scrollbarWidth: "none" }}>
-                {STATUS_TABS.map(t => {
-                  const count = t.id === "todas" ? totalNaoLidas : conversas.filter(c => c.status === t.id && c.nao_lidas > 0).reduce((s, c) => s + (c.nao_lidas || 0), 0);
-                  return (
-                    <button key={t.id} onClick={() => setStatusTab(t.id)}
-                      style={{ flexShrink: 0, padding: "4px 8px", borderRadius: 6, fontSize: 10, cursor: "pointer",
-                        fontFamily: "inherit", border: "none", fontWeight: statusTab === t.id ? 700 : 400,
-                        background: statusTab === t.id ? L.t1 : "transparent",
-                        color: statusTab === t.id ? "white" : L.t3, transition: "all .1s", position: "relative" }}>
-                      {t.label}
-                      {count > 0 && (
-                        <span style={{ position: "absolute", top: -3, right: -3, background: L.green,
-                          color: "white", borderRadius: "50%", width: 12, height: 12,
-                          fontSize: 8, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                          {count > 9 ? "9+" : count}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
+                  {/* Filtro Tipo: Todos / Contatos / Grupos */}
+                  <div style={{ display: "flex", gap: 3, marginBottom: 6 }}>
+                    {[
+                      { id: "todos",    label: "Todos",     emoji: "" },
+                      { id: "contatos", label: "Contatos",  emoji: "👤" },
+                      { id: "grupos",   label: "Grupos",    emoji: "👥" },
+                    ].map(t => (
+                      <button key={t.id} onClick={() => setTipoFiltro(t.id)}
+                        style={{ flex: 1, padding: "4px 6px", borderRadius: 6, fontSize: 10, cursor: "pointer",
+                          fontFamily: "inherit", border: `1px solid ${tipoFiltro === t.id ? L.teal : L.line}`,
+                          fontWeight: tipoFiltro === t.id ? 700 : 400,
+                          background: tipoFiltro === t.id ? L.tealBg : L.surface,
+                          color: tipoFiltro === t.id ? L.teal : L.t3, transition: "all .1s" }}>
+                        {t.emoji && <span style={{ marginRight: 3 }}>{t.emoji}</span>}
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Abas de status */}
+                  <div style={{ display: "flex", gap: 2, overflowX: "auto", scrollbarWidth: "none" }}>
+                    {STATUS_TABS.map(t => {
+                      const count = t.id === "todas" ? totalNaoLidas : conversas.filter(c => c.status === t.id && c.nao_lidas > 0).reduce((s, c) => s + (c.nao_lidas || 0), 0);
+                      return (
+                        <button key={t.id} onClick={() => setStatusTab(t.id)}
+                          style={{ flexShrink: 0, padding: "4px 8px", borderRadius: 6, fontSize: 10, cursor: "pointer",
+                            fontFamily: "inherit", border: "none", fontWeight: statusTab === t.id ? 700 : 400,
+                            background: statusTab === t.id ? L.t1 : "transparent",
+                            color: statusTab === t.id ? "white" : L.t3, transition: "all .1s", position: "relative" }}>
+                          {t.label}
+                          {count > 0 && (
+                            <span style={{ position: "absolute", top: -3, right: -3, background: L.green,
+                              color: "white", borderRadius: "50%", width: 12, height: 12,
+                              fontSize: 8, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                              {count > 9 ? "9+" : count}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
             </div>
 
-            {/* Lista */}
+            {/* Lista Conversas */}
+            {sidebarTab === "conversas" && (
             <div style={{ flex: 1, overflowY: "auto" }}>
               {loading ? (
                 <div style={{ padding: 24, textAlign: "center", color: L.t4, fontSize: 12 }}>
@@ -695,6 +874,10 @@ export default function PageChat({ user }) {
               ) : filtradas.map(c => {
                 const st = STATUS_LABELS[c.status] || STATUS_LABELS.aberta;
                 const isActive = activeConv?.id === c.id;
+                const isGrp = c.contato_telefone?.endsWith("@g.us");
+                const nomeExibido = c.contato_nome ||
+                  (isGrp ? `Grupo ${c.contato_telefone?.slice(-8,-4)}` : c.contato_telefone) ||
+                  "Desconhecido";
                 return (
                   <div key={c.id} onClick={() => selectConv(c)}
                     style={{ padding: "10px 14px", cursor: "pointer", borderBottom: `1px solid ${L.lineSoft}`,
@@ -704,8 +887,13 @@ export default function PageChat({ user }) {
                     onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = "transparent"; }}>
                     <Row gap={9}>
                       <div style={{ position: "relative", flexShrink: 0 }}>
-                        <Av name={c.contato_nome || "?"} color={L.t1} size={36} />
-                        {c.nao_lidas > 0 && (
+                        <Av name={nomeExibido} color={isGrp ? L.blue : L.t1} size={36} />
+                        {isGrp && (
+                          <div style={{ position: "absolute", bottom: -1, right: -1, width: 14, height: 14,
+                            borderRadius: "50%", background: L.blue, border: `2px solid ${L.white}`,
+                            display: "flex", alignItems: "center", justifyContent: "center", fontSize: 7 }}>👥</div>
+                        )}
+                        {!isGrp && c.nao_lidas > 0 && (
                           <div style={{ position: "absolute", bottom: -1, right: -1, width: 10, height: 10,
                             borderRadius: "50%", background: L.green, border: `2px solid ${L.white}` }} />
                         )}
@@ -714,7 +902,7 @@ export default function PageChat({ user }) {
                         <Row between>
                           <span style={{ fontSize: 12.5, fontWeight: c.nao_lidas > 0 ? 700 : 500, color: L.t1,
                             overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 130 }}>
-                            {c.contato_nome || c.contato_telefone || "Desconhecido"}
+                            {nomeExibido}
                           </span>
                           <span style={{ fontSize: 10, color: L.t4, flexShrink: 0 }}>{fmtHora(c.ultima_hora)}</span>
                         </Row>
@@ -750,6 +938,62 @@ export default function PageChat({ user }) {
                 );
               })}
             </div>
+            )}
+
+            {/* Lista Contatos */}
+            {sidebarTab === "contatos" && (
+            <div style={{ flex: 1, overflowY: "auto" }}>
+              {contatosLoading ? (
+                <div style={{ padding: 24, textAlign: "center", color: L.t4, fontSize: 12 }}>
+                  <div style={{ animation: "spin 1s linear infinite", fontSize: 20, marginBottom: 6, display: "inline-block" }}>⟳</div>
+                  <div>Carregando contatos...</div>
+                </div>
+              ) : wppContatos.filter(c =>
+                  !busca ||
+                  c.contato_nome?.toLowerCase().includes(busca.toLowerCase()) ||
+                  c.contato_telefone?.includes(busca)
+                ).length === 0 ? (
+                <div style={{ padding: 24, textAlign: "center", color: L.t4 }}>
+                  <div style={{ fontSize: 28, marginBottom: 8 }}>◈</div>
+                  <div style={{ fontSize: 12 }}>Nenhum contato</div>
+                </div>
+              ) : wppContatos.filter(c =>
+                  !busca ||
+                  c.contato_nome?.toLowerCase().includes(busca.toLowerCase()) ||
+                  c.contato_telefone?.includes(busca)
+                ).map(c => {
+                const isActive = activeConv?.id === c.id;
+                const isGrp = c.contato_telefone?.endsWith("@g.us");
+                const nomeExibido = c.contato_nome || c.contato_telefone || "Desconhecido";
+                return (
+                  <div key={c.id} onClick={() => {
+                    const conv = conversas.find(cv => cv.id === c.id);
+                    if (conv) selectConv(conv);
+                    setSidebarTab("conversas");
+                  }}
+                    style={{ padding: "10px 14px", cursor: "pointer", borderBottom: `1px solid ${L.lineSoft}`,
+                      background: isActive ? "#f0f0f044" : "transparent",
+                      borderLeft: `3px solid ${isActive ? L.t1 : "transparent"}`, transition: "all .1s" }}
+                    onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = L.surface; }}
+                    onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = "transparent"; }}>
+                    <Row gap={9}>
+                      <Av name={nomeExibido} color={isGrp ? L.blue : L.t1} size={36} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 500, color: L.t1,
+                          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {nomeExibido}
+                        </div>
+                        <div style={{ fontSize: 11, color: L.t3,
+                          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {c.contato_telefone || ""}
+                        </div>
+                      </div>
+                    </Row>
+                  </div>
+                );
+              })}
+            </div>
+            )}
           </div>
         )}
 

@@ -33,6 +33,10 @@ export default function PageDisparos({ user }) {
   const [succ,      setSucc]      = useState("");
   const [progress,  setProgress]  = useState(null); // {enviados, total}
   const [enviandoId,setEnviandoId]= useState(null);
+  const [wppContatos, setWppContatos] = useState([]);
+  const [wppModal,    setWppModal]    = useState(false);
+  const [wppLoading,  setWppLoading]  = useState(false);
+  const [wppSelecionados, setWppSelecionados] = useState([]);
   const fileRef   = useRef(null);
   const pollRef   = useRef(null);
 
@@ -97,6 +101,81 @@ export default function PageDisparos({ user }) {
     if (!novoContato.telefone.replace(/\D/g,"")) return;
     setContatos(p => [...p, { nome: novoContato.nome || "Contato", telefone: novoContato.telefone.replace(/\D/g,""), empresa: "" }]);
     setNovoContato({ nome: "", telefone: "" });
+  };
+
+  const fetchWppContatos = async () => {
+    setWppLoading(true);
+    setWppModal(true);
+    setWppContatos([]);
+    setWppSelecionados([]);
+    const { data, error } = await supabase.functions.invoke("evolution-action", {
+      body: { action: "fetchContacts", empresa_id: user.empresa_id }
+    });
+    setWppLoading(false);
+    if (error) { alert("Erro ao buscar contatos: " + error.message); setWppModal(false); return; }
+    if (data?.success && Array.isArray(data.contacts)) {
+      setWppContatos(data.contacts);
+    } else {
+      setWppContatos([]);
+    }
+  };
+
+  const adicionarWppSelecionados = () => {
+    const novos = wppSelecionados.map(c => ({
+      nome: c.pushName || c.name || c.number || c.id?.replace("@s.whatsapp.net","") || "Contato",
+      telefone: c.number || c.id?.replace("@s.whatsapp.net","") || c.id || "",
+      empresa: "",
+    })).filter(c => c.telefone);
+    setContatos(p => [...p, ...novos]);
+    setWppModal(false);
+    setWppSelecionados([]);
+    setWppContatos([]);
+  };
+
+  const sincronizarGrupos = async () => {
+    if (!window.confirm("Sincronizar grupos do WhatsApp com o sistema?")) return;
+    setWppLoading(true);
+    const { data, error } = await supabase.functions.invoke("evolution-action", {
+      body: { action: "fetchGroups", empresa_id: user.empresa_id }
+    });
+    setWppLoading(false);
+    if (error) { alert("Erro ao sincronizar grupos: " + error.message); return; }
+    const total   = data?.total   ?? 0;
+    const created = data?.created ?? 0;
+    const updated = data?.updated ?? 0;
+    alert(`Grupos sincronizados!\nTotal: ${total} | Novos: ${created} | Atualizados: ${updated}`);
+  };
+
+  const importarGruposParaContatos = async () => {
+    setWppLoading(true);
+    setWppModal(true);
+    setWppContatos([]);
+    setWppSelecionados([]);
+    const { data, error } = await supabase.functions.invoke("evolution-action", {
+      body: { action: "fetchGroups", empresa_id: user.empresa_id }
+    });
+    setWppLoading(false);
+    if (error) { alert("Erro ao buscar grupos: " + error.message); setWppModal(false); return; }
+    if (data?.success && Array.isArray(data.groups)) {
+      // Converte grupos para formato de contato para seleção
+      setWppContatos(data.groups.map(g => ({ ...g, _isGroup: true })));
+    } else if (Array.isArray(data?.groups)) {
+      setWppContatos(data.groups.map(g => ({ ...g, _isGroup: true })));
+    } else {
+      setWppContatos([]);
+    }
+  };
+
+  const adicionarGruposSelecionados = () => {
+    const novos = wppSelecionados.map(g => ({
+      nome: g.subject || g.name || g.id || "Grupo",
+      telefone: g.id || "",
+      empresa: "",
+    })).filter(c => c.telefone);
+    setContatos(p => [...p, ...novos]);
+    setWppModal(false);
+    setWppSelecionados([]);
+    setWppContatos([]);
   };
 
   const salvar = async (status = "rascunho") => {
@@ -256,7 +335,21 @@ export default function PageDisparos({ user }) {
               <button onClick={() => fileRef.current?.click()} style={btn(L.blueBg, L.blue, { width: "100%", marginBottom: 8 })}>
                 ⬆ Selecionar arquivo CSV
               </button>
-              {csvErr && <div style={{ fontSize: 10, color: L.yellow, background: L.yellowBg, padding: "5px 8px", borderRadius: 6 }}>{csvErr}</div>}
+              {csvErr && <div style={{ fontSize: 10, color: L.yellow, background: L.yellowBg, padding: "5px 8px", borderRadius: 6, marginBottom: 8 }}>{csvErr}</div>}
+              <button onClick={fetchWppContatos} disabled={wppLoading}
+                style={btn(L.greenBg, L.green, { width: "100%", marginBottom: 6, opacity: wppLoading ? 0.6 : 1 })}>
+                {wppLoading ? "Buscando..." : "📲 Importar do WhatsApp"}
+              </button>
+              <Row gap={6}>
+                <button onClick={importarGruposParaContatos} disabled={wppLoading}
+                  style={btn(L.surface, L.t2, { flex: 1, opacity: wppLoading ? 0.6 : 1 })}>
+                  👥 Grupos do WhatsApp
+                </button>
+                <button onClick={sincronizarGrupos} disabled={wppLoading}
+                  style={btn(L.surface, L.t3, { flex: 1, fontSize: 10, opacity: wppLoading ? 0.6 : 1 })}>
+                  🔄 Sincronizar grupos
+                </button>
+              </Row>
             </div>
 
             {/* Adicionar manual */}
@@ -321,6 +414,86 @@ export default function PageDisparos({ user }) {
                   {previewMensagem(form.mensagem, contatos[0])}
                 </div>
               </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal WhatsApp Contatos / Grupos */}
+      {wppModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 200,
+          display: "flex", alignItems: "center", justifyContent: "center" }}
+          onClick={() => setWppModal(false)}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: "white", borderRadius: 12, padding: 24, width: 440, maxHeight: "80vh",
+              display: "flex", flexDirection: "column", boxShadow: "0 8px 40px rgba(0,0,0,.18)" }}>
+            <Row between mb={12}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: L.t1 }}>
+                {wppContatos.some(c => c._isGroup) ? "👥 Grupos do WhatsApp" : "📲 Contatos do WhatsApp"}
+              </div>
+              <button onClick={() => setWppModal(false)}
+                style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: L.t3 }}>×</button>
+            </Row>
+
+            {wppLoading ? (
+              <div style={{ textAlign: "center", padding: "32px 0", color: L.t4, fontSize: 12 }}>
+                Buscando contatos...
+              </div>
+            ) : wppContatos.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "32px 0", color: L.t4, fontSize: 12 }}>
+                Nenhum contato encontrado.
+              </div>
+            ) : (
+              <>
+                <Row between mb={8}>
+                  <div style={{ fontSize: 11, color: L.t3 }}>{wppContatos.length} disponíveis · {wppSelecionados.length} selecionados</div>
+                  <button
+                    onClick={() => setWppSelecionados(
+                      wppSelecionados.length === wppContatos.length ? [] : [...wppContatos]
+                    )}
+                    style={btn(L.surface, L.t2, { padding: "3px 10px", fontSize: 10 })}>
+                    {wppSelecionados.length === wppContatos.length ? "Desmarcar todos" : "Selecionar todos"}
+                  </button>
+                </Row>
+                <div style={{ flex: 1, overflowY: "auto", border: `1px solid ${L.line}`, borderRadius: 8 }}>
+                  {wppContatos.map((c, i) => {
+                    const isSel = wppSelecionados.some(s => (s.id || s.number) === (c.id || c.number));
+                    const nome = c._isGroup
+                      ? (c.subject || c.name || c.id || "Grupo")
+                      : (c.pushName || c.name || c.number || c.id?.replace("@s.whatsapp.net","") || "Contato");
+                    const sub = c._isGroup
+                      ? (c.id || "")
+                      : (c.number || c.id?.replace("@s.whatsapp.net","") || "");
+                    return (
+                      <div key={i} onClick={() => {
+                        setWppSelecionados(p =>
+                          isSel ? p.filter(s => (s.id || s.number) !== (c.id || c.number)) : [...p, c]
+                        );
+                      }}
+                        style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px",
+                          borderBottom: `1px solid ${L.lineSoft}`, cursor: "pointer",
+                          background: isSel ? L.tealBg : "transparent", transition: "background .1s" }}>
+                        <input type="checkbox" readOnly checked={isSel} style={{ accentColor: L.teal }} />
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 12, fontWeight: 500, color: L.t1,
+                            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nome}</div>
+                          <div style={{ fontSize: 10, color: L.t3,
+                            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sub}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <Row gap={8} style={{ marginTop: 14, justifyContent: "flex-end" }}>
+                  <button onClick={() => setWppModal(false)} style={btn(L.surface, L.t2)}>Cancelar</button>
+                  <button
+                    onClick={wppContatos.some(c => c._isGroup) ? adicionarGruposSelecionados : adicionarWppSelecionados}
+                    disabled={wppSelecionados.length === 0}
+                    style={btn(L.t1, "white", { opacity: wppSelecionados.length === 0 ? 0.5 : 1 })}>
+                    Adicionar {wppSelecionados.length > 0 ? `(${wppSelecionados.length})` : "selecionados"}
+                  </button>
+                </Row>
+              </>
             )}
           </div>
         </div>

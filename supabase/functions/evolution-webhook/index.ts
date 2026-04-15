@@ -12,7 +12,10 @@ Deno.serve(async (req) => {
 
   try {
     const reqUrl       = new URL(req.url);
-    const tokenFromUrl = reqUrl.searchParams.get("token") || "";
+    // Evolution API com "Webhook by Events" ativo appenda "/nome-do-evento" ao token
+    // Ex: ?token=04e3768f-9942.../messages-upsert  →  precisamos só do UUID
+    const rawToken     = reqUrl.searchParams.get("token") || "";
+    const tokenFromUrl = rawToken.split("/")[0].trim();   // strip suffix de evento
     const body         = await req.json();
 
     // Evolution GO (Go version) usa 'eventString'; Evolution API (Node) usa 'event'
@@ -71,6 +74,41 @@ Deno.serve(async (req) => {
         }).eq("id", empresa_id);
       } else if (state === "close" || state === "connecting" || event === "Disconnected") {
         await supabase.from("empresas").update({ evolution_connected: false }).eq("id", empresa_id);
+      }
+      return new Response("OK");
+    }
+
+    // ── GRUPOS (nome do grupo via GROUPS_UPSERT / GROUP_UPDATE)
+    if (["GROUPS_UPSERT","GROUP_UPDATE","groups.upsert","groups.update"].includes(event)) {
+      const groups = Array.isArray(data) ? data : (data?.groups ? data.groups : [data]);
+      for (const g of groups) {
+        if (!g?.id || !g?.subject) continue;
+        const gJid = g.id.includes("@g.us") ? g.id : `${g.id}@g.us`;
+
+        const { data: existing } = await supabase.from("conversas")
+          .select("id")
+          .eq("empresa_id", empresa_id)
+          .eq("contato_telefone", gJid)
+          .maybeSingle();
+
+        if (existing) {
+          // Atualiza nome do grupo na conversa existente
+          await supabase.from("conversas")
+            .update({ contato_nome: g.subject })
+            .eq("id", existing.id);
+        } else {
+          // Cria conversa para o grupo (pode não ter mensagens ainda)
+          await supabase.from("conversas").insert({
+            empresa_id,
+            contato_nome:     g.subject,
+            contato_telefone: gJid,
+            ultima_mensagem:  "",
+            ultima_hora:      now,
+            nao_lidas:        0,
+            status:           "aberta",
+            bot_ativo:        false,
+          });
+        }
       }
       return new Response("OK");
     }
@@ -155,13 +193,19 @@ async function processMessages(
     // Info.Chat é SEMPRE o JID da conversa (destinatário/remetente externo)
     const remoteJid = ((info.Chat || key.remoteJid || "") as string);
     if (!remoteJid) continue;
-    if (remoteJid.endsWith("@g.us") || remoteJid.endsWith("@broadcast")) continue;
+    if (remoteJid.endsWith("@broadcast")) continue; // ignora broadcast, mas permite grupos
 
-    const senderPhone = remoteJid.replace(/@s\.whatsapp\.net$/, "").replace(/:.*$/, "");
+    const isGroup   = remoteJid.endsWith("@g.us");
+
+    // Identificador da conversa: JID completo para grupos, só número para individuais
+    const senderPhone = isGroup
+      ? remoteJid
+      : remoteJid.replace(/@s\.whatsapp\.net$/, "").replace(/:.*$/, "");
     if (!senderPhone) continue;
 
     // Nome do contato: Go usa Info.PushName | Baileys usa pushName
-    const senderName = ((info.PushName || m.pushName || m.PushName || senderPhone) as string);
+    // Para grupos: pushName é o nome de quem enviou a mensagem (não o nome do grupo)
+    const senderName = ((info.PushName || m.pushName || m.PushName || (isGroup ? "Grupo" : senderPhone)) as string);
 
     // Conteúdo: Go usa Message (capital) | Baileys usa message
     const msgContent = (m.Message || m.message || {}) as Record<string, unknown>;
@@ -171,7 +215,7 @@ async function processMessages(
     const imgC  = (msgContent.imageMessage   || msgContent.ImageMessage   || {}) as Record<string,unknown>;
     const vidC  = (msgContent.videoMessage   || msgContent.VideoMessage   || {}) as Record<string,unknown>;
     const docC  = (msgContent.documentMessage|| msgContent.DocumentMessage|| {}) as Record<string,unknown>;
-    const texto: string =
+    const textoRaw: string =
       (msgContent.conversation         as string) ||
       (msgContent.Conversation         as string) ||
       (ec.text                         as string) ||
@@ -182,6 +226,11 @@ async function processMessages(
       (msgContent.locationMessage|| msgContent.LocationMessage? "[📍 Localização]"     : "") ||
       (docC.title || docC.Title ? `[📄 ${docC.title || docC.Title}]`                   : "") ||
       "[Mensagem recebida]";
+
+    // Para grupos, prefixar com nome de quem enviou (exceto mensagens próprias)
+    const texto: string = (isGroup && !fromMe && senderName && senderName !== senderPhone)
+      ? `[${senderName}]: ${textoRaw}`
+      : textoRaw;
 
     // Timestamp: Go usa Info.Timestamp (ISO string) | Baileys usa messageTimestamp (Unix)
     const rawTs = info.Timestamp || m.messageTimestamp || m.MessageTimestamp;

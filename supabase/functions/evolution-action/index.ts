@@ -110,13 +110,23 @@ Deno.serve(async (req) => {
       const res  = await gFetch("/instance/create", {
         method: "POST",
         body: JSON.stringify({
-          instanceName: name,          // Evolution GO usa "instanceName"
-          name,                        // fallback para versões que usam "name"
-          token:        myToken,
-          qrcode:       true,          // pede QR na criação
-          integration:  "WHATSAPP-BAILEYS",
-          webhook: { url: webhookUrl, events: WEBHOOK_EVENTS },
-          webhookUrl,                  // fallback plano para versões antigas
+          instanceName:    name,
+          name,
+          token:           myToken,
+          qrcode:          true,
+          integration:     "WHATSAPP-BAILEYS",
+          // webhookByEvents: false garante que o Evolution API NÃO append
+          // "/event-name" ao token na URL, evitando 404 nas Edge Functions
+          webhookByEvents: false,
+          webhook_by_events: false,
+          syncFullHistory: true,
+          webhook: {
+            url:            webhookUrl,
+            events:         WEBHOOK_EVENTS,
+            webhookByEvents: false,
+            base64:         true,       // imagens/áudios em base64
+          },
+          webhookUrl,
         }),
       });
       const data = await res.json();
@@ -124,11 +134,8 @@ Deno.serve(async (req) => {
 
       if (!res.ok) return json({ error: data.message || data.error || JSON.stringify(data) }, 400);
 
-      // Evolution GO pode retornar hash.apikey ou data.token como token da instância
       const savedToken = data?.hash?.apikey || data?.data?.token || data?.token || myToken;
-      // Usa nome computado como ID (mais estável que UUID para path-based endpoints)
       const savedName  = data?.instance?.instanceName || data?.data?.name || data?.name || name;
-      // QR pode vir na resposta do create (qrcode: true)
       const createQr   =
         data?.qrcode?.base64 || data?.data?.Qrcode || data?.Qrcode ||
         data?.instance?.qrcode?.base64 || "";
@@ -142,12 +149,19 @@ Deno.serve(async (req) => {
         evolution_qr_temp:        createQr || null,
       }).eq("id", empresa_id);
 
-      // Tenta configurar webhook explicitamente caso não venha no create
+      // Configura webhook explicitamente com webhookByEvents=false
       try {
         await fetch(`${evoUrl}/webhook/set`, {
           method: "POST",
           headers: { "Content-Type": "application/json", "apikey": savedToken },
-          body: JSON.stringify({ instanceName: savedName, url: finalWebhookUrl, events: WEBHOOK_EVENTS, enabled: true }),
+          body: JSON.stringify({
+            instanceName:    savedName,
+            url:             finalWebhookUrl,
+            events:          WEBHOOK_EVENTS,
+            enabled:         true,
+            webhookByEvents: false,
+            base64:          true,
+          }),
         });
       } catch (_) { /* best-effort */ }
 
@@ -160,156 +174,217 @@ Deno.serve(async (req) => {
     }
 
     // ────────────────────────────────────────────────────────────────────────
-    // CONNECT — gera QR Code (auto-cria instância se não existir)
+    // CONNECT — gera QR Code
+    //   • Se não há instância no banco → cria nova automaticamente
+    //   • Se há instância no banco mas foi deletada na API → detecta e recria
+    //   • webhookByEvents: false para evitar sufixo de evento na URL do webhook
+    //   • base64: true para imagens e áudios inline
+    //   • syncFullHistory: true para sincronizar histórico completo
     // ────────────────────────────────────────────────────────────────────────
     if (action === "connect") {
-      // Se não há instância, cria automaticamente antes de conectar
       let effectiveToken = instToken;
       let effectiveName  = instName;
 
-      if (!effectiveToken) {
-        const myToken    = crypto.randomUUID();
-        const whUrl      = `${SUPA_URL}/functions/v1/evolution-webhook?token=${myToken}`;
+      /** Cria instância do zero e devolve { effectiveToken, effectiveName, immediateQr } */
+      const createFresh = async () => {
+        const myToken = crypto.randomUUID();
+        const whUrl   = `${SUPA_URL}/functions/v1/evolution-webhook?token=${myToken}`;
+        const name    = computedName;
 
-        // ── Salva token NO BANCO antes de chamar Evolution API ──────────────
-        // Evita race condition: Evolution API dispara webhook (HISTORY_SYNC,
-        // CONTACTS_SET, etc.) imediatamente ao criar instância. Se o token
-        // ainda não estiver no banco nesse momento, o webhook devolve 404 e
-        // perde o histórico. Salvando antes garantimos que o lookup funciona.
+        // Salva token ANTES de chamar a API para evitar race condition com webhooks
         await supabase.from("empresas").update({
-          evolution_instance_id:    computedName,
+          evolution_instance_id:    name,
           evolution_instance_token: myToken,
           evolution_connected:      false,
+          evolution_qr_temp:        null,
         }).eq("id", empresa_id);
 
         const cr = await gFetch("/instance/create", {
           method: "POST",
           body: JSON.stringify({
-            instanceName: computedName, name: computedName, token: myToken, qrcode: true,
-            integration: "WHATSAPP-BAILEYS",
-            webhook: { url: whUrl, events: WEBHOOK_EVENTS }, webhookUrl: whUrl,
+            instanceName:    name,
+            name,
+            token:           myToken,
+            qrcode:          true,
+            integration:     "WHATSAPP-BAILEYS",
+            syncFullHistory: true,
+            webhookByEvents: false,
+            webhook_by_events: false,
+            webhook: {
+              url:             whUrl,
+              events:          WEBHOOK_EVENTS,
+              webhookByEvents: false,
+              base64:          true,
+            },
+            webhookUrl: whUrl,
           }),
         });
         const cd = await cr.json();
-        console.log("[connect] auto-create status:", cr.status, JSON.stringify(cd).slice(0, 400));
+        console.log("[connect] createFresh status:", cr.status, JSON.stringify(cd).slice(0, 400));
+
         if (!cr.ok) {
-          // Limpa o token salvo precocemente se a criação falhou
           await supabase.from("empresas").update({
             evolution_instance_id: null, evolution_instance_token: null,
           }).eq("id", empresa_id);
-          return json({ error: cd.message || cd.error || JSON.stringify(cd) }, 400);
+          throw new Error(cd.message || cd.error || JSON.stringify(cd));
         }
 
-        effectiveToken = cd?.hash?.apikey || cd?.data?.token || cd?.token || myToken;
-        effectiveName  = cd?.instance?.instanceName || cd?.data?.name || cd?.name || computedName;
-        const immediateQr = cd?.qrcode?.base64 || cd?.data?.Qrcode || cd?.Qrcode || cd?.instance?.qrcode?.base64 || "";
+        const tok  = cd?.hash?.apikey || cd?.data?.token || cd?.token || myToken;
+        const nm   = cd?.instance?.instanceName || cd?.data?.name || cd?.name || name;
+        const qr   = cd?.qrcode?.base64 || cd?.data?.Qrcode || cd?.Qrcode || cd?.instance?.qrcode?.base64 || "";
 
-        // Atualiza com nome real retornado pela API (pode diferir de computedName)
         await supabase.from("empresas").update({
-          evolution_instance_id:    effectiveName,
-          evolution_instance_token: effectiveToken,
+          evolution_instance_id:    nm,
+          evolution_instance_token: tok,
           evolution_connected:      false,
-          evolution_qr_temp:        immediateQr || null,
+          evolution_qr_temp:        qr || null,
         }).eq("id", empresa_id);
 
-        if (immediateQr) {
-          return json({ success: true, qrBase64: immediateQr, newInstance: true, webhookUrl: whUrl });
+        // Configura webhook explicitamente com webhookByEvents=false
+        fetch(`${evoUrl}/webhook/set`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "apikey": tok },
+          body: JSON.stringify({
+            instanceName:    nm,
+            url:             `${SUPA_URL}/functions/v1/evolution-webhook?token=${tok}`,
+            events:          WEBHOOK_EVENTS,
+            enabled:         true,
+            webhookByEvents: false,
+            base64:          true,
+          }),
+        }).catch(() => {});
+
+        return { tok, nm, qr };
+      };
+
+      // ── Caso 1: sem instância no banco → cria nova ────────────────────────
+      if (!effectiveToken) {
+        try {
+          const { tok, nm, qr } = await createFresh();
+          effectiveToken = tok;
+          effectiveName  = nm;
+          if (qr) return json({ success: true, qrBase64: qr, newInstance: true,
+            webhookUrl: `${SUPA_URL}/functions/v1/evolution-webhook?token=${tok}` });
+        } catch (e) {
+          return json({ error: (e as Error).message }, 400);
         }
       }
 
-      // A partir daqui usa effectiveToken/effectiveName no lugar de instToken/instName
       const webhookUrl = `${SUPA_URL}/functions/v1/evolution-webhook?token=${effectiveToken}`;
 
-      // Fetch autenticado com token efetivo (pode ser novo se auto-criado)
       const cFetch = (path: string, opts: RequestInit = {}) =>
         fetch(`${evoUrl}${path}`, {
           ...opts,
           headers: { "Content-Type": "application/json", "apikey": effectiveToken || GLOBAL_KEY, ...(opts.headers || {}) },
         });
 
-      // Configura webhook em paralelo (best-effort, não bloqueia)
+      // Atualiza webhook para garantir webhookByEvents=false (best-effort)
       fetch(`${evoUrl}/webhook/set`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "apikey": effectiveToken },
-        body: JSON.stringify({ instanceName: effectiveName, url: webhookUrl, events: WEBHOOK_EVENTS, enabled: true }),
+        body: JSON.stringify({
+          instanceName:    effectiveName,
+          url:             webhookUrl,
+          events:          WEBHOOK_EVENTS,
+          enabled:         true,
+          webhookByEvents: false,
+          base64:          true,
+        }),
       }).catch(() => {});
 
       let qrBase64 = "";
       const tried: string[] = [];
+      let instanceMissing = false;  // sinaliza instância deletada na API
 
       const extractQr = (d: Record<string, unknown>): string =>
         (d?.base64 || d?.qrcode?.base64 || d?.Qrcode || d?.data?.Qrcode ||
          d?.data?.qrcode || d?.instance?.qrcode?.base64 || "") as string;
 
-      // Estratégia 1: GET /instance/connect/{effectiveName} com effectiveToken
+      // Estratégia 1: GET /instance/connect/{name} com token da instância
       try {
         const r = await cFetch(`/instance/connect/${effectiveName}`);
         const d = await r.json();
-        console.log("[connect] S1 GET /instance/connect status:", r.status, JSON.stringify(d).slice(0, 400));
+        console.log("[connect] S1 status:", r.status, JSON.stringify(d).slice(0, 400));
         tried.push(`S1:${r.status}`);
+        if (r.status === 404 || d?.statusCode === 404) instanceMissing = true;
         qrBase64 = extractQr(d);
         const state = d?.instance?.state || d?.state || d?.data?.state || "";
         if (!qrBase64 && state === "open") {
           await supabase.from("empresas").update({ evolution_connected: true, evolution_qr_temp: null }).eq("id", empresa_id);
           return json({ success: true, alreadyConnected: true, webhookUrl });
         }
-      } catch (e) { tried.push(`S1:err`); console.error("[connect] S1 error:", e); }
+      } catch (e) { tried.push("S1:err"); }
 
-      // Estratégia 2: GET com global apikey (caso effectiveToken não tenha permissão)
-      if (!qrBase64) {
+      // Estratégia 2: GET com global apikey
+      if (!qrBase64 && !instanceMissing) {
         try {
           const r = await gFetch(`/instance/connect/${effectiveName}`);
           const d = await r.json();
-          console.log("[connect] S2 GET global key status:", r.status, JSON.stringify(d).slice(0, 400));
+          console.log("[connect] S2 status:", r.status, JSON.stringify(d).slice(0, 400));
           tried.push(`S2:${r.status}`);
+          if (r.status === 404 || d?.statusCode === 404) instanceMissing = true;
           qrBase64 = extractQr(d);
-        } catch (e) { tried.push(`S2:err`); }
+        } catch (e) { tried.push("S2:err"); }
       }
 
-      // Estratégia 3: POST /instance/connect com body
-      if (!qrBase64) {
+      // Estratégia 3: POST /instance/connect
+      if (!qrBase64 && !instanceMissing) {
         try {
           const r = await cFetch("/instance/connect", {
             method: "POST",
             body: JSON.stringify({ id: effectiveName, instanceName: effectiveName, webhookUrl, qrcode: true }),
           });
           const d = await r.json();
-          console.log("[connect] S3 POST status:", r.status, JSON.stringify(d).slice(0, 400));
+          console.log("[connect] S3 status:", r.status, JSON.stringify(d).slice(0, 400));
           tried.push(`S3:${r.status}`);
           qrBase64 = extractQr(d);
-        } catch (e) { tried.push(`S3:err`); }
+        } catch (e) { tried.push("S3:err"); }
       }
 
-      // Estratégia 4: GET /instance/qr (endpoint alternativo)
-      if (!qrBase64) {
+      // Estratégia 4: GET /instance/qr
+      if (!qrBase64 && !instanceMissing) {
         try {
           await new Promise(r => setTimeout(r, 800));
           const r = await cFetch(`/instance/qr?id=${effectiveName}`);
           const d = await r.json();
-          console.log("[connect] S4 GET /instance/qr status:", r.status, JSON.stringify(d).slice(0, 400));
+          console.log("[connect] S4 status:", r.status, JSON.stringify(d).slice(0, 400));
           tried.push(`S4:${r.status}`);
           qrBase64 = extractQr(d) || (d?.data?.Qrcode ?? "");
-        } catch (e) { tried.push(`S4:err`); }
+        } catch (e) { tried.push("S4:err"); }
       }
 
-      console.log("[connect] final qrBase64 length:", qrBase64.length, "tried:", tried.join(", "));
+      // ── Caso 2: instância deletada na API → recria automaticamente ─────────
+      if (!qrBase64 && instanceMissing) {
+        console.log("[connect] instância deletada na API — recriando automaticamente...");
+        try {
+          const { tok, nm, qr } = await createFresh();
+          effectiveToken = tok;
+          effectiveName  = nm;
+          if (qr) return json({ success: true, qrBase64: qr, newInstance: true,
+            webhookUrl: `${SUPA_URL}/functions/v1/evolution-webhook?token=${tok}` });
+          // Se não veio QR no create, tenta buscar
+          await new Promise(r => setTimeout(r, 1200));
+          const r2 = await fetch(`${evoUrl}/instance/connect/${nm}`, {
+            headers: { "Content-Type": "application/json", "apikey": tok },
+          });
+          const d2 = await r2.json();
+          qrBase64 = extractQr(d2);
+          if (qrBase64) {
+            await supabase.from("empresas").update({ evolution_qr_temp: qrBase64 }).eq("id", empresa_id);
+            return json({ success: true, qrBase64, newInstance: true,
+              webhookUrl: `${SUPA_URL}/functions/v1/evolution-webhook?token=${tok}` });
+          }
+        } catch (e) {
+          return json({ error: `Falha ao recriar instância: ${(e as Error).message}` }, 400);
+        }
+      }
+
+      console.log("[connect] qrBase64 length:", qrBase64.length, "tried:", tried.join(", "));
 
       if (!qrBase64) {
-        // Tenta listar instâncias para diagnóstico
-        let instances = "";
-        try {
-          const lr = await gFetch("/instance/fetchInstances");
-          const ld = await lr.json();
-          const names = (Array.isArray(ld) ? ld : ld?.data || [])
-            .map((i: Record<string, unknown>) => i?.instance?.instanceName || i?.instanceName || i?.name).filter(Boolean);
-          instances = names.join(", ");
-          console.log("[connect] instances found:", instances);
-        } catch (_) {}
-
-        const msg = instances
-          ? `QR não obtido para "${effectiveName}". Instâncias disponíveis: ${instances}.`
-          : `QR não obtido para "${effectiveName}". Verifique se a instância existe no Evolution API e está desconectada. Tentativas: ${tried.join(", ")}`;
-        return json({ error: msg }, 400);
+        return json({
+          error: `QR não obtido para "${effectiveName}". Tentativas: ${tried.join(", ")}. Tente clicar em "Gerar QR Code" novamente.`,
+        }, 400);
       }
 
       await supabase.from("empresas").update({ evolution_qr_temp: qrBase64 }).eq("id", empresa_id);
@@ -400,15 +475,21 @@ Deno.serve(async (req) => {
     // ────────────────────────────────────────────────────────────────────────
     if (action === "resetWebhook") {
       const webhookUrl = `${SUPA_URL}/functions/v1/evolution-webhook?token=${instToken}`;
+      const webhookBody = {
+        instanceName:    instName,
+        url:             webhookUrl,
+        events:          WEBHOOK_EVENTS,
+        enabled:         true,
+        webhookByEvents: false,   // evita sufixo /event-name na URL
+        base64:          true,    // imagens e áudios em base64
+      };
       try {
-        // Tenta /webhook/set (endpoint dedicado)
         const r1 = await fetch(`${evoUrl}/webhook/set`, {
           method: "POST",
           headers: { "Content-Type": "application/json", "apikey": instToken },
-          body: JSON.stringify({ instanceName: instName, url: webhookUrl, events: WEBHOOK_EVENTS, enabled: true }),
+          body: JSON.stringify(webhookBody),
         });
         if (!r1.ok) {
-          // Fallback: POST /instance/connect com webhookUrl (não usa GET para não gerar novo QR)
           await iFetch("/instance/connect", {
             method: "POST",
             body: JSON.stringify({ instanceName: instName, webhookUrl }),
@@ -422,29 +503,72 @@ Deno.serve(async (req) => {
 
     // ────────────────────────────────────────────────────────────────────────
     // SEND — envia mensagem de texto via WhatsApp
+    // Tenta 3 formatos de endpoint para compatibilidade com Evolution API v2
+    // (Node.js) e Evolution GO, sem depender da versão instalada.
     // ────────────────────────────────────────────────────────────────────────
     if (action === "send") {
       const { phone, message } = body;
       if (!phone || !message) return json({ error: "phone e message obrigatórios" }, 400);
 
-      const cleanPhone = String(phone).replace(/\D/g, "");
+      // Preserva @g.us para grupos e @s.whatsapp.net para individuais.
+      const rawPhone   = String(phone).trim();
+      const cleanPhone = rawPhone.includes("@") ? rawPhone : rawPhone.replace(/\D/g, "");
 
-      // Evolution GO: POST /send/text com {instanceName, number, text}
-      // (também suporta formato antigo {id, number, text})
-      const res = await iFetch("/send/text", {
-        method: "POST",
-        body: JSON.stringify({
-          instanceName: instName,
-          id:           instName,
-          number:       cleanPhone,
-          text:         message,
-        }),
-      });
-      const resData = await res.json();
-      console.log("[send] status:", res.status, "to:", cleanPhone, JSON.stringify(resData).slice(0, 300));
+      let lastErr    = "Falha ao enviar mensagem";
+      let lastStatus = 400;
 
-      if (!res.ok) return json({ error: resData.message || resData.error || JSON.stringify(resData) }, res.status);
-      return json(resData);
+      // ── Tentativa 1: Evolution API v2 — POST /message/sendText/{instanceName}
+      // Formato básico: { number, text }
+      try {
+        const r1 = await iFetch(`/message/sendText/${instName}`, {
+          method: "POST",
+          body: JSON.stringify({ number: cleanPhone, text: message }),
+        });
+        const d1 = await r1.json().catch(() => ({}));
+        console.log("[send] v2-basic status:", r1.status, JSON.stringify(d1).slice(0, 200));
+        if (r1.ok) return json(d1);
+        lastErr    = d1.message || d1.error || JSON.stringify(d1);
+        lastStatus = r1.status;
+      } catch (e) { console.log("[send] v2-basic err:", (e as Error).message); }
+
+      // ── Tentativa 2: Evolution API v2 — formato com textMessage + options
+      try {
+        const r2 = await iFetch(`/message/sendText/${instName}`, {
+          method: "POST",
+          body: JSON.stringify({
+            number:      cleanPhone,
+            options:     { delay: 1200, presence: "composing", linkPreview: false },
+            textMessage: { text: message },
+          }),
+        });
+        const d2 = await r2.json().catch(() => ({}));
+        console.log("[send] v2-ext status:", r2.status, JSON.stringify(d2).slice(0, 200));
+        if (r2.ok) return json(d2);
+        lastErr    = d2.message || d2.error || JSON.stringify(d2);
+        lastStatus = r2.status;
+      } catch (e) { console.log("[send] v2-ext err:", (e as Error).message); }
+
+      // ── Tentativa 3: Evolution GO — POST /send/text
+      try {
+        const r3 = await iFetch("/send/text", {
+          method: "POST",
+          body: JSON.stringify({
+            instanceName: instName,
+            id:           instName,
+            number:       cleanPhone,
+            text:         message,
+          }),
+        });
+        const d3 = await r3.json().catch(() => ({}));
+        console.log("[send] go status:", r3.status, JSON.stringify(d3).slice(0, 200));
+        if (r3.ok) return json(d3);
+        lastErr    = d3.message || d3.error || JSON.stringify(d3);
+        lastStatus = r3.status;
+      } catch (e) { console.log("[send] go err:", (e as Error).message); }
+
+      // Todas as tentativas falharam — retorna o último erro com status 400
+      // (garante que o frontend receba corpo legível em vez de status HTTP arbitrário)
+      return json({ error: lastErr }, 400);
     }
 
     // ────────────────────────────────────────────────────────────────────────
@@ -513,23 +637,24 @@ Deno.serve(async (req) => {
             .replace(/\{nome\}/gi, contato.nome || "")
             .replace(/\{telefone\}/gi, contato.telefone || "");
 
-          const res = await iFetch("/send/text", {
-            method: "POST",
-            body: JSON.stringify({
-              instanceName: instName, id: instName,
-              number: String(contato.telefone).replace(/\D/g, ""),
-              text: mensagem,
-            }),
-          });
+          const num = String(contato.telefone).replace(/\D/g, "");
+          // Tenta v2 primeiro, depois GO (mesma lógica do action "send")
+          let sent = false;
+          for (const [path, bd] of [
+            [`/message/sendText/${instName}`, JSON.stringify({ number: num, text: mensagem })],
+            ["/send/text", JSON.stringify({ instanceName: instName, id: instName, number: num, text: mensagem })],
+          ] as [string, string][]) {
+            const res = await iFetch(path, { method: "POST", body: bd }).catch(() => null);
+            if (res?.ok) { sent = true; break; }
+          }
 
-          if (res.ok) {
+          if (sent) {
             await supabase.from("transmissao_contatos")
               .update({ status: "enviado", enviado_em: new Date().toISOString() }).eq("id", contato.id);
             enviados++;
           } else {
-            const err = await res.text();
             await supabase.from("transmissao_contatos")
-              .update({ status: "falhou", erro_msg: err.slice(0, 200) }).eq("id", contato.id);
+              .update({ status: "falhou", erro_msg: "Falha ao enviar" }).eq("id", contato.id);
           }
 
           await supabase.from("campanhas").update({ enviados }).eq("id", campanha_id);
@@ -545,6 +670,208 @@ Deno.serve(async (req) => {
 
       await supabase.from("campanhas").update({ status: "concluido", enviados }).eq("id", campanha_id);
       return json({ success: true, enviados });
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // IMPORT HISTORY — busca mensagens antigas via REST e envia ao webhook
+    // ────────────────────────────────────────────────────────────────────────
+    if (action === "importHistory") {
+      const startPage = Number(body.page) || 1;
+      const pageSize  = 50;
+      const maxPages  = 4; // 200 msgs por chamada (dentro do timeout de 60s)
+      const webhookUrl = `${SUPA_URL}/functions/v1/evolution-webhook?token=${instToken}`;
+
+      let imported = 0;
+      let total    = 0;
+      let pages    = 0;
+
+      for (let p = startPage; p < startPage + maxPages; p++) {
+        try {
+          const res = await iFetch(`/chat/findMessages/${instName}`, {
+            method: "POST",
+            body: JSON.stringify({ limit: pageSize, page: p }),
+          });
+          if (!res.ok) break;
+          const d = await res.json();
+          const records = d?.messages?.records || [];
+          total = d?.messages?.total  || total;
+          pages = d?.messages?.pages  || pages;
+          if (!records.length) break;
+
+          // Envia ao webhook como HISTORY_SYNC — aproveita toda a lógica de dedup
+          const wh = await fetch(webhookUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ event: "HISTORY_SYNC", data: { messages: records } }),
+          });
+          if (wh.ok) imported += records.length;
+          if (p >= pages) break;
+        } catch (e) {
+          console.error("[importHistory] page", p, "error:", e);
+          break;
+        }
+      }
+
+      const nextPage = startPage + maxPages;
+      return json({
+        success: true,
+        imported,
+        total,
+        pages,
+        nextPage: nextPage <= pages ? nextPage : null,
+      });
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // FETCH GROUPS — lista grupos do WhatsApp e sincroniza nomes no banco
+    // ────────────────────────────────────────────────────────────────────────
+    if (action === "fetchGroups") {
+      type GroupEntry = { id: string; subject?: string; name?: string; [k: string]: unknown };
+      let groupList: GroupEntry[] = [];
+
+      // Endpoint 1: GET /group/fetchAllGroups/{instanceName}?getParticipants=false
+      try {
+        const r1 = await iFetch(`/group/fetchAllGroups/${instName}?getParticipants=false`);
+        if (r1.ok) {
+          const d1 = await r1.json();
+          const arr: GroupEntry[] = Array.isArray(d1) ? d1 : (d1?.groups || d1?.data || []);
+          if (arr.length) groupList = arr;
+        }
+      } catch (_) { /* endpoint pode não existir */ }
+
+      // Endpoint 2: POST fallback
+      if (!groupList.length) {
+        try {
+          const r2 = await iFetch(`/group/fetchAllGroups/${instName}`, {
+            method: "POST",
+            body: JSON.stringify({ getParticipants: false }),
+          });
+          if (r2.ok) {
+            const d2 = await r2.json();
+            const arr: GroupEntry[] = Array.isArray(d2) ? d2 : (d2?.groups || d2?.data || []);
+            if (arr.length) groupList = arr;
+          }
+        } catch (_) { /* sem grupos ou endpoint indisponível */ }
+      }
+
+      let updated = 0;
+      let created = 0;
+      for (const g of groupList) {
+        const gJid    = g.id?.includes("@g.us") ? g.id : (g.id ? `${g.id}@g.us` : null);
+        const subject = (g.subject || g.name || "") as string;
+        if (!gJid || !subject) continue;
+
+        const { data: existing } = await supabase.from("conversas")
+          .select("id").eq("empresa_id", empresa_id).eq("contato_telefone", gJid).maybeSingle();
+
+        if (existing) {
+          await supabase.from("conversas")
+            .update({ contato_nome: subject }).eq("id", existing.id);
+          updated++;
+        } else {
+          await supabase.from("conversas").insert({
+            empresa_id,
+            contato_nome:     subject,
+            contato_telefone: gJid,
+            ultima_mensagem:  "",
+            ultima_hora:      new Date().toISOString(),
+            nao_lidas:        0,
+            status:           "aberta",
+            bot_ativo:        false,
+          });
+          created++;
+        }
+      }
+
+      return json({ success: true, total: groupList.length, updated, created });
+    }
+
+    // ── FETCH CONTACTS — busca contatos do WhatsApp
+    if (action === "fetchContacts") {
+      type ContactEntry = { id: string; pushName?: string; name?: string; number?: string; [k: string]: unknown };
+      let contactList: ContactEntry[] = [];
+
+      // Endpoint 1: GET /contact/findContacts/{instanceName}
+      try {
+        const r1 = await iFetch(`/contact/findContacts/${instName}`);
+        if (r1.ok) {
+          const d1 = await r1.json();
+          const arr: ContactEntry[] = Array.isArray(d1) ? d1 : (d1?.contacts || d1?.data || []);
+          if (arr.length) contactList = arr;
+        }
+      } catch (_) {}
+
+      // Endpoint 2: POST fallback
+      if (!contactList.length) {
+        try {
+          const r2 = await iFetch(`/contact/findContacts/${instName}`, {
+            method: "POST",
+            body: JSON.stringify({ instanceName: instName }),
+          });
+          if (r2.ok) {
+            const d2 = await r2.json();
+            const arr: ContactEntry[] = Array.isArray(d2) ? d2 : (d2?.contacts || d2?.data || []);
+            if (arr.length) contactList = arr;
+          }
+        } catch (_) {}
+      }
+
+      // Filtra apenas contatos individuais (não grupos) e formata
+      const contacts = contactList
+        .filter(c => c.id && !c.id.endsWith("@g.us") && !c.id.endsWith("@broadcast"))
+        .map(c => ({
+          id:       c.id,
+          nome:     c.pushName || c.name || c.id.replace("@s.whatsapp.net", ""),
+          numero:   (c.number || c.id.replace("@s.whatsapp.net", "")).replace(/\D/g, ""),
+          pushName: c.pushName || "",
+        }));
+
+      return json({ success: true, contacts, total: contacts.length });
+    }
+
+    // ── SYNC ALL — força sincronização completa de conversas e grupos
+    if (action === "syncAll") {
+      const results: Record<string, unknown> = {};
+
+      // 1. Busca grupos
+      try {
+        type GroupEntry2 = { id: string; subject?: string; name?: string; [k: string]: unknown };
+        let groupList: GroupEntry2[] = [];
+        const rg = await iFetch(`/group/fetchAllGroups/${instName}?getParticipants=false`);
+        if (rg.ok) {
+          const dg = await rg.json();
+          groupList = Array.isArray(dg) ? dg : (dg?.groups || dg?.data || []);
+        }
+        let gUpdated = 0, gCreated = 0;
+        for (const g of groupList) {
+          const gJid = g.id?.includes("@g.us") ? g.id : (g.id ? `${g.id}@g.us` : null);
+          const subject = (g.subject || g.name || "") as string;
+          if (!gJid || !subject) continue;
+          const { data: ex } = await supabase.from("conversas").select("id").eq("empresa_id", empresa_id).eq("contato_telefone", gJid).maybeSingle();
+          if (ex) { await supabase.from("conversas").update({ contato_nome: subject }).eq("id", ex.id); gUpdated++; }
+          else { await supabase.from("conversas").insert({ empresa_id, contato_nome: subject, contato_telefone: gJid, ultima_mensagem: "", ultima_hora: new Date().toISOString(), nao_lidas: 0, status: "aberta", bot_ativo: false }); gCreated++; }
+        }
+        results.grupos = { total: groupList.length, updated: gUpdated, created: gCreated };
+      } catch (e) { results.grupos = { error: (e as Error).message }; }
+
+      // 2. Importa histórico (primeiras 200 mensagens)
+      const webhookUrl = `${SUPA_URL}/functions/v1/evolution-webhook?token=${instToken}`;
+      let imported = 0;
+      try {
+        for (let p = 1; p <= 4; p++) {
+          const res = await iFetch(`/chat/findMessages/${instName}`, { method: "POST", body: JSON.stringify({ limit: 50, page: p }) });
+          if (!res.ok) break;
+          const d = await res.json();
+          const records = d?.messages?.records || [];
+          if (!records.length) break;
+          const wh = await fetch(webhookUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ event: "HISTORY_SYNC", data: { messages: records } }) });
+          if (wh.ok) imported += records.length;
+          if (p >= (d?.messages?.pages || 1)) break;
+        }
+      } catch (_) {}
+      results.historico = { imported };
+
+      return json({ success: true, ...results });
     }
 
     return json({ error: `Ação desconhecida: ${action}` }, 400);
