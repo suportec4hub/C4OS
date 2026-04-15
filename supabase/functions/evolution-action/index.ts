@@ -57,8 +57,10 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
 
-  const GLOBAL_KEY = Deno.env.get("EVOLUTION_API_KEY") || "";
-  const GLOBAL_URL = (Deno.env.get("EVOLUTION_API_URL") || "").replace(/\/$/, "");
+  // Credenciais do servidor Evolution API — altere aqui se mudar o servidor.
+  // Não lê variável de ambiente para evitar sobrescrever com valor inválido de sessão anterior.
+  const GLOBAL_KEY = "pangAbOM4AI1yo0LlSFAGtclhwQAt31B";
+  const GLOBAL_URL = "https://evolution-api-xrrw.srv1583408.hstgr.cloud";
   const SUPA_URL   = Deno.env.get("SUPABASE_URL") || "";
 
   try {
@@ -152,19 +154,65 @@ Deno.serve(async (req) => {
       return json({ success: true, instanceName: savedName, token: savedToken, webhookUrl: finalWebhookUrl, qrBase64: createQr });
     }
 
-    if (!instToken) return json({ error: "Instância não criada. Clique em 'Conectar WhatsApp' primeiro." }, 400);
+    // Guard: bloqueia ações que precisam de instância (exceto connect que auto-cria)
+    if (!instToken && action !== "connect") {
+      return json({ error: "Instância não criada. Clique em 'Conectar WhatsApp' primeiro." }, 400);
+    }
 
     // ────────────────────────────────────────────────────────────────────────
-    // CONNECT — gera QR Code
+    // CONNECT — gera QR Code (auto-cria instância se não existir)
     // ────────────────────────────────────────────────────────────────────────
     if (action === "connect") {
-      const webhookUrl = `${SUPA_URL}/functions/v1/evolution-webhook?token=${instToken}`;
+      // Se não há instância, cria automaticamente antes de conectar
+      let effectiveToken = instToken;
+      let effectiveName  = instName;
+
+      if (!effectiveToken) {
+        const myToken    = crypto.randomUUID();
+        const whUrl      = `${SUPA_URL}/functions/v1/evolution-webhook?token=${myToken}`;
+        const cr = await gFetch("/instance/create", {
+          method: "POST",
+          body: JSON.stringify({
+            instanceName: computedName, name: computedName, token: myToken, qrcode: true,
+            integration: "WHATSAPP-BAILEYS",
+            webhook: { url: whUrl, events: WEBHOOK_EVENTS }, webhookUrl: whUrl,
+          }),
+        });
+        const cd = await cr.json();
+        console.log("[connect] auto-create status:", cr.status, JSON.stringify(cd).slice(0, 400));
+        if (!cr.ok) return json({ error: cd.message || cd.error || JSON.stringify(cd) }, 400);
+
+        effectiveToken = cd?.hash?.apikey || cd?.data?.token || cd?.token || myToken;
+        effectiveName  = cd?.instance?.instanceName || cd?.data?.name || cd?.name || computedName;
+        const immediateQr = cd?.qrcode?.base64 || cd?.data?.Qrcode || cd?.Qrcode || cd?.instance?.qrcode?.base64 || "";
+
+        await supabase.from("empresas").update({
+          evolution_instance_id:    effectiveName,
+          evolution_instance_token: effectiveToken,
+          evolution_connected:      false,
+          evolution_qr_temp:        immediateQr || null,
+        }).eq("id", empresa_id);
+
+        if (immediateQr) {
+          return json({ success: true, qrBase64: immediateQr, newInstance: true, webhookUrl: whUrl });
+        }
+      }
+
+      // A partir daqui usa effectiveToken/effectiveName no lugar de instToken/instName
+      const webhookUrl = `${SUPA_URL}/functions/v1/evolution-webhook?token=${effectiveToken}`;
+
+      // Fetch autenticado com token efetivo (pode ser novo se auto-criado)
+      const cFetch = (path: string, opts: RequestInit = {}) =>
+        fetch(`${evoUrl}${path}`, {
+          ...opts,
+          headers: { "Content-Type": "application/json", "apikey": effectiveToken || GLOBAL_KEY, ...(opts.headers || {}) },
+        });
 
       // Configura webhook em paralelo (best-effort, não bloqueia)
       fetch(`${evoUrl}/webhook/set`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "apikey": instToken },
-        body: JSON.stringify({ instanceName: instName, url: webhookUrl, events: WEBHOOK_EVENTS, enabled: true }),
+        headers: { "Content-Type": "application/json", "apikey": effectiveToken },
+        body: JSON.stringify({ instanceName: effectiveName, url: webhookUrl, events: WEBHOOK_EVENTS, enabled: true }),
       }).catch(() => {});
 
       let qrBase64 = "";
@@ -174,14 +222,13 @@ Deno.serve(async (req) => {
         (d?.base64 || d?.qrcode?.base64 || d?.Qrcode || d?.data?.Qrcode ||
          d?.data?.qrcode || d?.instance?.qrcode?.base64 || "") as string;
 
-      // Estratégia 1: GET /instance/connect/{instanceName} com instToken
+      // Estratégia 1: GET /instance/connect/{effectiveName} com effectiveToken
       try {
-        const r = await iFetch(`/instance/connect/${instName}`);
+        const r = await cFetch(`/instance/connect/${effectiveName}`);
         const d = await r.json();
         console.log("[connect] S1 GET /instance/connect status:", r.status, JSON.stringify(d).slice(0, 400));
         tried.push(`S1:${r.status}`);
         qrBase64 = extractQr(d);
-        // Se instância já está conectada, retornar status especial
         const state = d?.instance?.state || d?.state || d?.data?.state || "";
         if (!qrBase64 && state === "open") {
           await supabase.from("empresas").update({ evolution_connected: true, evolution_qr_temp: null }).eq("id", empresa_id);
@@ -189,10 +236,10 @@ Deno.serve(async (req) => {
         }
       } catch (e) { tried.push(`S1:err`); console.error("[connect] S1 error:", e); }
 
-      // Estratégia 2: GET com global apikey (caso instToken não tenha permissão)
+      // Estratégia 2: GET com global apikey (caso effectiveToken não tenha permissão)
       if (!qrBase64) {
         try {
-          const r = await gFetch(`/instance/connect/${instName}`);
+          const r = await gFetch(`/instance/connect/${effectiveName}`);
           const d = await r.json();
           console.log("[connect] S2 GET global key status:", r.status, JSON.stringify(d).slice(0, 400));
           tried.push(`S2:${r.status}`);
@@ -203,9 +250,9 @@ Deno.serve(async (req) => {
       // Estratégia 3: POST /instance/connect com body
       if (!qrBase64) {
         try {
-          const r = await iFetch("/instance/connect", {
+          const r = await cFetch("/instance/connect", {
             method: "POST",
-            body: JSON.stringify({ id: instName, instanceName: instName, webhookUrl, qrcode: true }),
+            body: JSON.stringify({ id: effectiveName, instanceName: effectiveName, webhookUrl, qrcode: true }),
           });
           const d = await r.json();
           console.log("[connect] S3 POST status:", r.status, JSON.stringify(d).slice(0, 400));
@@ -218,7 +265,7 @@ Deno.serve(async (req) => {
       if (!qrBase64) {
         try {
           await new Promise(r => setTimeout(r, 800));
-          const r = await iFetch(`/instance/qr?id=${instName}`);
+          const r = await cFetch(`/instance/qr?id=${effectiveName}`);
           const d = await r.json();
           console.log("[connect] S4 GET /instance/qr status:", r.status, JSON.stringify(d).slice(0, 400));
           tried.push(`S4:${r.status}`);
@@ -241,8 +288,8 @@ Deno.serve(async (req) => {
         } catch (_) {}
 
         const msg = instances
-          ? `QR não obtido para "${instName}". Instâncias disponíveis: ${instances}. Use "Vincular instância existente" com o nome correto.`
-          : `QR não obtido para "${instName}". Verifique se a instância existe no Evolution GO e está desconectada. Tentativas: ${tried.join(", ")}`;
+          ? `QR não obtido para "${effectiveName}". Instâncias disponíveis: ${instances}.`
+          : `QR não obtido para "${effectiveName}". Verifique se a instância existe no Evolution API e está desconectada. Tentativas: ${tried.join(", ")}`;
         return json({ error: msg }, 400);
       }
 

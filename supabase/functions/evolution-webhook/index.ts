@@ -8,7 +8,7 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
-  const GLOBAL_URL = (Deno.env.get("EVOLUTION_API_URL") || "").replace(/\/$/, "");
+  const GLOBAL_URL = "https://evolution-api-xrrw.srv1583408.hstgr.cloud";
 
   try {
     const reqUrl       = new URL(req.url);
