@@ -40,6 +40,57 @@ const btnStyle = (bg = L.surface, color = L.t2, extra = {}) => ({
   fontWeight: 500, transition: "all .12s", ...extra,
 });
 
+// ─── Media message renderer ──────────────────────────────────────────────────
+function renderMsgContent(m, out) {
+  const t    = msgTexto(m);
+  const tipo = m.tipo || m.type || "texto";
+  const url  = m.midia_url || m.url || m.media_url || m.mediaUrl;
+
+  if ((tipo === "imagem" || tipo === "image") && url) {
+    return (
+      <div>
+        <img src={url} alt="imagem" onClick={() => window.open(url, "_blank")}
+          style={{ maxWidth:"100%", borderRadius:8, marginBottom: t ? 4 : 0,
+            cursor:"pointer", display:"block" }}
+          onError={e => { e.currentTarget.style.display="none"; }}/>
+        {t && <div style={{ fontSize:12, marginTop:2 }}>{t}</div>}
+      </div>
+    );
+  }
+  if (tipo === "audio" && url) {
+    return (
+      <div>
+        <audio controls src={url} style={{ width:"100%", maxWidth:240, display:"block" }}/>
+        {t && <div style={{ fontSize:11, marginTop:3, opacity:.8 }}>{t}</div>}
+      </div>
+    );
+  }
+  if (tipo === "video" && url) {
+    return (
+      <div>
+        <video controls src={url} onClick={e => e.stopPropagation()}
+          style={{ maxWidth:"100%", maxHeight:220, borderRadius:8, marginBottom: t ? 4 : 0, display:"block" }}/>
+        {t && <div style={{ fontSize:12, marginTop:2 }}>{t}</div>}
+      </div>
+    );
+  }
+  if ((tipo === "documento" || tipo === "document") && url) {
+    return (
+      <a href={url} target="_blank" rel="noopener noreferrer"
+        style={{ color: out ? "rgba(255,255,255,.9)" : L.blue, display:"flex", alignItems:"center", gap:5, textDecoration:"none" }}>
+        <span>📎</span>
+        <span style={{ textDecoration:"underline", fontSize:12, wordBreak:"break-all" }}>
+          {m.nome_arquivo || t || "Documento"}
+        </span>
+      </a>
+    );
+  }
+  // default: text (possibly with newlines)
+  return t ? t.split("\n").map((line, i) => (
+    <span key={i}>{line}{i < t.split("\n").length - 1 && <br/>}</span>
+  )) : null;
+}
+
 // ─── Log de atendimento ──────────────────────────────────────────────────────
 async function logAtendimento(empresa_id, conversa_id, usuario_id, acao, detalhe = "") {
   try {
@@ -232,11 +283,15 @@ export default function PageChat({ user }) {
   const [showQuick,    setShowQuick]    = useState(false);
   const [quickFilter,  setQuickFilter]  = useState("");
 
+  // ── media upload ──────────────────────────────────────────────────────────
+  const [uploadingMedia, setUploadingMedia] = useState(false);
+
   // ── refs ──────────────────────────────────────────────────────────────────
   const bottomRef      = useRef(null);
   const activeConvRef  = useRef(null);
   const statusTabRef   = useRef("todas");
   const inputRef       = useRef(null);
+  const fileRef        = useRef(null);
   const { isMobile }   = useBreakpoint();
 
   useEffect(() => { activeConvRef.current = activeConv; }, [activeConv]);
@@ -546,6 +601,60 @@ export default function PageChat({ user }) {
       }
     }
     setSending(false);
+  };
+
+  // ── send media file ───────────────────────────────────────────────────────
+  const sendMedia = async (file) => {
+    if (!file || !activeConv) return;
+    setUploadingMedia(true);
+    setSendErr("");
+
+    // 1. Upload to Supabase Storage
+    const ext  = file.name.split(".").pop().toLowerCase();
+    const path = `chat/${user.empresa_id}/${Date.now()}.${ext}`;
+    const { error: uploadErr } = await supabase.storage.from("midia").upload(path, file, { upsert: true });
+    if (uploadErr) {
+      setSendErr("Erro ao enviar arquivo: " + uploadErr.message);
+      setUploadingMedia(false);
+      return;
+    }
+    const { data: { publicUrl } } = supabase.storage.from("midia").getPublicUrl(path);
+
+    // 2. Determine media type
+    const ft = file.type || "";
+    const tipo = ft.startsWith("image/") ? "imagem"
+               : ft.startsWith("audio/") ? "audio"
+               : ft.startsWith("video/") ? "video"
+               : "documento";
+
+    // 3. Persist message to DB
+    await supabase.from("mensagens").insert({
+      conversa_id: activeConv.id,
+      empresa_id:  activeConv.empresa_id || user.empresa_id,
+      de: "me", remetente: "me",
+      tipo, midia_url: publicUrl, nome_arquivo: file.name,
+      hora: new Date().toISOString(), status: "enviado",
+    });
+
+    // 4. Update conversa
+    const now = new Date().toISOString();
+    await supabase.from("conversas").update({
+      ultima_mensagem: `[${tipo}] ${file.name}`, ultima_hora: now, status: "em_atendimento",
+    }).eq("id", activeConv.id);
+    setConversas(p => p.map(c => c.id === activeConv.id
+      ? { ...c, ultima_mensagem: `[${tipo}] ${file.name}`, ultima_hora: now }
+      : c));
+
+    // 5. Send via Evolution (WhatsApp)
+    if (activeConv.contato_telefone?.trim()) {
+      supabase.functions.invoke("evolution-action", {
+        body: { action: "sendMedia", empresa_id: user.empresa_id, phone: activeConv.contato_telefone, url: publicUrl, tipo, caption: file.name },
+      }).catch(console.warn);
+    }
+
+    setUploadingMedia(false);
+    loadMensagens(activeConv.id);
+    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 200);
   };
 
   const criarConversa = async () => {
@@ -1150,7 +1259,7 @@ export default function PageChat({ user }) {
                         {m.remetente === "bot" && !nota && (
                           <div style={{ fontSize: 9, marginBottom: 2, opacity: .7 }}>🤖 Bot</div>
                         )}
-                        {t}
+                        {renderMsgContent(m, out)}
                         <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 3,
                           justifyContent: "flex-end" }}>
                           <span style={{ fontSize: 9, opacity: .5 }}>{fmtHora(h)}</span>
@@ -1200,6 +1309,10 @@ export default function PageChat({ user }) {
                 </div>
               )}
 
+              {/* Hidden file input */}
+              <input ref={fileRef} type="file" accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.zip"
+                style={{ display:"none" }} onChange={e => { if (e.target.files?.[0]) sendMedia(e.target.files[0]); e.target.value = ""; }}/>
+
               <Row gap={8}>
                 {/* Note toggle */}
                 <button onClick={() => {
@@ -1209,6 +1322,13 @@ export default function PageChat({ user }) {
                   title="Nota interna (/nota texto)"
                   style={{ ...btnStyle(input.startsWith("/nota") ? "#fffbeb" : L.surface, input.startsWith("/nota") ? "#92400e" : L.t3), flexShrink: 0, padding: "7px 10px" }}>
                   📝
+                </button>
+
+                {/* Media upload */}
+                <button onClick={() => fileRef.current?.click()} disabled={uploadingMedia}
+                  title="Enviar imagem / áudio / arquivo"
+                  style={{ ...btnStyle(L.surface, uploadingMedia ? L.t4 : L.t3), flexShrink: 0, padding: "7px 10px", opacity: uploadingMedia ? 0.5 : 1 }}>
+                  {uploadingMedia ? "⟳" : "📎"}
                 </button>
 
                 <div style={{ flex: 1, position: "relative" }}>

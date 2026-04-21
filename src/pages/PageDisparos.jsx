@@ -18,8 +18,16 @@ const ST = {
 };
 
 const VARIAVEIS = ["{nome}", "{empresa}", "{telefone}"];
+const TIPOS_MIDIA = [
+  { id: "texto",    label: "Texto",    ico: "✉️" },
+  { id: "imagem",   label: "Imagem",   ico: "🖼️" },
+  { id: "video",    label: "Vídeo",    ico: "🎬" },
+  { id: "audio",    label: "Áudio",    ico: "🎵" },
+  { id: "documento",label: "Documento",ico: "📎" },
+  { id: "pix",      label: "Chave PIX",ico: "💳" },
+];
 
-const VAZIO = { titulo: "", mensagem: "", intervalo_min: 5, intervalo_max: 15, agendado_para: "" };
+const VAZIO = { titulo: "", mensagem: "", intervalo_min: 5, intervalo_max: 15, agendado_para: "", tipo_midia: "texto", chave_pix: "", caption: "" };
 
 export default function PageDisparos({ user }) {
   const [tab,       setTab]       = useState("nova");
@@ -27,6 +35,10 @@ export default function PageDisparos({ user }) {
   const [loading,   setLoading]   = useState(true);
   const [form,      setForm]      = useState(VAZIO);
   const [contatos,  setContatos]  = useState([]); // [{nome, telefone}]
+  const [midiaFile, setMidiaFile] = useState(null); // File object
+  const [midiaUrl,  setMidiaUrl]  = useState("");   // URL após upload
+  const [midiaUpload, setMidiaUpload] = useState(false);
+  const midiaRef = useRef(null);
   const [csvErr,    setCsvErr]    = useState("");
   const [saving,    setSaving]    = useState(false);
   const [err,       setErr]       = useState("");
@@ -269,8 +281,71 @@ export default function PageDisparos({ user }) {
               style={{ width: "100%", border: `1px solid ${L.line}`, borderRadius: 8, padding: "8px 12px",
                 fontSize: 12, outline: "none", fontFamily: "inherit", boxSizing: "border-box", marginBottom: 14 }} />
 
+            {/* Tipo de Mídia */}
+            <label style={{ fontSize: 11, color: L.t3, display: "block", marginBottom: 6 }}>Tipo de conteúdo</label>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
+              {TIPOS_MIDIA.map(t => (
+                <button key={t.id} onClick={() => setForm(p => ({ ...p, tipo_midia: t.id }))}
+                  style={{ padding: "5px 10px", borderRadius: 7, fontSize: 11, cursor: "pointer", fontFamily: "inherit",
+                    background: form.tipo_midia === t.id ? L.teal : L.surface,
+                    color: form.tipo_midia === t.id ? "white" : L.t2,
+                    border: `1.5px solid ${form.tipo_midia === t.id ? L.teal : L.line}`,
+                    fontWeight: form.tipo_midia === t.id ? 600 : 400, transition: "all .1s" }}>
+                  {t.ico} {t.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Campos de mídia */}
+            {["imagem","video","audio","documento"].includes(form.tipo_midia) && (
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ fontSize: 11, color: L.t3, display: "block", marginBottom: 4 }}>
+                  {form.tipo_midia === "imagem" ? "Selecionar imagem" : form.tipo_midia === "video" ? "Selecionar vídeo" : form.tipo_midia === "audio" ? "Selecionar áudio" : "Selecionar documento"}
+                </label>
+                <input ref={midiaRef} type="file"
+                  accept={form.tipo_midia === "imagem" ? "image/*" : form.tipo_midia === "video" ? "video/*" : form.tipo_midia === "audio" ? "audio/*" : "*"}
+                  style={{ display: "none" }}
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0]; if (!file) return;
+                    setMidiaFile(file); setMidiaUpload(true);
+                    const ext  = file.name.split(".").pop();
+                    const path = `disparos/${user.empresa_id}/${Date.now()}.${ext}`;
+                    const { data, error } = await supabase.storage.from("midia").upload(path, file, { upsert: true });
+                    if (!error) {
+                      const { data: pub } = supabase.storage.from("midia").getPublicUrl(path);
+                      setMidiaUrl(pub.publicUrl);
+                    }
+                    setMidiaUpload(false);
+                  }}
+                />
+                <button onClick={() => midiaRef.current?.click()}
+                  style={{ ...btn(L.blueBg, L.blue), width: "100%", marginBottom: 6 }}>
+                  {midiaUpload ? "Enviando..." : midiaFile ? `✓ ${midiaFile.name}` : "⬆ Selecionar arquivo"}
+                </button>
+                {midiaUrl && <div style={{ fontSize: 10, color: L.green, marginBottom: 4 }}>✓ Upload concluído</div>}
+                {/* Caption opcional */}
+                <input value={form.caption} onChange={e => setForm(p => ({ ...p, caption: e.target.value }))}
+                  placeholder="Legenda (opcional)..."
+                  style={{ width: "100%", border: `1px solid ${L.line}`, borderRadius: 8, padding: "7px 10px",
+                    fontSize: 11, outline: "none", fontFamily: "inherit", boxSizing: "border-box" }} />
+              </div>
+            )}
+
+            {form.tipo_midia === "pix" && (
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ fontSize: 11, color: L.t3, display: "block", marginBottom: 4 }}>Chave PIX *</label>
+                <input value={form.chave_pix} onChange={e => setForm(p => ({ ...p, chave_pix: e.target.value }))}
+                  placeholder="CPF, CNPJ, e-mail, telefone ou chave aleatória"
+                  style={{ width: "100%", border: `1px solid ${L.line}`, borderRadius: 8, padding: "8px 12px",
+                    fontSize: 12, outline: "none", fontFamily: "inherit", boxSizing: "border-box", marginBottom: 8 }} />
+                <div style={{ padding: "8px 12px", background: L.greenBg, borderRadius: 8, fontSize: 11, color: L.green }}>
+                  💳 A chave PIX será enviada junto com a mensagem de texto.
+                </div>
+              </div>
+            )}
+
             <label style={{ fontSize: 11, color: L.t3, display: "block", marginBottom: 4 }}>
-              Mensagem * — variáveis: {VARIAVEIS.map(v => (
+              {form.tipo_midia === "pix" ? "Mensagem que acompanha o PIX" : "Mensagem"} * — variáveis: {VARIAVEIS.map(v => (
                 <button key={v} onClick={() => setForm(p => ({ ...p, mensagem: p.mensagem + v }))}
                   style={{ background: L.tealBg, color: L.t1, border: `1px solid ${L.line}`, borderRadius: 4,
                     padding: "1px 6px", fontSize: 10, cursor: "pointer", fontFamily: "inherit", marginLeft: 4 }}>
@@ -336,6 +411,18 @@ export default function PageDisparos({ user }) {
                 ⬆ Selecionar arquivo CSV
               </button>
               {csvErr && <div style={{ fontSize: 10, color: L.yellow, background: L.yellowBg, padding: "5px 8px", borderRadius: 6, marginBottom: 8 }}>{csvErr}</div>}
+              {/* Importar de Leads do CRM */}
+              <button
+                onClick={async () => {
+                  const { data } = await supabase.from("leads").select("nome, whatsapp, empresa_nome").eq("empresa_id", user.empresa_id).not("whatsapp", "is", null);
+                  if (!data?.length) { alert("Nenhum lead com WhatsApp cadastrado."); return; }
+                  const novos = data.map(l => ({ nome: l.nome, telefone: l.whatsapp.replace(/\D/g,""), empresa: l.empresa_nome||"" })).filter(c=>c.telefone.length>=8);
+                  setContatos(p => { const existentes = new Set(p.map(c=>c.telefone)); return [...p, ...novos.filter(c=>!existentes.has(c.telefone))]; });
+                  setSucc(`${novos.length} leads importados!`); setTimeout(()=>setSucc(""), 2000);
+                }}
+                style={btn(L.tealBg, L.teal, { width: "100%", marginBottom: 6 })}>
+                ◎ Importar de Leads do CRM
+              </button>
               <button onClick={fetchWppContatos} disabled={wppLoading}
                 style={btn(L.greenBg, L.green, { width: "100%", marginBottom: 6, opacity: wppLoading ? 0.6 : 1 })}>
                 {wppLoading ? "Buscando..." : "📲 Importar do WhatsApp"}

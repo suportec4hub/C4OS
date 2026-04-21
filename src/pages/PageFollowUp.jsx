@@ -19,10 +19,24 @@ function isOverdue(iso) {
   return iso && new Date(iso) < new Date();
 }
 
-export default function PageFollowUp({ user }) {
+// Retorna string amigável de quando foi a última mensagem recebida
+function tempoSemConversa(isoUltima) {
+  if (!isoUltima) return null;
+  const diff = Date.now() - new Date(isoUltima);
+  const m = Math.floor(diff / 60000);
+  if (m < 1)   return "agora mesmo";
+  if (m < 60)  return `${m}min sem contato`;
+  const h = Math.floor(m / 60);
+  if (h < 24)  return `${h}h sem contato`;
+  const d = Math.floor(h / 24);
+  return `${d} dia${d > 1 ? "s" : ""} sem contato`;
+}
+
+export default function PageFollowUp({ user, onGoToChat }) {
   const { data: followups, loading, insert, update, remove, refetch } = useTable("follow_ups", { empresa_id: user?.empresa_id });
   const { data: usuarios } = useTable("usuarios", { empresa_id: user?.empresa_id, ativo: true });
   const [leads, setLeads] = useState([]);
+  const [ultimasMensagens, setUltimasMensagens] = useState({}); // { [lead_whatsapp]: isoDate }
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState(VAZIO);
   const [editId, setEditId] = useState(null);
@@ -33,7 +47,30 @@ export default function PageFollowUp({ user }) {
 
   useEffect(() => {
     if (!user?.empresa_id) return;
-    supabase.from("leads").select("id, nome, whatsapp, status, atribuido_a").eq("empresa_id", user.empresa_id).then(({ data }) => setLeads(data || []));
+    supabase.from("leads").select("id, nome, whatsapp, status, atribuido_a").eq("empresa_id", user.empresa_id).then(({ data }) => {
+      setLeads(data || []);
+    });
+  }, [user?.empresa_id]);
+
+  // Busca a última mensagem recebida (de="lead") por número, para mostrar "X dias sem contato"
+  useEffect(() => {
+    if (!user?.empresa_id) return;
+    supabase
+      .from("mensagens")
+      .select("conversa_id, created_at, remetente, conversas!inner(telefone, empresa_id)")
+      .eq("conversas.empresa_id", user.empresa_id)
+      .in("remetente", ["lead", "cliente", "contato"])
+      .order("created_at", { ascending: false })
+      .limit(500)
+      .then(({ data }) => {
+        if (!data) return;
+        const map = {};
+        data.forEach(m => {
+          const tel = m.conversas?.telefone;
+          if (tel && !map[tel]) map[tel] = m.created_at;
+        });
+        setUltimasMensagens(map);
+      });
   }, [user?.empresa_id]);
 
   const filtered = followups.filter(f => {
@@ -82,9 +119,16 @@ export default function PageFollowUp({ user }) {
   };
 
   const renderCard = (item) => {
-    const done = item.status === "concluido";
+    const done   = item.status === "concluido";
     const overdue = !done && isOverdue(item.agendado_para);
-    const lead = getLead(item.lead_id);
+    const lead   = getLead(item.lead_id);
+    // Calcula tempo sem conversa via última msg recebida do lead no WhatsApp
+    const telLimpo = lead?.whatsapp?.replace(/\D/g, "");
+    const ultimaMsg = telLimpo ? (ultimasMensagens[telLimpo] || ultimasMensagens["55" + telLimpo]) : null;
+    const tsConversa = tempoSemConversa(ultimaMsg);
+    const diasSemContato = ultimaMsg ? Math.floor((Date.now() - new Date(ultimaMsg)) / 86400000) : null;
+    const alertaSemContato = diasSemContato !== null && diasSemContato >= 3; // alerta se 3+ dias
+
     return (
       <div key={item.id} style={{ background: L.white, borderRadius: 11, border: `1.5px solid ${done ? L.green + "44" : overdue ? L.red + "44" : L.line}`, padding: "14px 18px", display: "flex", alignItems: "center", gap: 14, opacity: done ? .6 : 1, transition: "all .18s", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
         {/* Check */}
@@ -96,11 +140,15 @@ export default function PageFollowUp({ user }) {
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: done ? L.t4 : L.t1, textDecoration: done ? "line-through" : "none", marginBottom: 3 }}>{item.titulo}</div>
           <Row gap={8} style={{ flexWrap: "wrap" }}>
-            {lead && (
-              <span style={{ fontSize: 11, color: L.teal, fontWeight: 500 }}>◎ {lead.nome}</span>
-            )}
+            {lead && <span style={{ fontSize: 11, color: L.teal, fontWeight: 500 }}>◎ {lead.nome}</span>}
             {item.descricao && <span style={{ fontSize: 11, color: L.t4 }}>{item.descricao}</span>}
             {overdue && <Tag color={L.red} bg={L.redBg} small>Vencido</Tag>}
+            {/* Badge de tempo sem conversa */}
+            {tsConversa && !done && (
+              <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 5, background: alertaSemContato ? L.redBg : L.yellowBg, color: alertaSemContato ? L.red : L.yellow, border: `1px solid ${alertaSemContato ? L.red : L.yellow}22` }}>
+                ⏱ {tsConversa}
+              </span>
+            )}
           </Row>
         </div>
 
@@ -115,8 +163,15 @@ export default function PageFollowUp({ user }) {
 
         {/* Ações */}
         <Row gap={4}>
-          {!done && lead?.whatsapp && item.canal === "WhatsApp" && (
-            <button onClick={() => openWhatsApp(item)} title="Abrir WhatsApp" style={{ background: L.greenBg, border: `1px solid ${L.green}22`, cursor: "pointer", color: L.green, fontSize: 13, padding: "4px 8px", borderRadius: 6, transition: "all .1s", fontWeight: 700 }}>💬</button>
+          {/* Botão: ir para conversa interna */}
+          {!done && lead?.whatsapp && onGoToChat && (
+            <button onClick={() => onGoToChat(item.lead_id)} title="Ver conversa no WhatsApp" style={{ background: L.tealBg, border: `1px solid ${L.teal}22`, cursor: "pointer", color: L.teal, fontSize: 11, padding: "4px 8px", borderRadius: 6, transition: "all .1s", fontWeight: 700, whiteSpace: "nowrap" }}>
+              💬 Chat
+            </button>
+          )}
+          {/* Botão: abrir WhatsApp externo */}
+          {!done && lead?.whatsapp && (
+            <button onClick={() => openWhatsApp(item)} title="Abrir no WhatsApp" style={{ background: L.greenBg, border: `1px solid ${L.green}22`, cursor: "pointer", color: L.green, fontSize: 13, padding: "4px 8px", borderRadius: 6, transition: "all .1s", fontWeight: 700 }}>📱</button>
           )}
           {!done && (
             <>

@@ -39,24 +39,23 @@ import PageDisparos         from "../pages/PageDisparos";
 import PageRelatoriosAtend  from "../pages/PageRelatoriosAtend";
 
 const NAV_ITEMS = [
-  {id:"dashboard",  label:"Dashboard",    ico:"▦", g:"principal"},
-  {id:"leads",      label:"Leads",        ico:"◎", g:"principal"},
-  {id:"pipeline",   label:"Funil",        ico:"⬡", g:"principal"},
-  {id:"whatsapp",   label:"Chat",           ico:"◈",  g:"comunicação"},
+  {id:"dashboard",  label:"Dashboard",      ico:"▦", g:"principal"},
+  {id:"leads",      label:"Leads",          ico:"◎", g:"principal"},
+  {id:"pipeline",   label:"PIPELINE",       ico:"⬡", g:"principal"},
+  {id:"whatsapp",   label:"WhatsApp",       ico:"◈",  g:"comunicação"},
   {id:"chatbot",    label:"Chatbot",        ico:"🤖", g:"comunicação"},
   {id:"chatbotbuilder", label:"Fluxo Visual",ico:"⬡", g:"comunicação"},
   {id:"disparos",   label:"Disparos",       ico:"◉",  g:"comunicação"},
-  {id:"broadcast",  label:"Campanhas",      ico:"◎",  g:"comunicação"},
   {id:"workspace",  label:"Workspace",      ico:"◫",  g:"comunicação"},
-  {id:"followup",   label:"Follow-ups",   ico:"◷", g:"atividades"},
-  {id:"agenda",     label:"Agenda",       ico:"◷", g:"atividades"},
-  {id:"financeiro", label:"Financeiro",   ico:"◈", g:"gestão"},
-  {id:"rh",         label:"RH / Pessoas", ico:"◉", g:"gestão"},
-  {id:"marketing",  label:"Marketing",    ico:"◎", g:"crescimento"},
-  {id:"digital",    label:"Digital",      ico:"⊞", g:"crescimento"},
-  {id:"propostas",  label:"Propostas",    ico:"◎", g:"negócios"},
-  {id:"contratos",  label:"Contratos",    ico:"◫", g:"negócios"},
-  {id:"estoque",    label:"Estoque",      ico:"⬡", g:"operações"},
+  {id:"followup",   label:"Follow-ups",     ico:"◷", g:"atividades"},
+  {id:"agenda",     label:"Agenda",         ico:"◷", g:"atividades"},
+  {id:"financeiro", label:"Financeiro",     ico:"◈", g:"gestão"},
+  {id:"rh",         label:"RH / Pessoas",   ico:"◉", g:"gestão"},
+  {id:"marketing",  label:"Marketing",      ico:"◎", g:"crescimento", c4hubOnly:true},
+  {id:"digital",    label:"Digital - TI",   ico:"⊞", g:"crescimento"},
+  {id:"propostas",  label:"Propostas",      ico:"◎", g:"negócios"},
+  {id:"contratos",  label:"Contratos",      ico:"◫", g:"negócios"},
+  {id:"estoque",    label:"Estoque",        ico:"⬡", g:"operações"},
   {id:"reports",      label:"Relatórios",    ico:"◫",  g:"analytics"},
   {id:"relatoriosatend", label:"Atendimento",ico:"📊", g:"analytics"},
   {id:"ai",           label:"C4 AI",         ico:"✦",  g:"analytics"},
@@ -108,9 +107,12 @@ export default function Shell({user,onLogout,onProfileUpdate}) {
   }, [user?.empresa_id]);
 
   const allNav   = isAdmin ? [...NAV_ITEMS, ...ADMIN_ITEMS] : NAV_ITEMS;
-  const navItems = allNav.filter(item =>
-    ADMIN_ONLY.has(item.id) ? isAdmin : hasPageAccess(user, item.id)
-  );
+  const navItems = allNav.filter(item => {
+    if (ADMIN_ONLY.has(item.id)) return isAdmin;
+    // Marketing apenas para empresa C4HUB
+    if (item.c4hubOnly && !isAdmin) return false;
+    return hasPageAccess(user, item.id);
+  });
   const groups   = [...new Set(navItems.map(n => n.g))];
   const safe     = (!isAdmin && ADMIN_ONLY.has(sec)) ? "dashboard" : sec;
   const curr     = navItems.find(n => n.id === safe);
@@ -270,14 +272,14 @@ export default function Shell({user,onLogout,onProfileUpdate}) {
           {safe==="chatbotbuilder" && <PageChatbotBuilder  user={user}/>}
           {safe==="disparos"       && <PageDisparos        user={user}/>}
           {safe==="broadcast"      && <PageBroadcast       user={user}/>}
-          {safe==="followup"  && <PageFollowUp  user={user}/>}
+          {safe==="followup"  && <PageFollowUp  user={user} onGoToChat={(leadId)=>navigate("whatsapp")}/>}
           {safe==="reports"         && <PageReports        user={user}/>}
           {safe==="relatoriosatend" && <PageRelatoriosAtend user={user}/>}
           {safe==="ai"              && <PageAI              user={user}/>}
           {safe==="financeiro" && <PageFinanceiro user={user}/>}
           {safe==="rh"        && <PageRH        user={user}/>}
-          {safe==="marketing" && <PageMarketing user={user}/>}
-          {safe==="digital"   && <PageDigital   user={user}/>}
+          {safe==="marketing" && <PageMarketing user={user} isAdmin={isAdmin}/>}
+          {safe==="digital"   && <PageDigital   user={user} isAdmin={isAdmin}/>}
           {safe==="workspace" && <PageWorkspace user={user}/>}
           {safe==="agenda"    && <PageAgenda    user={user}/>}
           {safe==="contratos" && <PageContratos user={user}/>}

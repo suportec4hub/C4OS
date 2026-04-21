@@ -67,14 +67,40 @@ const VAZIO_PROJ = { nome:"", descricao:"", status:"ativo", prioridade:"media", 
 const VAZIO_TASK = { titulo:"", descricao:"", status:"backlog", prioridade:"media", tipo:"tarefa", data_prazo:"", estimativa_horas:"" };
 const VAZIO_CH   = { titulo:"", descricao:"", tipo:"solicitacao", categoria:"Sistema", prioridade:"media", solicitante_nome:"", solicitante_email:"", cliente_nome:"" };
 const CORES_PROJ = [L.teal, L.copper, L.green, "#6366F1", L.yellow, L.red];
-const CATEGORIAS = ["Sistema","Acesso / Permissão","Hardware","Software / App","Rede / Internet","Desenvolvimento","Banco de Dados","Integração","Segurança","Outro"];
+const CATEGORIAS_INTERNAS = ["Sistema","Acesso / Permissão","Hardware","Software / App","Rede / Internet","Desenvolvimento","Banco de Dados","Integração","Segurança","Outro"];
+// Categorias extras para clientes C4HUB (CRM → vai para TI da C4HUB)
+const CATEGORIAS_CRM = ["CRM - C4 OS","CRM - Integração WhatsApp","CRM - Relatórios","CRM - Usuários / Acesso","CRM - Bug / Erro","CRM - Nova Funcionalidade"];
 
-export default function PageDigital({ user }) {
+// Cargos que têm acesso TOTAL ao Digital (TI + C-Level)
+const CARGOS_TI_CLEVEL = ["ceo","cto","coo","cfo","cmo","cso","cpo","diretor","co-founder","founder","sócio","socio","presidente","vp","t.i","ti","tecnologia","suporte ti","it","admin","administrador","c4hub"];
+
+function isTiOrCLevel(user) {
+  if (!user) return false;
+  if (user.role === "c4hub_admin") return true;
+  const cargo = (user.cargo || "").toLowerCase();
+  return CARGOS_TI_CLEVEL.some(k => cargo.includes(k));
+}
+
+export default function PageDigital({ user, isAdmin }) {
   const { isMobile } = useBreakpoint();
+  // Detecta se usuário tem acesso total (TI ou C-Level)
+  const podeVerTudo = isTiOrCLevel(user) || !!isAdmin;
+  // Categorias disponíveis: admins C4HUB veem tudo; clientes veem as suas + as de CRM
+  const CATEGORIAS = podeVerTudo
+    ? [...CATEGORIAS_INTERNAS, ...CATEGORIAS_CRM]
+    : isAdmin
+      ? [...CATEGORIAS_INTERNAS, ...CATEGORIAS_CRM]
+      : [...CATEGORIAS_INTERNAS, ...CATEGORIAS_CRM];
+
   const { data:projetos,  loading:loadP, insert:insP, update:updP, remove:remP, refetch:refP } = useTable("digital_projetos",  { empresa_id:user?.empresa_id });
   const { data:tarefas,   loading:loadT, insert:insT, update:updT, remove:remT, refetch:refT } = useTable("digital_tarefas",   { empresa_id:user?.empresa_id });
-  const { data:chamados,  loading:loadC, insert:insC, update:updC, remove:remC, refetch:refC } = useTable("digital_chamados",  { empresa_id:user?.empresa_id });
-  const { data:usuarios }                                                                        = useTable("usuarios",          { empresa_id:user?.empresa_id });
+  const { data:chamadosAll, loading:loadC, insert:insC, update:updC, remove:remC, refetch:refC } = useTable("digital_chamados",  { empresa_id:user?.empresa_id });
+  const { data:usuarios }                                                                          = useTable("usuarios",          { empresa_id:user?.empresa_id });
+
+  // Usuários sem acesso TI/C-Level veem apenas seus próprios chamados
+  const chamados = podeVerTudo
+    ? chamadosAll
+    : chamadosAll.filter(c => c.solicitante_id === user?.id);
 
   const [aba,          setAba]          = useState("Chamados");
   const [projetoAtivo, setProjetoAtivo] = useState(null);
@@ -269,12 +295,27 @@ export default function PageDigital({ user }) {
         ))}
       </Grid>
 
+      {/* Aviso para usuários com acesso restrito */}
+      {!podeVerTudo && (
+        <div style={{background:L.tealBg,border:`1px solid ${L.teal}22`,borderRadius:10,padding:"10px 16px",marginBottom:14,display:"flex",alignItems:"center",gap:10}}>
+          <span style={{fontSize:14}}>🔒</span>
+          <div>
+            <div style={{fontSize:12,fontWeight:600,color:L.teal}}>Acesso Restrito — Digital - TI</div>
+            <div style={{fontSize:11,color:L.t3}}>Você pode abrir chamados e acompanhar os seus próprios tickets. Para acesso completo, entre em contato com a equipe de T.I.</div>
+          </div>
+        </div>
+      )}
+
       {/* Tabs */}
       <Row between mb={14}>
-        <TabPills tabs={["Chamados","Projetos","Tarefas"]} active={aba} onChange={v=>{setAba(v);setChamadoAtivo(null);}}/>
+        <TabPills
+          tabs={podeVerTudo ? ["Chamados","Projetos","Tarefas"] : ["Chamados"]}
+          active={aba}
+          onChange={v=>{setAba(v);setChamadoAtivo(null);}}
+        />
         {aba==="Chamados" && <PBtn onClick={()=>openNovoChamado()}>+ Novo Chamado</PBtn>}
-        {aba==="Projetos" && <PBtn onClick={()=>openProjeto()}>+ Projeto</PBtn>}
-        {aba==="Tarefas"  && projetoAtivo && <PBtn onClick={()=>openTarefa()}>+ Tarefa</PBtn>}
+        {aba==="Projetos" && podeVerTudo && <PBtn onClick={()=>openProjeto()}>+ Projeto</PBtn>}
+        {aba==="Tarefas"  && podeVerTudo && projetoAtivo && <PBtn onClick={()=>openTarefa()}>+ Tarefa</PBtn>}
       </Row>
 
       {/* ══ ABA: CHAMADOS ══ */}
@@ -312,7 +353,7 @@ export default function PageDigital({ user }) {
                       <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:5}}>
                         <Tag color={CH_TIPO_C[c.tipo]||L.teal} bg={CH_TIPO_BG[c.tipo]||L.tealBg} small>{TIPO_LABEL[c.tipo]||c.tipo}</Tag>
                         <Tag color={PRIO_C[c.prioridade]||L.yellow} bg={PRIO_BG[c.prioridade]||L.yellowBg} small>{c.prioridade}</Tag>
-                        {c.categoria&&<Tag color={L.t3} bg={L.surface} small>{c.categoria}</Tag>}
+                        {c.categoria&&<Tag color={CATEGORIAS_CRM.includes(c.categoria)?L.teal:L.t3} bg={CATEGORIAS_CRM.includes(c.categoria)?L.tealBg:L.surface} small>{c.categoria}{CATEGORIAS_CRM.includes(c.categoria)&&" ★"}</Tag>}
                       </div>
                       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
                         <div style={{fontSize:10,color:L.t4}}>
@@ -659,7 +700,14 @@ export default function PageDigital({ user }) {
             </Field>
             <Field label="Categoria">
               <Select value={form.categoria||"Sistema"} onChange={F("categoria")}>
-                {CATEGORIAS.map(c=><option key={c} value={c}>{c}</option>)}
+                {CATEGORIAS_INTERNAS.length > 0 && (
+                  <optgroup label="── T.I Interna ──">
+                    {CATEGORIAS_INTERNAS.map(c=><option key={c} value={c}>{c}</option>)}
+                  </optgroup>
+                )}
+                <optgroup label="── CRM / C4 OS (vai para C4HUB) ──">
+                  {CATEGORIAS_CRM.map(c=><option key={c} value={c}>{c}</option>)}
+                </optgroup>
               </Select>
             </Field>
             <Field label="Responsável (T.I)">

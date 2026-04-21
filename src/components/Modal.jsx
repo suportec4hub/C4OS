@@ -63,9 +63,9 @@ export function Select({ value, onChange, children, ...rest }) {
   );
 }
 
-export function ModalFooter({ onClose, onSave, loading, label = "Salvar" }) {
-  return (
-    <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:20,paddingTop:16,borderTop:`1px solid ${L.lineSoft}`}}>
+export function ModalFooter({ onClose, onSave, loading, label = "Salvar", inline = false }) {
+  const inner = (
+    <>
       <button onClick={onClose}
         style={{padding:"9px 18px",borderRadius:9,fontSize:12.5,fontWeight:500,cursor:"pointer",fontFamily:"inherit",background:L.surface,color:L.t2,border:`1px solid ${L.line}`,transition:"all .1s"}}
         onMouseEnter={e=>e.currentTarget.style.borderColor=L.teal}
@@ -76,6 +76,12 @@ export function ModalFooter({ onClose, onSave, loading, label = "Salvar" }) {
       >
         {loading ? "Salvando..." : label}
       </button>
+    </>
+  );
+  if (inline) return <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>{inner}</div>;
+  return (
+    <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:20,paddingTop:16,borderTop:`1px solid ${L.lineSoft}`}}>
+      {inner}
     </div>
   );
 }

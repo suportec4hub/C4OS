@@ -288,11 +288,53 @@ export default function PageAgenda({ user }) {
               <Input value={form.descricao || ""} onChange={F("descricao")} placeholder="Detalhes..." />
             </Field>
           </div>
-          <ModalFooter
-            onClose={() => { setModal(false); setEdit(null); setForm(VAZIO); }}
-            onSave={save} loading={saving}
-            label={edit ? "Salvar" : "Criar Evento"}
-          />
+
+          {/* Link Google Agenda — só mostra quando há título e data */}
+          {form.titulo && form.data_inicio && (
+            <div style={{ marginTop: 12, padding: "10px 12px", background: L.surface, borderRadius: 8, border: `1px solid ${L.line}`, display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 16 }}>📅</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: L.t2, marginBottom: 2 }}>Adicionar ao Google Agenda</div>
+                <div style={{ fontSize: 10, color: L.t4 }}>Abre o Google Calendar com os dados preenchidos para salvar e ativar notificações.</div>
+              </div>
+              <button
+                onClick={() => {
+                  const toGCal = (iso) => iso ? new Date(iso).toISOString().replace(/[-:]/g, "").slice(0, 15) + "Z" : "";
+                  const dtStart = toGCal(form.data_inicio);
+                  const dtEnd   = toGCal(form.data_fim || form.data_inicio);
+                  const params  = new URLSearchParams({
+                    action: "TEMPLATE",
+                    text:   form.titulo,
+                    dates:  `${dtStart}/${dtEnd}`,
+                    details: form.descricao || "",
+                    location: form.local || "",
+                  });
+                  window.open(`https://calendar.google.com/calendar/render?${params.toString()}`, "_blank");
+                }}
+                style={{ padding: "6px 12px", borderRadius: 7, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", background: "#4285F4", color: "white", border: "none", whiteSpace: "nowrap" }}>
+                Abrir Google
+              </button>
+            </div>
+          )}
+
+          {/* Ações do modal: Excluir (se editando) + Salvar */}
+          <div style={{ display: "flex", gap: 8, marginTop: 16, justifyContent: "space-between", alignItems: "center" }}>
+            {edit ? (
+              <button
+                onClick={async () => { if (confirm("Excluir este evento?")) { await del(edit); setModal(false); setEdit(null); setForm(VAZIO); } }}
+                style={{ padding: "9px 16px", borderRadius: 9, fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", background: L.redBg, color: L.red, border: `1px solid ${L.red}22`, transition: "all .12s" }}
+                onMouseEnter={e => { e.currentTarget.style.background = L.red; e.currentTarget.style.color = "white"; }}
+                onMouseLeave={e => { e.currentTarget.style.background = L.redBg; e.currentTarget.style.color = L.red; }}>
+                🗑 Excluir
+              </button>
+            ) : <div />}
+            <ModalFooter
+              onClose={() => { setModal(false); setEdit(null); setForm(VAZIO); }}
+              onSave={save} loading={saving}
+              label={edit ? "Salvar" : "Criar Evento"}
+              inline
+            />
+          </div>
         </Modal>
       )}
     </Fade>
