@@ -266,7 +266,7 @@ export default function Shell({user,onLogout,onProfileUpdate}) {
         {/* Content */}
         <div style={{flex:1,overflow:"auto",padding:isMobile?"14px":"24px"}}>
           {safe==="dashboard" && <PageDashboard user={user}/>}
-          {safe==="leads"     && <PageLeads     user={user}/>}
+          {safe==="leads"     && <PageLeads     user={user} onOpenChat={(target)=>{ setChatTarget(target); setSec("whatsapp"); }}/>}
           {safe==="pipeline"  && <PagePipeline  user={user} onOpenChat={(phone)=>{ setChatTarget(phone); setSec("whatsapp"); }}/>}
           {safe==="whatsapp"       && <PageChat            user={user} openPhone={chatTarget} onChatTargetUsed={()=>setChatTarget(null)}/>}
           {safe==="chatbot"        && <PageChatbot         user={user}/>}

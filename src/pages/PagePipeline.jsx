@@ -232,7 +232,7 @@ export default function PagePipeline({ user, onOpenChat }) {
                       {/* Botão — abre conversa no WhatsApp interno */}
                       {tel && (
                         <button
-                          onClick={e=>{ e.stopPropagation(); onOpenChat ? onOpenChat(tel.replace(/\D/g,"")) : window.open(`https://wa.me/55${tel.replace(/\D/g,"")}`,"_blank"); }}
+                          onClick={e=>{ e.stopPropagation(); onOpenChat ? onOpenChat({ phone: tel.replace(/\D/g,""), nome: deal.titulo }) : window.open(`https://wa.me/55${tel.replace(/\D/g,"")}`,"_blank"); }}
                           title="Abrir conversa no WhatsApp"
                           style={{background:L.greenBg,border:`1px solid ${L.green}22`,cursor:"pointer",color:L.green,fontSize:11,padding:"2px 6px",borderRadius:5,transition:"all .1s",fontWeight:700,lineHeight:1}}
                           onMouseEnter={e=>e.currentTarget.style.background=L.green+"33"}

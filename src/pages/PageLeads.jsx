@@ -17,7 +17,7 @@ const CANAIS = ["WhatsApp","Site","Email","Indicação","Ligação","Instagram",
 const VAZIO  = { nome:"", email:"", whatsapp:"", empresa_nome:"", cargo:"", status:"novo", score:70, origem:"WhatsApp", valor_estimado:"", observacoes:"", atribuido_a:"" };
 const PIPE_VAZIO = { lead_id:null, titulo:"", valor:"", etapa:"", empresa_nome:"", whatsapp:"", canal_aquisicao:"", responsavel_id:"" };
 
-export default function PageLeads({ user }) {
+export default function PageLeads({ user, onOpenChat }) {
   /* ── lead modal ── */
   const [f, setF]         = useState("Todos");
   const [modal, setModal] = useState(false);
@@ -246,7 +246,7 @@ export default function PageLeads({ user }) {
                     {/* enviar para pipeline */}
                     <IBtn c={L.copper} onClick={() => openPipeModal(lead)} title="Enviar para Pipeline">⬡</IBtn>
                     {lead.whatsapp && (
-                      <IBtn c={L.green} onClick={() => window.open(`https://wa.me/55${phone}`)}>WhatsApp</IBtn>
+                      <IBtn c={L.green} onClick={() => onOpenChat ? onOpenChat({ phone, nome: lead.nome }) : window.open(`https://wa.me/55${phone}`)}>WhatsApp</IBtn>
                     )}
                     <IBtn c={L.teal} onClick={() => openEdit(lead)}>✎</IBtn>
                     <IBtn c={L.red}  onClick={() => del(lead.id)}>⊗</IBtn>

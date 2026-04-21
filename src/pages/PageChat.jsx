@@ -540,20 +540,27 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
     setInput("");
   };
 
-  // ── auto-abrir conversa quando vindo do Pipeline ──────────────────────────
+  // ── auto-abrir conversa quando vindo de Leads / Pipeline ─────────────────
   useEffect(() => {
-    if (!openPhone || conversas.length === 0) return;
-    const tel = openPhone.replace(/\D/g, "");
-    // Tenta match exato; se não achar, tenta sufixo (ex: 55 + DDD + número vs DDD + número)
+    if (!openPhone || loading) return; // aguarda conversas carregarem
+    const isObj = typeof openPhone === "object" && openPhone !== null;
+    const rawPhone = isObj ? openPhone.phone : openPhone;
+    const nome     = isObj ? (openPhone.nome || "") : "";
+    const tel = rawPhone.replace(/\D/g, "");
+    // Match exato ou com prefixo 55 (DDI)
     const found = conversas.find(c => {
       const ct = (c.contato_telefone || "").replace(/\D/g, "");
       return ct === tel || ct.endsWith(tel) || tel.endsWith(ct);
     });
     if (found) {
       selectConv(found);
-      onChatTargetUsed?.();
+    } else {
+      // Sem conversa existente → abre modal Nova Conversa pré-preenchido
+      setNovaForm({ nome, telefone: tel, empresa_contato: "" });
+      setNovaModal(true);
     }
-  }, [openPhone, conversas]); // eslint-disable-line react-hooks/exhaustive-deps
+    onChatTargetUsed?.();
+  }, [openPhone, conversas, loading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateConvStatus = async (status) => {
     if (!activeConv) return;
