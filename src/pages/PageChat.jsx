@@ -356,14 +356,14 @@ export default function PageChat({ user }) {
         }
       });
     // Carrega TODOS os usuários da empresa (sem filtro de ativo)
-    supabase.from("usuarios").select("id, nome, cor, foto_url")
+    supabase.from("usuarios").select("id, nome, avatar_url, foto_url, cargo, departamento_id")
       .eq("empresa_id", user.empresa_id)
-      .then(({ data }) => setAtendentes(data || []));
+      .then(({ data, error }) => { if (!error) setAtendentes(data || []); else console.warn("[Chat] usuarios query error:", error); });
     // Carrega TODOS os setores da empresa (sem filtro de ativo)
     supabase.from("setores").select("*")
       .eq("empresa_id", user.empresa_id)
       .order("ordem")
-      .then(({ data }) => setSetores(data || []));
+      .then(({ data, error }) => { if (!error) setSetores(data || []); else console.warn("[Chat] setores query error:", error); });
     supabase.from("etiquetas").select("*").eq("empresa_id", user.empresa_id).eq("ativo", true)
       .then(({ data }) => setEtiquetas(data || []));
     supabase.from("respostas_rapidas").select("*").eq("empresa_id", user.empresa_id).eq("ativo", true)
