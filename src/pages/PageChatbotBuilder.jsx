@@ -72,13 +72,14 @@ export default function PageChatbotBuilder({ user }) {
   const [conexoes,     setConexoes]     = useState([]);
   const [selectedNo,   setSelectedNo]   = useState(null);
   const [editingNo,    setEditingNo]    = useState(null);
-  const [connecting,   setConnecting]   = useState(null); // no de origem
+  const [connecting,   setConnecting]   = useState(null);
   const [loading,      setLoading]      = useState(false);
   const [saving,       setSaving]       = useState(false);
   const [novaModal,    setNovaModal]    = useState(false);
   const [novaForm,     setNovaForm]     = useState(VAZIO_FLUXO);
   const [dragging,     setDragging]     = useState(null);
   const [dragOffset,   setDragOffset]   = useState({ x: 0, y: 0 });
+  const [fluxoAtivoId, setFluxoAtivoId] = useState(null); // fluxo_ativo_id do chatbot_config
   const canvasRef = useRef(null);
 
   useEffect(() => {
@@ -86,7 +87,35 @@ export default function PageChatbotBuilder({ user }) {
     supabase.from("chatbot_fluxos").select("id, nome, descricao, ativo, created_at")
       .eq("empresa_id", user.empresa_id).order("created_at", { ascending: false })
       .then(({ data }) => setFluxos(data || []));
+    // Carrega qual fluxo está ativo no chatbot_config
+    supabase.from("chatbot_config").select("fluxo_ativo_id").eq("empresa_id", user.empresa_id).single()
+      .then(({ data }) => { if (data) setFluxoAtivoId(data.fluxo_ativo_id); });
   }, [user?.empresa_id]);
+
+  // Ativa/define como fluxo principal do chatbot
+  const usarNoChatbot = async (f) => {
+    const isJaAtivo = fluxoAtivoId === f.id;
+    const novoId = isJaAtivo ? null : f.id;
+    // Upsert chatbot_config
+    const { data: cfgExistente } = await supabase.from("chatbot_config")
+      .select("id").eq("empresa_id", user.empresa_id).single();
+    if (cfgExistente) {
+      await supabase.from("chatbot_config").update({ fluxo_ativo_id: novoId }).eq("id", cfgExistente.id);
+    } else {
+      await supabase.from("chatbot_config").insert({
+        empresa_id: user.empresa_id, ativo: true, fluxo_ativo_id: novoId,
+        mensagem_boas_vindas: "Olá! Em que posso ajudar?",
+        mensagem_fora_horario: "Retornaremos em breve!", dias_semana: [1,2,3,4,5],
+        horario_inicio: "08:00", horario_fim: "18:00", transferir_palavra: "atendente",
+      });
+    }
+    setFluxoAtivoId(novoId);
+    // Também marca o fluxo como ativo/inativo
+    if (!isJaAtivo) {
+      await supabase.from("chatbot_fluxos").update({ ativo: true }).eq("id", f.id);
+      setFluxos(p => p.map(x => ({ ...x, ativo: x.id === f.id })));
+    }
+  };
 
   const openFluxo = async (f) => {
     setActiveFluxo(f);
@@ -200,17 +229,29 @@ export default function PageChatbotBuilder({ user }) {
             <button onClick={() => setNovaModal(true)} style={btn(L.t1, "white")}>+ Criar primeiro fluxo</button>
           </div>
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
-            {fluxos.map(f => (
-              <div key={f.id} style={{ background: L.white, borderRadius: 12, border: `1px solid ${L.line}`,
-                padding: 18, boxShadow: "0 1px 3px rgba(0,0,0,.04)" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 12 }}>
+            {fluxos.map(f => {
+              const emUso = fluxoAtivoId === f.id;
+              return (
+              <div key={f.id} style={{ background: L.white, borderRadius: 12,
+                border: `2px solid ${emUso ? L.teal + "55" : L.line}`,
+                padding: 18, boxShadow: emUso ? `0 0 0 3px ${L.teal}18` : "0 1px 3px rgba(0,0,0,.04)",
+                transition: "all .15s" }}>
                 <Row between mb={6}>
                   <span style={{ fontSize: 13.5, fontWeight: 600, color: L.t1 }}>{f.nome}</span>
-                  <span style={{ fontSize: 10, background: f.ativo ? L.greenBg : L.surface,
-                    color: f.ativo ? L.green : L.t3, padding: "2px 8px", borderRadius: 10, fontWeight: 600,
-                    border: `1px solid ${f.ativo ? L.green + "33" : L.line}` }}>
-                    {f.ativo ? "Ativo" : "Rascunho"}
-                  </span>
+                  <Row gap={5}>
+                    {emUso && (
+                      <span style={{ fontSize: 10, background: L.tealBg, color: L.teal,
+                        padding: "2px 8px", borderRadius: 10, fontWeight: 700, border: `1px solid ${L.teal}33` }}>
+                        🤖 Em uso
+                      </span>
+                    )}
+                    <span style={{ fontSize: 10, background: f.ativo ? L.greenBg : L.surface,
+                      color: f.ativo ? L.green : L.t3, padding: "2px 8px", borderRadius: 10, fontWeight: 600,
+                      border: `1px solid ${f.ativo ? L.green + "33" : L.line}` }}>
+                      {f.ativo ? "Ativo" : "Rascunho"}
+                    </span>
+                  </Row>
                 </Row>
                 {f.descricao && <div style={{ fontSize: 11, color: L.t3, marginBottom: 10 }}>{f.descricao}</div>}
                 <div style={{ fontSize: 10, color: L.t4, marginBottom: 12 }}>
@@ -219,6 +260,12 @@ export default function PageChatbotBuilder({ user }) {
                 <Row gap={6}>
                   <button onClick={() => openFluxo(f)} style={btn(L.t1, "white", { flex: 1, fontSize: 11 })}>
                     ✎ Editar fluxo
+                  </button>
+                  <button onClick={() => usarNoChatbot(f)}
+                    title={emUso ? "Remover do chatbot" : "Usar este fluxo no chatbot"}
+                    style={btn(emUso ? L.tealBg : L.surface, emUso ? L.teal : L.t3,
+                      { fontSize: 11, padding: "7px 10px", border: `1px solid ${emUso ? L.teal+"55" : L.line}` })}>
+                    {emUso ? "🤖 ✓" : "🤖"}
                   </button>
                   <button onClick={() => toggleAtivo(f)}
                     style={btn(f.ativo ? L.yellowBg : L.greenBg, f.ativo ? L.yellow : L.green, { fontSize: 11, padding: "7px 10px" })}>
@@ -229,7 +276,7 @@ export default function PageChatbotBuilder({ user }) {
                   </button>
                 </Row>
               </div>
-            ))}
+            );})}
           </div>
         )}
 
@@ -269,7 +316,12 @@ export default function PageChatbotBuilder({ user }) {
       <div style={{ padding: "10px 16px", background: L.white, borderBottom: `1px solid ${L.line}`,
         display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", flexShrink: 0 }}>
         <button onClick={() => { setActiveFluxo(null); setNos([]); setConexoes([]); }} style={btn()}>← Voltar</button>
-        <div style={{ fontSize: 13, fontWeight: 700, color: L.t1, flex: 1 }}>{activeFluxo.nome}</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: L.t1, flex: 1, display:"flex", alignItems:"center", gap:8 }}>
+          {activeFluxo.nome}
+          {fluxoAtivoId === activeFluxo.id && (
+            <span style={{ fontSize:10, background:L.tealBg, color:L.teal, padding:"2px 8px", borderRadius:10, fontWeight:700, border:`1px solid ${L.teal}33` }}>🤖 Em uso no chatbot</span>
+          )}
+        </div>
         {connecting && (
           <div style={{ fontSize: 11, background: L.blueBg, color: L.blue, padding: "5px 10px", borderRadius: 8,
             border: `1px solid ${L.blue}33` }}>

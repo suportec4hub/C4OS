@@ -31,6 +31,7 @@ export default function PageChatbot({ user }) {
 /* ─── Configurações gerais do bot ─────────────────────────────────────────── */
 function TabConfig({ user }) {
   const [cfg, setCfg] = useState(null);
+  const [fluxos, setFluxos] = useState([]);
   const [saving, setSaving] = useState(false);
   const [succ, setSucc] = useState("");
   const [err, setErr] = useState("");
@@ -42,6 +43,7 @@ function TabConfig({ user }) {
         else setCfg({
           empresa_id: user.empresa_id,
           ativo: false,
+          fluxo_ativo_id: null,
           mensagem_boas_vindas: "Olá! Em que posso ajudar?",
           mensagem_fora_horario: "Nosso atendimento está encerrado no momento. Retornaremos em breve!",
           horario_inicio: "08:00",
@@ -50,6 +52,9 @@ function TabConfig({ user }) {
           transferir_palavra: "atendente",
         });
       });
+    supabase.from("chatbot_fluxos").select("id, nome, ativo").eq("empresa_id", user.empresa_id)
+      .order("created_at", { ascending: false })
+      .then(({ data }) => setFluxos(data || []));
   }, [user.empresa_id]);
 
   const save = async () => {
@@ -111,6 +116,29 @@ function TabConfig({ user }) {
               <input type="time" value={cfg.horario_fim} onChange={e=>setCfg(p=>({...p,horario_fim:e.target.value}))} style={timeStyle}/>
             </Field>
           </div>
+        </Card>
+
+        {/* Fluxo visual ativo */}
+        <Card title="Fluxo Visual Ativo">
+          <div style={{fontSize:11.5,color:L.t3,marginBottom:10,lineHeight:1.5}}>
+            Selecione qual fluxo visual será executado quando uma nova mensagem chegar. Crie e edite fluxos em <strong>Fluxo Visual</strong>.
+          </div>
+          <select
+            value={cfg.fluxo_ativo_id || ""}
+            onChange={e => setCfg(p => ({ ...p, fluxo_ativo_id: e.target.value || null }))}
+            style={{ width:"100%", background:L.surface, border:`1.5px solid ${L.line}`, borderRadius:9, padding:"9px 12px", color:L.t1, fontSize:12.5, fontFamily:"'Instrument Sans',sans-serif", outline:"none", cursor:"pointer" }}
+          >
+            <option value="">— Nenhum fluxo (só gatilhos de palavras) —</option>
+            {fluxos.map(f => (
+              <option key={f.id} value={f.id}>{f.nome}{f.ativo ? " ✓ ativo" : " (rascunho)"}</option>
+            ))}
+          </select>
+          {cfg.fluxo_ativo_id && (
+            <div style={{ marginTop:8, fontSize:11, color:L.teal, display:"flex", alignItems:"center", gap:5 }}>
+              <span style={{ width:7, height:7, borderRadius:"50%", background:L.teal, display:"inline-block" }}/>
+              Fluxo selecionado será executado para cada nova mensagem recebida
+            </div>
+          )}
         </Card>
 
         {/* Palavra de transferência */}
