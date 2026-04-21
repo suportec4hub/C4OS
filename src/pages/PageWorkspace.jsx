@@ -45,7 +45,11 @@ const corPresenca = (status) => {
 
 const EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🎉", "🔥", "👏", "✅", "💯"];
 const VAZIO_CANAL   = { nome: "", tipo: "publico", descricao: "" };
-const VAZIO_REUNIAO = { titulo: "", descricao: "", data_inicio: "", link: "" };
+const VAZIO_REUNIAO = { titulo: "", descricao: "", data_inicio: "", link: "", participantes_ids: [] };
+
+// Cor determinística por ID (sem depender de coluna cor no banco)
+const AV_COLORS = ["#0d9488","#d97706","#3b82f6","#16a34a","#6366f1","#ec4899","#8b5cf6","#0ea5e9","#f59e0b","#ef4444"];
+const avatarColor = (id) => AV_COLORS[((id || "x").charCodeAt(0) + (id || "x").charCodeAt(4||0)) % AV_COLORS.length];
 
 // ─── Emoji Picker ────────────────────────────────────────────────────────────
 function EmojiPicker({ onSelect, onClose }) {
@@ -114,7 +118,7 @@ function MsgItem({ m, prev, user, onReact, onReply, onPin }) {
       {/* Avatar ou espaço */}
       <div style={{ width: 34, flexShrink: 0, paddingTop: 1, display: "flex", alignItems: "flex-start" }}>
         {!agrupado
-          ? <Av name={nome} size={32} color={m.usuarios?.cor || L.teal} />
+          ? <Av name={nome} size={32} color={avatarColor(m.usuario_id)} src={m.usuarios?.foto_url || m.usuarios?.avatar_url} />
           : <span style={{ fontSize: 9, color: L.t5, paddingTop: 4, paddingLeft: 4, fontFamily: "'JetBrains Mono',monospace" }}>
               {hover ? fmt(m.created_at) : ""}
             </span>
@@ -205,21 +209,50 @@ function MsgItem({ m, prev, user, onReact, onReply, onPin }) {
 }
 
 // ─── Painel de Reuniões ──────────────────────────────────────────────────────
-function PainelReunioes({ reunioes, user, onNova, onEntrar, onExcluir }) {
+function PainelReunioes({ reunioes, user, onNova, onEntrar, onExcluir, reuniaoAtiva, onFecharReuniao }) {
+  if (reuniaoAtiva) {
+    // Modo reunião ativa — iframe Jitsi embutido
+    return (
+      <div style={{
+        width: 480, minWidth: 480, borderLeft: `1px solid ${L.line}`,
+        display: "flex", flexDirection: "column", background: "#000", flexShrink: 0,
+      }}>
+        <div style={{ padding: "10px 14px", borderBottom: "1px solid #333", display: "flex", alignItems: "center", justifyContent: "space-between", background: "#1a1d21" }}>
+          <div>
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: "#fff" }}>🎥 {reuniaoAtiva.titulo || "Reunião"}</div>
+            <div style={{ fontSize: 10, color: "rgba(255,255,255,.4)", marginTop: 1 }}>Em andamento · áudio e vídeo ativos</div>
+          </div>
+          <button
+            onClick={onFecharReuniao}
+            style={{ background: "#ef4444", border: "none", borderRadius: 7, color: "white", fontSize: 11, fontWeight: 700, cursor: "pointer", padding: "5px 11px" }}
+          >
+            Sair
+          </button>
+        </div>
+        <iframe
+          src={reuniaoAtiva.link}
+          allow="camera;microphone;display-capture;autoplay;clipboard-write"
+          style={{ flex: 1, border: "none", width: "100%", minHeight: 0 }}
+          title="Reunião"
+        />
+      </div>
+    );
+  }
+
   return (
     <div style={{
       width: 272, minWidth: 272, borderLeft: `1px solid ${L.line}`,
       display: "flex", flexDirection: "column", background: L.surface, flexShrink: 0,
     }}>
       <div style={{ padding: "14px 16px 12px", borderBottom: `1px solid ${L.lineSoft}` }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: L.t1 }}>Proximas Reunioes</div>
-        <div style={{ fontSize: 10, color: L.t4, marginTop: 1 }}>videoconferencias agendadas</div>
+        <div style={{ fontSize: 12, fontWeight: 700, color: L.t1 }}>Próximas Reuniões</div>
+        <div style={{ fontSize: 10, color: L.t4, marginTop: 1 }}>Videoconferências agendadas</div>
       </div>
 
       <div style={{ flex: 1, overflowY: "auto", padding: "12px" }}>
         {reunioes.length === 0 ? (
           <div style={{ textAlign: "center", padding: "30px 10px", color: L.t4, fontSize: 11 }}>
-            Nenhuma reuniao agendada.{" "}
+            Nenhuma reunião agendada.{" "}
             <span onClick={onNova} style={{ cursor: "pointer", color: L.teal, fontWeight: 600, fontSize: 12 }}>
               Criar primeira
             </span>
@@ -234,23 +267,30 @@ function PainelReunioes({ reunioes, user, onNova, onEntrar, onExcluir }) {
                     onClick={() => onExcluir(r.id)}
                     title="Excluir"
                     style={{ background: "none", border: "none", cursor: "pointer", color: L.t5, fontSize: 12, padding: "0 2px" }}
-                  >
-                    x
-                  </button>
+                    onMouseEnter={e=>e.currentTarget.style.color=L.red}
+                    onMouseLeave={e=>e.currentTarget.style.color=L.t5}
+                  >×</button>
                 )}
               </div>
               <div style={{ fontSize: 10, color: L.t4, marginBottom: r.descricao ? 4 : 10, fontFamily: "'JetBrains Mono',monospace" }}>
-                {fmtFull(r.data_inicio)}
+                📅 {fmtFull(r.data_inicio)}
               </div>
               {r.descricao && (
                 <div style={{ fontSize: 11, color: L.t3, marginBottom: 8, lineHeight: 1.4 }}>{r.descricao}</div>
               )}
-              <button
-                onClick={() => onEntrar(r.link)}
-                style={{ width: "100%", padding: "7px", background: L.teal, border: "none", borderRadius: 7, color: "white", fontSize: 11.5, fontWeight: 600, cursor: "pointer" }}
-              >
-                Entrar na Reuniao
-              </button>
+              <div style={{ display: "flex", gap: 6 }}>
+                <button
+                  onClick={() => onEntrar(r)}
+                  style={{ flex: 1, padding: "7px", background: L.teal, border: "none", borderRadius: 7, color: "white", fontSize: 11.5, fontWeight: 600, cursor: "pointer" }}
+                >
+                  🎥 Entrar
+                </button>
+                <button
+                  onClick={() => window.open(r.link, "_blank")}
+                  title="Abrir em nova aba"
+                  style={{ padding: "7px 10px", background: L.surface, border: `1px solid ${L.line}`, borderRadius: 7, color: L.t3, fontSize: 11, cursor: "pointer" }}
+                >↗</button>
+              </div>
             </div>
           ))
         )}
@@ -261,7 +301,7 @@ function PainelReunioes({ reunioes, user, onNova, onEntrar, onExcluir }) {
           onClick={onNova}
           style={{ width: "100%", padding: "8px", background: L.tealBg, border: `1px solid ${L.line}`, borderRadius: 8, color: L.teal, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}
         >
-          + Agendar Reuniao
+          + Agendar Reunião
         </button>
       </div>
     </div>
@@ -269,16 +309,10 @@ function PainelReunioes({ reunioes, user, onNova, onEntrar, onExcluir }) {
 }
 
 // ─── Painel de Perfil do Membro ──────────────────────────────────────────────
-function PainelMembro({ membro, user, onClose, onDM }) {
+function PainelMembro({ membro, user, onClose, onDM, onLigar }) {
   const status = presenca(membro.last_seen);
   const cor = corPresenca(status);
   const labelStatus = status === "online" ? "Online" : status === "ausente" ? "Ausente" : "Offline";
-
-  const abrirLigacao = () => {
-    const ids = [user.id, membro.id].sort();
-    const sala = `jitsi-dm-${ids[0].slice(0, 8)}-${ids[1].slice(0, 8)}`;
-    window.open(`https://meet.jit.si/${sala}`, "_blank");
-  };
 
   return (
     <div style={{
@@ -292,7 +326,7 @@ function PainelMembro({ membro, user, onClose, onDM }) {
 
       <div style={{ padding: "24px 20px", textAlign: "center" }}>
         <div style={{ marginBottom: 12, position: "relative", display: "inline-block" }}>
-          <Av name={membro.nome} size={56} color={membro.cor || L.teal} />
+          <Av name={membro.nome} size={56} color={avatarColor(membro.id)} src={membro.foto_url || membro.avatar_url} />
           <div style={{
             position: "absolute", bottom: 2, right: 2,
             width: 14, height: 14, borderRadius: "50%",
@@ -323,10 +357,10 @@ function PainelMembro({ membro, user, onClose, onDM }) {
               Mensagem Direta
             </button>
             <button
-              onClick={abrirLigacao}
+              onClick={() => onLigar?.(membro)}
               style={{ width: "100%", padding: "8px", background: L.surface, border: `1px solid ${L.line}`, borderRadius: 8, color: L.t2, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}
             >
-              Ligar (Jitsi)
+              🎥 Ligar agora
             </button>
           </div>
         )}
@@ -356,13 +390,20 @@ export default function PageWorkspace({ user }) {
   const [membroView,    setMembroView]    = useState(null);
   const [showReunioes,  setShowReunioes]  = useState(true);
   const [pinFilter,     setPinFilter]     = useState(false);
+  const [reuniaoAtiva,  setReuniaoAtiva]  = useState(null); // { titulo, link } em andamento
 
   // ── modais ────────────────────────────────────────────────────────────────
-  const [modalCanal,    setModalCanal]    = useState(false);
-  const [modalReuniao,  setModalReuniao]  = useState(false);
-  const [formCanal,     setFormCanal]     = useState(VAZIO_CANAL);
-  const [formReuniao,   setFormReuniao]   = useState(VAZIO_REUNIAO);
-  const [saving,        setSaving]        = useState(false);
+  const [modalCanal,       setModalCanal]       = useState(false);
+  const [modalReuniao,     setModalReuniao]      = useState(false);
+  const [formCanal,        setFormCanal]         = useState(VAZIO_CANAL);
+  const [formReuniao,      setFormReuniao]       = useState(VAZIO_REUNIAO);
+  const [saving,           setSaving]            = useState(false);
+
+  // ── edição de canal ───────────────────────────────────────────────────────
+  const [modalEditCanal,   setModalEditCanal]    = useState(false);
+  const [canalEditando,    setCanalEditando]     = useState(null);
+  const [formEditCanal,    setFormEditCanal]     = useState({ nome: "", tipo: "publico", descricao: "" });
+  const [editMembrosSel,   setEditMembrosSel]    = useState([]); // uuid[]
 
   const endRef    = useRef(null);
   const subRef    = useRef(null);
@@ -389,7 +430,7 @@ export default function PageWorkspace({ user }) {
     if (!id) return;
     const { data } = await supabase
       .from("workspace_mensagens")
-      .select("*, usuarios(nome, cor, foto_url), reactions:workspace_reactions(*)")
+      .select("*, usuarios(id, nome, avatar_url, foto_url), reactions:workspace_reactions(*)")
       .eq("canal_id", id)
       .order("created_at")
       .limit(200);
@@ -407,14 +448,14 @@ export default function PageWorkspace({ user }) {
     setReunioes(data || []);
   }, [user.empresa_id]);
 
-  // FIX: sem .eq("ativo", true) para evitar excluir usuários válidos
   const loadMembros = useCallback(async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("usuarios")
-      .select("id, nome, cargo, cor, foto_url, email, last_seen")
+      .select("id, nome, cargo, avatar_url, foto_url, whatsapp, last_seen")
       .eq("empresa_id", user.empresa_id)
       .order("nome");
-    setMembros(data || []);
+    if (!error) setMembros(data || []);
+    else console.warn("[Workspace] loadMembros error:", error);
   }, [user.empresa_id]);
 
   // Carrega contadores de não lidas para todos os canais
@@ -513,7 +554,7 @@ export default function PageWorkspace({ user }) {
       }, async (payload) => {
         if (payload.eventType === "INSERT") {
           const { data: u } = await supabase
-            .from("usuarios").select("nome, cor, foto_url").eq("id", payload.new.usuario_id).single();
+            .from("usuarios").select("id, nome, avatar_url, foto_url").eq("id", payload.new.usuario_id).single();
           const { data: rx } = await supabase
             .from("workspace_reactions").select("*").eq("mensagem_id", payload.new.id);
           setMensagens(p => [...p, { ...payload.new, usuarios: u, reactions: rx || [] }]);
@@ -630,17 +671,68 @@ export default function PageWorkspace({ user }) {
     setModalCanal(false); setFormCanal(VAZIO_CANAL); setSaving(false);
   };
 
+  // ─── abrir edição de canal ────────────────────────────────────────────────
+  const abrirEditCanal = (c, e) => {
+    e.stopPropagation();
+    setCanalEditando(c);
+    setFormEditCanal({ nome: c.nome, tipo: c.tipo, descricao: c.descricao || "" });
+    setEditMembrosSel(c.membros_ids || []);
+    setModalEditCanal(true);
+  };
+
+  // ─── salvar edição de canal ───────────────────────────────────────────────
+  const salvarEdicaoCanal = async () => {
+    if (!canalEditando || !formEditCanal.nome.trim()) return;
+    setSaving(true);
+    const slug = formEditCanal.nome.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+    const { data } = await supabase.from("workspace_canais").update({
+      nome:        slug,
+      tipo:        formEditCanal.tipo,
+      descricao:   formEditCanal.descricao,
+      membros_ids: editMembrosSel,
+    }).eq("id", canalEditando.id).select().single();
+    if (data) setCanais(p => p.map(c => c.id === data.id ? data : c));
+    setModalEditCanal(false); setCanalEditando(null); setSaving(false);
+  };
+
+  // ─── excluir canal ────────────────────────────────────────────────────────
+  const excluirCanal = async () => {
+    if (!canalEditando) return;
+    if (!window.confirm(`Excluir o canal #${canalEditando.nome}? Todas as mensagens serão perdidas.`)) return;
+    await supabase.from("workspace_canais").delete().eq("id", canalEditando.id);
+    setCanais(p => p.filter(c => c.id !== canalEditando.id));
+    if (canalId === canalEditando.id) setCanalId(null);
+    setModalEditCanal(false); setCanalEditando(null);
+  };
+
   // ─── criar reunião ────────────────────────────────────────────────────────
   const criarReuniao = async () => {
     if (!formReuniao.titulo || !formReuniao.data_inicio) return;
     setSaving(true);
     const link = formReuniao.link.trim() ||
       `https://meet.jit.si/c4hub-${(user.empresa_id || "").slice(0, 8)}-${Date.now()}`;
-    await supabase.from("workspace_reunioes").insert({
-      ...formReuniao, link, empresa_id: user.empresa_id, criado_por: user.id,
-    });
+    const { data: nova } = await supabase.from("workspace_reunioes").insert({
+      titulo: formReuniao.titulo, descricao: formReuniao.descricao,
+      data_inicio: formReuniao.data_inicio,
+      link, empresa_id: user.empresa_id, criado_por: user.id,
+    }).select().single();
     await loadReunioes();
     setModalReuniao(false); setFormReuniao(VAZIO_REUNIAO); setSaving(false);
+    // Pergunta se quer entrar agora
+    if (nova && window.confirm(`Reunião criada! Entrar agora em "${nova.titulo}"?`)) {
+      setReuniaoAtiva(nova);
+      setShowReunioes(true);
+      setMembroView(null);
+    }
+  };
+
+  const ligarParaMembro = (membro) => {
+    const ids = [user.id, membro.id].sort();
+    const sala = `jitsi-dm-${ids[0].slice(0, 8)}-${ids[1].slice(0, 8)}`;
+    const r = { titulo: `Ligação com ${membro.nome.split(" ")[0]}`, link: `https://meet.jit.si/${sala}` };
+    setReuniaoAtiva(r);
+    setShowReunioes(true);
+    setMembroView(null);
   };
 
   const excluirReuniao = async (id) => {
@@ -730,32 +822,53 @@ export default function PageWorkspace({ user }) {
             {canaisPublicos.map(c => {
               const ativo = canalId === c.id;
               const badge = unread[c.id];
+              const podeEditar = c.criado_por === user.id || user.role === "c4hub_admin" || user.role === "client_admin";
               return (
-                <button
+                <div
                   key={c.id}
-                  onClick={() => { setCanalId(c.id); setMembroView(null); }}
-                  style={{
-                    width: "100%", textAlign: "left", padding: "5px 14px 5px 16px",
-                    background: ativo ? "rgba(255,255,255,.12)" : "transparent",
-                    border: "none", cursor: "pointer",
-                    color: ativo ? "#fff" : (badge ? "#fff" : "rgba(255,255,255,.55)"),
-                    fontSize: 12.5, fontFamily: "inherit", transition: "all .1s",
-                    fontWeight: ativo || badge ? 600 : 400,
-                    display: "flex", alignItems: "center", justifyContent: "space-between",
-                  }}
-                  onMouseEnter={e => { if (!ativo) e.currentTarget.style.background = "rgba(255,255,255,.07)"; }}
-                  onMouseLeave={e => { if (!ativo) e.currentTarget.style.background = "transparent"; }}
+                  style={{ position: "relative", display: "flex", alignItems: "center" }}
+                  onMouseEnter={e => e.currentTarget.querySelector(".canal-edit-btn")?.style && (e.currentTarget.querySelector(".canal-edit-btn").style.opacity = "1")}
+                  onMouseLeave={e => e.currentTarget.querySelector(".canal-edit-btn")?.style && (e.currentTarget.querySelector(".canal-edit-btn").style.opacity = "0")}
                 >
-                  <span>
-                    <span style={{ opacity: .5, marginRight: 4, fontSize: 11 }}>{c.tipo === "privado" ? "lock" : "#"}</span>
-                    {c.nome}
-                  </span>
-                  {badge > 0 && (
-                    <span style={{ background: "#0f766e", color: "#fff", borderRadius: 10, fontSize: 9, fontWeight: 700, padding: "1px 5px", minWidth: 16, textAlign: "center" }}>
-                      {badge > 99 ? "99+" : badge}
+                  <button
+                    onClick={() => { setCanalId(c.id); setMembroView(null); }}
+                    style={{
+                      flex: 1, textAlign: "left", padding: "5px 14px 5px 16px",
+                      background: ativo ? "rgba(255,255,255,.12)" : "transparent",
+                      border: "none", cursor: "pointer",
+                      color: ativo ? "#fff" : (badge ? "#fff" : "rgba(255,255,255,.55)"),
+                      fontSize: 12.5, fontFamily: "inherit", transition: "all .1s",
+                      fontWeight: ativo || badge ? 600 : 400,
+                      display: "flex", alignItems: "center", justifyContent: "space-between",
+                    }}
+                    onMouseEnter={e => { if (!ativo) e.currentTarget.style.background = "rgba(255,255,255,.07)"; }}
+                    onMouseLeave={e => { if (!ativo) e.currentTarget.style.background = "transparent"; }}
+                  >
+                    <span>
+                      <span style={{ opacity: .5, marginRight: 4, fontSize: 11 }}>{c.tipo === "privado" ? "🔒" : "#"}</span>
+                      {c.nome}
                     </span>
+                    {badge > 0 && (
+                      <span style={{ background: "#0f766e", color: "#fff", borderRadius: 10, fontSize: 9, fontWeight: 700, padding: "1px 5px", minWidth: 16, textAlign: "center" }}>
+                        {badge > 99 ? "99+" : badge}
+                      </span>
+                    )}
+                  </button>
+                  {podeEditar && (
+                    <button
+                      className="canal-edit-btn"
+                      onClick={(e) => abrirEditCanal(c, e)}
+                      title="Editar canal"
+                      style={{
+                        background: "none", border: "none", cursor: "pointer",
+                        color: "rgba(255,255,255,.4)", fontSize: 11, padding: "4px 8px 4px 2px",
+                        opacity: 0, transition: "opacity .15s", flexShrink: 0,
+                      }}
+                    >
+                      ✎
+                    </button>
                   )}
-                </button>
+                </div>
               );
             })}
 
@@ -827,7 +940,7 @@ export default function PageWorkspace({ user }) {
                 >
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <div style={{ position: "relative", flexShrink: 0 }}>
-                      <Av name={m.nome} size={22} color={m.cor || L.teal} />
+                      <Av name={m.nome} size={22} color={avatarColor(m.id)} src={m.foto_url || m.avatar_url} />
                       <div style={{
                         position: "absolute", bottom: -1, right: -1,
                         width: 7, height: 7, borderRadius: "50%",
@@ -853,7 +966,7 @@ export default function PageWorkspace({ user }) {
           {/* Rodapé — usuário logado */}
           <div style={{ padding: "10px 14px", borderTop: "1px solid rgba(255,255,255,.08)", display: "flex", alignItems: "center", gap: 9 }}>
             <div style={{ position: "relative" }}>
-              <Av name={user.nome} size={30} color={user.cor || L.teal} />
+              <Av name={user.nome} size={30} color={avatarColor(user.id)} src={user.foto_url || user.avatar_url} />
               <div style={{ position: "absolute", bottom: -1, right: -1, width: 8, height: 8, borderRadius: "50%", background: "#22c55e", border: "1.5px solid #1a1d21" }} />
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -1019,14 +1132,17 @@ export default function PageWorkspace({ user }) {
             user={user}
             onClose={() => setMembroView(null)}
             onDM={abrirDM}
+            onLigar={ligarParaMembro}
           />
         ) : showReunioes ? (
           <PainelReunioes
             reunioes={reunioes}
             user={user}
             onNova={() => setModalReuniao(true)}
-            onEntrar={(link) => window.open(link, "_blank")}
+            onEntrar={(r) => { setReuniaoAtiva(r); setMembroView(null); }}
             onExcluir={excluirReuniao}
+            reuniaoAtiva={reuniaoAtiva}
+            onFecharReuniao={() => setReuniaoAtiva(null)}
           />
         ) : null}
       </div>
@@ -1064,46 +1180,64 @@ export default function PageWorkspace({ user }) {
         </Modal>
       )}
 
-      {/* ══ MODAL: Agendar Reuniao ════════════════════════════════════════════ */}
+      {/* ══ MODAL: Agendar Reunião ════════════════════════════════════════════ */}
       {modalReuniao && (
-        <Modal title="Agendar Reuniao" onClose={() => { setModalReuniao(false); setFormReuniao(VAZIO_REUNIAO); }} width={460}>
-          <Field label="Titulo *">
+        <Modal title="🗓️ Agendar Reunião" onClose={() => { setModalReuniao(false); setFormReuniao(VAZIO_REUNIAO); }} width={480}>
+          <Field label="Título *">
             <Input
               value={formReuniao.titulo}
               onChange={v => setFormReuniao(p => ({ ...p, titulo: v }))}
-              placeholder="Reuniao de alinhamento semanal..."
+              placeholder="Reunião de alinhamento semanal..."
               autoFocus
             />
           </Field>
-          <Field label="Data e Hora *">
-            <Input
-              type="datetime-local"
-              value={formReuniao.data_inicio}
-              onChange={v => setFormReuniao(p => ({ ...p, data_inicio: v }))}
-            />
-          </Field>
-          <Field label="Pauta / Descricao">
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
+            <Field label="Data e Hora *">
+              <Input
+                type="datetime-local"
+                value={formReuniao.data_inicio}
+                onChange={v => setFormReuniao(p => ({ ...p, data_inicio: v }))}
+              />
+            </Field>
+            <Field label="Link (opcional)">
+              <Input
+                value={formReuniao.link}
+                onChange={v => setFormReuniao(p => ({ ...p, link: v }))}
+                placeholder="meet.jit.si/... (auto)"
+              />
+            </Field>
+          </div>
+          <Field label="Pauta / Descrição">
             <Input
               value={formReuniao.descricao}
               onChange={v => setFormReuniao(p => ({ ...p, descricao: v }))}
-              placeholder="Topicos a discutir..."
+              placeholder="Tópicos a discutir..."
             />
           </Field>
-          <Field label="Link da reuniao (opcional)">
-            <Input
-              value={formReuniao.link}
-              onChange={v => setFormReuniao(p => ({ ...p, link: v }))}
-              placeholder="https://meet.jit.si/... (gerado automaticamente se vazio)"
-            />
+          <Field label="Convidar membros">
+            <div style={{display:"flex",flexWrap:"wrap",gap:6,padding:"6px 0"}}>
+              {membros.filter(m=>m.id!==user.id).map(m=>{
+                const sel = (formReuniao.participantes_ids||[]).includes(m.id);
+                return (
+                  <button key={m.id}
+                    onClick={()=>setFormReuniao(p=>({...p,participantes_ids:sel?p.participantes_ids.filter(x=>x!==m.id):[...(p.participantes_ids||[]),m.id]}))}
+                    style={{display:"flex",alignItems:"center",gap:5,padding:"4px 9px",borderRadius:20,border:`1.5px solid ${sel?L.teal:L.line}`,background:sel?L.tealBg:"transparent",cursor:"pointer",fontSize:11.5,color:sel?L.teal:L.t3,fontFamily:"inherit",transition:"all .1s"}}>
+                    <Av name={m.nome} size={16} color={avatarColor(m.id)}/>
+                    {m.nome.split(" ")[0]}
+                    {sel && " ✓"}
+                  </button>
+                );
+              })}
+            </div>
           </Field>
-          <div style={{ fontSize: 11, color: L.t4, padding: "8px 0" }}>
-            Um link Jit.si gratuito e gerado automaticamente se voce nao informar um link personalizado.
+          <div style={{ fontSize: 11, color: L.t4, padding: "4px 0 8px" }}>
+            💡 Link Jitsi gratuito gerado automaticamente. A reunião abre dentro do sistema.
           </div>
           <ModalFooter
             onClose={() => { setModalReuniao(false); setFormReuniao(VAZIO_REUNIAO); }}
             onSave={criarReuniao}
             loading={saving}
-            label="Agendar Reuniao"
+            label="Agendar Reunião"
           />
         </Modal>
       )}
