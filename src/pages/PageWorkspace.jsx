@@ -44,7 +44,7 @@ const corPresenca = (status) => {
 };
 
 const EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🎉", "🔥", "👏", "✅", "💯"];
-const VAZIO_CANAL   = { nome: "", tipo: "publico", descricao: "" };
+const VAZIO_CANAL   = { nome: "", tipo: "publico", descricao: "", membros_ids: [] };
 const VAZIO_REUNIAO = { titulo: "", descricao: "", data_inicio: "", link: "", participantes_ids: [] };
 
 // Cor determinística por ID (sem depender de coluna cor no banco)
@@ -660,12 +660,15 @@ export default function PageWorkspace({ user }) {
     if (!formCanal.nome.trim()) return;
     setSaving(true);
     const slug = formCanal.nome.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+    // Sempre inclui o criador nos membros
+    const membros_ids = [...new Set([user.id, ...(formCanal.membros_ids || [])])];
     const { data } = await supabase.from("workspace_canais").insert({
-      empresa_id: user.empresa_id,
-      nome:       slug,
-      tipo:       formCanal.tipo,
-      descricao:  formCanal.descricao,
-      criado_por: user.id,
+      empresa_id:  user.empresa_id,
+      nome:        slug,
+      tipo:        formCanal.tipo,
+      descricao:   formCanal.descricao,
+      criado_por:  user.id,
+      membros_ids: formCanal.tipo === "privado" ? membros_ids : [],
     }).select().single();
     if (data) { setCanais(p => [...p, data]); setCanalId(data.id); }
     setModalCanal(false); setFormCanal(VAZIO_CANAL); setSaving(false);
@@ -925,40 +928,46 @@ export default function PageWorkspace({ user }) {
             {membros.map(m => {
               const status = presenca(m.last_seen);
               const dotColor = corPresenca(status);
-              const selecionado = membroView?.id === m.id;
+              const isMe = m.id === user.id;
               return (
-                <button
+                <div
                   key={m.id}
-                  onClick={() => setMembroView(selecionado ? null : m)}
-                  style={{
-                    width: "100%", textAlign: "left", padding: "5px 16px",
-                    background: selecionado ? "rgba(255,255,255,.1)" : "transparent",
-                    border: "none", cursor: "pointer", transition: "background .1s",
-                  }}
-                  onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,.07)"}
-                  onMouseLeave={e => { e.currentTarget.style.background = selecionado ? "rgba(255,255,255,.1)" : "transparent"; }}
+                  style={{ position: "relative", display: "flex", alignItems: "center" }}
+                  onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,.07)"; e.currentTarget.querySelector(".membro-info-btn")?.style && (e.currentTarget.querySelector(".membro-info-btn").style.opacity="1"); }}
+                  onMouseLeave={e => { e.currentTarget.style.background = "transparent"; e.currentTarget.querySelector(".membro-info-btn")?.style && (e.currentTarget.querySelector(".membro-info-btn").style.opacity="0"); }}
                 >
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <div style={{ position: "relative", flexShrink: 0 }}>
-                      <Av name={m.nome} size={22} color={avatarColor(m.id)} src={m.foto_url || m.avatar_url} />
-                      <div style={{
-                        position: "absolute", bottom: -1, right: -1,
-                        width: 7, height: 7, borderRadius: "50%",
-                        background: dotColor, border: "1.5px solid #1a1d21",
-                      }} />
-                    </div>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 12, color: m.id === user.id ? "#22c55e" : "rgba(255,255,255,.65)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {m.nome.split(" ")[0]}{m.id === user.id ? " (eu)" : ""}
+                  <button
+                    onClick={() => !isMe && abrirDM(m)}
+                    title={isMe ? "Você" : `DM com ${m.nome.split(" ")[0]}`}
+                    style={{
+                      flex: 1, textAlign: "left", padding: "5px 8px 5px 16px",
+                      background: "transparent", border: "none",
+                      cursor: isMe ? "default" : "pointer", transition: "background .1s",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <div style={{ position: "relative", flexShrink: 0 }}>
+                        <Av name={m.nome} size={22} color={avatarColor(m.id)} src={m.foto_url || m.avatar_url} />
+                        <div style={{ position: "absolute", bottom: -1, right: -1, width: 7, height: 7, borderRadius: "50%", background: dotColor, border: "1.5px solid #1a1d21" }} />
                       </div>
-                      {m.cargo && (
-                        <div style={{ fontSize: 9, color: "rgba(255,255,255,.3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {m.cargo}
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 12, color: isMe ? "#22c55e" : "rgba(255,255,255,.65)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {m.nome.split(" ")[0]}{isMe ? " (eu)" : ""}
                         </div>
-                      )}
+                        {m.cargo && <div style={{ fontSize: 9, color: "rgba(255,255,255,.3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.cargo}</div>}
+                      </div>
                     </div>
-                  </div>
-                </button>
+                  </button>
+                  {/* Botão perfil — aparece no hover */}
+                  <button
+                    className="membro-info-btn"
+                    onClick={() => setMembroView(membroView?.id === m.id ? null : m)}
+                    title="Ver perfil"
+                    style={{ background:"none", border:"none", cursor:"pointer", color:"rgba(255,255,255,.35)", fontSize:11, padding:"4px 8px", opacity:0, transition:"opacity .15s", flexShrink:0 }}
+                  >
+                    👤
+                  </button>
+                </div>
               );
             })}
           </div>
@@ -980,35 +989,41 @@ export default function PageWorkspace({ user }) {
         <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
 
           {/* Header do canal */}
-          <div style={{ height: 52, padding: "0 20px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: `1px solid ${L.line}`, flexShrink: 0, background: L.white }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <span style={{ fontSize: 15, fontWeight: 700, color: L.t1 }}>
+          <div style={{ height: 52, padding: "0 16px", display: "flex", alignItems: "center", justifyContent: "space-between", borderBottom: `1px solid ${L.line}`, flexShrink: 0, background: L.white }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+              <span style={{ fontSize: 14, fontWeight: 700, color: L.t1, whiteSpace: "nowrap" }}>
                 {canal
-                  ? <><span style={{ color: L.t4, marginRight: 3 }}>{isDM ? "DM" : "#"}</span>{nomeCanalExibido()}</>
+                  ? <><span style={{ color: L.t4, marginRight: 2 }}>{isDM ? "@" : "#"}</span>{nomeCanalExibido()}</>
                   : <span style={{ color: L.t4, fontSize: 13 }}>Selecione um canal</span>
                 }
               </span>
+              {/* Botão editar canal (não DM) */}
+              {canal && !isDM && (canal.criado_por === user.id || user.role === "c4hub_admin" || user.role === "client_admin") && (
+                <button
+                  onClick={() => abrirEditCanal(canal, { stopPropagation: ()=>{} })}
+                  title="Editar canal"
+                  style={{ background: "none", border: `1px solid ${L.line}`, borderRadius: 6, cursor: "pointer", color: L.t4, fontSize: 11, padding: "2px 8px", fontFamily: "inherit" }}
+                  onMouseEnter={e=>{e.currentTarget.style.borderColor=L.teal;e.currentTarget.style.color=L.teal;}}
+                  onMouseLeave={e=>{e.currentTarget.style.borderColor=L.line;e.currentTarget.style.color=L.t4;}}
+                >✎ Editar</button>
+              )}
               {canal?.descricao && (
-                <span style={{ fontSize: 11, color: L.t4, borderLeft: `1px solid ${L.line}`, paddingLeft: 10 }}>
+                <span style={{ fontSize: 11, color: L.t4, borderLeft: `1px solid ${L.line}`, paddingLeft: 8, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", maxWidth: 200 }}>
                   {canal.descricao}
                 </span>
               )}
             </div>
 
-            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-              <button
-                onClick={() => setPinFilter(p => !p)}
-                style={{ padding: "5px 10px", borderRadius: 7, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", background: pinFilter ? "#fef9c3" : L.surface, color: pinFilter ? "#a16207" : L.t3, border: `1px solid ${pinFilter ? "#fde047" : L.line}`, transition: "all .12s" }}
-              >
-                {pinFilter ? "Todas msgs" : "Fixadas"}
+            <div style={{ display: "flex", gap: 5, alignItems: "center", flexShrink: 0 }}>
+              <button onClick={() => setPinFilter(p => !p)}
+                style={{ padding: "4px 9px", borderRadius: 7, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", background: pinFilter ? "#fef9c3" : L.surface, color: pinFilter ? "#a16207" : L.t3, border: `1px solid ${pinFilter ? "#fde047" : L.line}` }}>
+                {pinFilter ? "Todas" : "📌 Fixadas"}
               </button>
-              <button
-                onClick={() => setShowReunioes(p => !p)}
-                style={{ padding: "5px 10px", borderRadius: 7, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", background: showReunioes ? L.tealBg : L.surface, color: L.t3, border: `1px solid ${L.line}` }}
-              >
-                Reunioes
+              <button onClick={() => setShowReunioes(p => !p)}
+                style={{ padding: "4px 9px", borderRadius: 7, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", background: showReunioes ? L.tealBg : L.surface, color: showReunioes ? L.teal : L.t3, border: `1px solid ${L.line}` }}>
+                🎥 Reuniões
               </button>
-              <PBtn onClick={() => setModalReuniao(true)} style={{ padding: "5px 14px", fontSize: 11 }}>
+              <PBtn onClick={() => setModalReuniao(true)} style={{ padding: "5px 12px", fontSize: 11 }}>
                 + Agendar
               </PBtn>
             </div>
@@ -1149,34 +1164,120 @@ export default function PageWorkspace({ user }) {
 
       {/* ══ MODAL: Novo Canal ════════════════════════════════════════════════ */}
       {modalCanal && (
-        <Modal title="Novo Canal" onClose={() => { setModalCanal(false); setFormCanal(VAZIO_CANAL); }} width={400}>
+        <Modal title="# Novo Canal" onClose={() => { setModalCanal(false); setFormCanal(VAZIO_CANAL); }} width={460}>
           <Field label="Nome do canal *">
-            <Input
-              value={formCanal.nome}
-              onChange={v => setFormCanal(p => ({ ...p, nome: v }))}
-              placeholder="ex: vendas, marketing, geral..."
-              autoFocus
-            />
+            <Input value={formCanal.nome} onChange={v => setFormCanal(p => ({ ...p, nome: v }))} placeholder="ex: vendas, marketing, geral..." autoFocus/>
           </Field>
-          <Field label="Descricao (opcional)">
-            <Input
-              value={formCanal.descricao}
-              onChange={v => setFormCanal(p => ({ ...p, descricao: v }))}
-              placeholder="Proposito deste canal..."
-            />
+          <Field label="Descrição (opcional)">
+            <Input value={formCanal.descricao} onChange={v => setFormCanal(p => ({ ...p, descricao: v }))} placeholder="Propósito deste canal..."/>
           </Field>
           <Field label="Visibilidade">
             <Select value={formCanal.tipo} onChange={v => setFormCanal(p => ({ ...p, tipo: v }))}>
-              <option value="publico">Publico - visivel para todos</option>
-              <option value="privado">Privado - apenas convidados</option>
+              <option value="publico">🌐 Público — visível para todos</option>
+              <option value="privado">🔒 Privado — apenas convidados</option>
             </Select>
           </Field>
-          <ModalFooter
-            onClose={() => { setModalCanal(false); setFormCanal(VAZIO_CANAL); }}
-            onSave={criarCanal}
-            loading={saving}
-            label="Criar Canal"
-          />
+          {formCanal.tipo === "privado" && (
+            <Field label="Adicionar membros">
+              <div style={{display:"flex",flexWrap:"wrap",gap:6,padding:"4px 0"}}>
+                {membros.filter(m=>m.id!==user.id).map(m=>{
+                  const sel=(formCanal.membros_ids||[]).includes(m.id);
+                  return(
+                    <button key={m.id} onClick={()=>setFormCanal(p=>({...p,membros_ids:sel?p.membros_ids.filter(x=>x!==m.id):[...(p.membros_ids||[]),m.id]}))}
+                      style={{display:"flex",alignItems:"center",gap:5,padding:"4px 9px",borderRadius:20,border:`1.5px solid ${sel?L.teal:L.line}`,background:sel?L.tealBg:"transparent",cursor:"pointer",fontSize:11.5,color:sel?L.teal:L.t3,fontFamily:"inherit"}}>
+                      <Av name={m.nome} size={16} color={avatarColor(m.id)}/>{m.nome.split(" ")[0]}{sel&&" ✓"}
+                    </button>
+                  );
+                })}
+              </div>
+            </Field>
+          )}
+          <ModalFooter onClose={() => { setModalCanal(false); setFormCanal(VAZIO_CANAL); }} onSave={criarCanal} loading={saving} label="Criar Canal"/>
+        </Modal>
+      )}
+
+      {/* ══ MODAL: Editar Canal ══════════════════════════════════════════════ */}
+      {modalEditCanal && canalEditando && (
+        <Modal title={`✎ Editar #${canalEditando.nome}`} onClose={() => { setModalEditCanal(false); setCanalEditando(null); }} width={500}>
+          {/* Tabs */}
+          {(() => {
+            const [tab, setTab] = [formEditCanal._tab||"info", v => setFormEditCanal(p=>({...p,_tab:v}))];
+            return (
+              <>
+                <div style={{display:"flex",gap:2,marginBottom:18,borderBottom:`1px solid ${L.line}`,paddingBottom:0}}>
+                  {[["info","📋 Informações"],["membros","👥 Membros"],["perigo","⚠️ Perigo"]].map(([k,l])=>(
+                    <button key={k} onClick={()=>setTab(k)}
+                      style={{padding:"8px 14px",border:"none",borderBottom:`2px solid ${tab===k?L.teal:"transparent"}`,background:"none",cursor:"pointer",fontSize:12,fontWeight:tab===k?700:400,color:tab===k?L.teal:L.t3,fontFamily:"inherit",transition:"all .12s"}}>
+                      {l}
+                    </button>
+                  ))}
+                </div>
+
+                {tab==="info" && (
+                  <>
+                    <Field label="Nome do canal *">
+                      <Input value={formEditCanal.nome} onChange={v=>setFormEditCanal(p=>({...p,nome:v}))} placeholder="nome-do-canal"/>
+                    </Field>
+                    <Field label="Descrição">
+                      <Input value={formEditCanal.descricao||""} onChange={v=>setFormEditCanal(p=>({...p,descricao:v}))} placeholder="Propósito deste canal..."/>
+                    </Field>
+                    <Field label="Visibilidade">
+                      <Select value={formEditCanal.tipo} onChange={v=>setFormEditCanal(p=>({...p,tipo:v}))}>
+                        <option value="publico">🌐 Público — visível para todos</option>
+                        <option value="privado">🔒 Privado — apenas convidados</option>
+                      </Select>
+                    </Field>
+                    <ModalFooter onClose={()=>{setModalEditCanal(false);setCanalEditando(null);}} onSave={salvarEdicaoCanal} loading={saving} label="Salvar"/>
+                  </>
+                )}
+
+                {tab==="membros" && (
+                  <>
+                    <div style={{fontSize:11,color:L.t3,marginBottom:12}}>
+                      Marque quem deve ter acesso a este canal. Em canais públicos todos já têm acesso.
+                    </div>
+                    <div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:320,overflowY:"auto"}}>
+                      {membros.map(m=>{
+                        const sel=editMembrosSel.includes(m.id);
+                        const isMe=m.id===user.id;
+                        return(
+                          <label key={m.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",borderRadius:9,background:sel?L.tealBg:L.surface,border:`1px solid ${sel?L.teal+"44":L.line}`,cursor:isMe?"default":"pointer",transition:"all .1s"}}>
+                            <input type="checkbox" checked={sel||isMe} disabled={isMe} onChange={()=>!isMe&&setEditMembrosSel(p=>sel?p.filter(x=>x!==m.id):[...p,m.id])} style={{accentColor:L.teal}}/>
+                            <Av name={m.nome} size={24} color={avatarColor(m.id)} src={m.foto_url||m.avatar_url}/>
+                            <div style={{flex:1,minWidth:0}}>
+                              <div style={{fontSize:12.5,fontWeight:500,color:L.t1}}>{m.nome}{isMe?" (você)":""}</div>
+                              {m.cargo&&<div style={{fontSize:10,color:L.t4}}>{m.cargo}</div>}
+                            </div>
+                            <div style={{width:8,height:8,borderRadius:"50%",background:corPresenca(presenca(m.last_seen)),flexShrink:0}}/>
+                          </label>
+                        );
+                      })}
+                    </div>
+                    <ModalFooter onClose={()=>{setModalEditCanal(false);setCanalEditando(null);}} onSave={salvarEdicaoCanal} loading={saving} label={`Salvar (${editMembrosSel.length} membros)`}/>
+                  </>
+                )}
+
+                {tab==="perigo" && (
+                  <div style={{padding:"8px 0"}}>
+                    <div style={{padding:"16px",background:L.redBg,borderRadius:10,border:`1px solid ${L.red}22`,marginBottom:12}}>
+                      <div style={{fontSize:13,fontWeight:700,color:L.red,marginBottom:6}}>⚠️ Excluir canal</div>
+                      <div style={{fontSize:12,color:L.t3,marginBottom:14,lineHeight:1.5}}>
+                        Isso vai excluir permanentemente o canal <strong>#{canalEditando.nome}</strong> e <strong>todas as mensagens</strong>. Esta ação não pode ser desfeita.
+                      </div>
+                      <button onClick={excluirCanal}
+                        style={{padding:"9px 18px",background:L.red,border:"none",borderRadius:8,color:"white",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                        🗑 Excluir canal permanentemente
+                      </button>
+                    </div>
+                    <button onClick={()=>{setModalEditCanal(false);setCanalEditando(null);}}
+                      style={{padding:"9px 18px",borderRadius:8,fontSize:12,fontWeight:500,cursor:"pointer",fontFamily:"inherit",background:L.surface,color:L.t2,border:`1px solid ${L.line}`}}>
+                      Cancelar
+                    </button>
+                  </div>
+                )}
+              </>
+            );
+          })()}
         </Modal>
       )}
 
