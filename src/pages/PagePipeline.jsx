@@ -20,7 +20,7 @@ const CORES_ETAPA = [L.teal, L.copper, L.yellow, L.blue, L.green, L.red, "#6366F
 const VAZIO = { titulo:"", valor:"", etapa:"novo", probabilidade:50, observacoes:"", canal_aquisicao:"WhatsApp", lead_id:"", whatsapp_contato:"" };
 const VAZIO_COL = { label:"", cor: L.teal };
 
-export default function PagePipeline({ user }) {
+export default function PagePipeline({ user, onOpenChat }) {
   const { data: deals, loading, insert, update, remove } = useTable("deals", { empresa_id: user?.empresa_id });
   const { data: leads } = useTable("leads", { empresa_id: user?.empresa_id });
 
@@ -229,11 +229,11 @@ export default function PagePipeline({ user }) {
                       <span style={{fontSize:10,color:L.t4}}>{deal.probabilidade||50}%</span>
                     </Row>
                     <Row gap={4}>
-                      {/* Botão WhatsApp direto */}
+                      {/* Botão — abre conversa no WhatsApp interno */}
                       {tel && (
                         <button
-                          onClick={e=>{ e.stopPropagation(); window.open(`https://wa.me/55${tel.replace(/\D/g,"")}`,"_blank"); }}
-                          title="Abrir WhatsApp"
+                          onClick={e=>{ e.stopPropagation(); onOpenChat ? onOpenChat(tel.replace(/\D/g,"")) : window.open(`https://wa.me/55${tel.replace(/\D/g,"")}`,"_blank"); }}
+                          title="Abrir conversa no WhatsApp"
                           style={{background:L.greenBg,border:`1px solid ${L.green}22`,cursor:"pointer",color:L.green,fontSize:11,padding:"2px 6px",borderRadius:5,transition:"all .1s",fontWeight:700,lineHeight:1}}
                           onMouseEnter={e=>e.currentTarget.style.background=L.green+"33"}
                           onMouseLeave={e=>e.currentTarget.style.background=L.greenBg}>

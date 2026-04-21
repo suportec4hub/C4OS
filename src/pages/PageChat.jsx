@@ -263,7 +263,7 @@ function AgendarModal({ conversa, empresaId, userId, onClose }) {
 // ════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ════════════════════════════════════════════════════════════════════════════
-export default function PageChat({ user }) {
+export default function PageChat({ user, openPhone, onChatTargetUsed }) {
   // ── core state ────────────────────────────────────────────────────────────
   const [conversas,    setConversas]    = useState([]);
   const [mensagens,    setMensagens]    = useState([]);
@@ -539,6 +539,21 @@ export default function PageChat({ user }) {
     setSendErr("");
     setInput("");
   };
+
+  // ── auto-abrir conversa quando vindo do Pipeline ──────────────────────────
+  useEffect(() => {
+    if (!openPhone || conversas.length === 0) return;
+    const tel = openPhone.replace(/\D/g, "");
+    // Tenta match exato; se não achar, tenta sufixo (ex: 55 + DDD + número vs DDD + número)
+    const found = conversas.find(c => {
+      const ct = (c.contato_telefone || "").replace(/\D/g, "");
+      return ct === tel || ct.endsWith(tel) || tel.endsWith(ct);
+    });
+    if (found) {
+      selectConv(found);
+      onChatTargetUsed?.();
+    }
+  }, [openPhone, conversas]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateConvStatus = async (status) => {
     if (!activeConv) return;

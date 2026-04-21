@@ -83,6 +83,7 @@ export default function Shell({user,onLogout,onProfileUpdate}) {
   const [col,setCol] = useState(false);
   const [mobOpen,setMobOpen] = useState(false);
   const [perfilOpen,setPerfilOpen] = useState(false);
+  const [chatTarget,setChatTarget] = useState(null); // telefone para auto-abrir no WhatsApp
   const { isMobile, isTablet } = useBreakpoint();
   const isAdmin = hasFullAccess(user);
 
@@ -266,8 +267,8 @@ export default function Shell({user,onLogout,onProfileUpdate}) {
         <div style={{flex:1,overflow:"auto",padding:isMobile?"14px":"24px"}}>
           {safe==="dashboard" && <PageDashboard user={user}/>}
           {safe==="leads"     && <PageLeads     user={user}/>}
-          {safe==="pipeline"  && <PagePipeline  user={user}/>}
-          {safe==="whatsapp"       && <PageChat            user={user}/>}
+          {safe==="pipeline"  && <PagePipeline  user={user} onOpenChat={(phone)=>{ setChatTarget(phone); setSec("whatsapp"); }}/>}
+          {safe==="whatsapp"       && <PageChat            user={user} openPhone={chatTarget} onChatTargetUsed={()=>setChatTarget(null)}/>}
           {safe==="chatbot"        && <PageChatbot         user={user}/>}
           {safe==="chatbotbuilder" && <PageChatbotBuilder  user={user}/>}
           {safe==="disparos"       && <PageDisparos        user={user}/>}
