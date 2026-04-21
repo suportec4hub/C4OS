@@ -40,6 +40,39 @@ const btnStyle = (bg = L.surface, color = L.t2, extra = {}) => ({
   fontWeight: 500, transition: "all .12s", ...extra,
 });
 
+// ─── Notification helpers ────────────────────────────────────────────────────
+function playNotificationSound() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(880, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(660, ctx.currentTime + 0.12);
+    gain.gain.setValueAtTime(0.25, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.4);
+    setTimeout(() => ctx.close(), 600);
+  } catch (_) {}
+}
+
+function showBrowserNotification(title, body) {
+  if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+  try {
+    const n = new Notification(title, {
+      body,
+      icon: "/favicon.ico",
+      badge: "/favicon.ico",
+      tag: "c4os-msg",
+    });
+    n.onclick = () => { window.focus(); n.close(); };
+    setTimeout(() => n.close(), 8000);
+  } catch (_) {}
+}
+
 // ─── Media message renderer ──────────────────────────────────────────────────
 function renderMsgContent(m, out) {
   const t    = msgTexto(m);
@@ -286,6 +319,10 @@ export default function PageChat({ user }) {
   // ── media upload ──────────────────────────────────────────────────────────
   const [uploadingMedia, setUploadingMedia] = useState(false);
 
+  // ── notifications ─────────────────────────────────────────────────────────
+  const [toast, setToast]         = useState(null); // { msg, tipo }
+  const [notifPerm, setNotifPerm] = useState(false);
+
   // ── refs ──────────────────────────────────────────────────────────────────
   const bottomRef      = useRef(null);
   const activeConvRef  = useRef(null);
@@ -318,13 +355,13 @@ export default function PageChat({ user }) {
           setEvoConnected(false);
         }
       });
+    // Carrega TODOS os usuários da empresa (sem filtro de ativo)
     supabase.from("usuarios").select("id, nome, cor, foto_url")
       .eq("empresa_id", user.empresa_id)
-      .neq("ativo", false)           // inclui ativo=true E ativo=null
       .then(({ data }) => setAtendentes(data || []));
+    // Carrega TODOS os setores da empresa (sem filtro de ativo)
     supabase.from("setores").select("*")
       .eq("empresa_id", user.empresa_id)
-      .neq("ativo", false)           // inclui ativo=true E ativo=null
       .order("ordem")
       .then(({ data }) => setSetores(data || []));
     supabase.from("etiquetas").select("*").eq("empresa_id", user.empresa_id).eq("ativo", true)
@@ -332,6 +369,41 @@ export default function PageChat({ user }) {
     supabase.from("respostas_rapidas").select("*").eq("empresa_id", user.empresa_id).eq("ativo", true)
       .then(({ data }) => setQuickReplies(data || []));
   }, [user?.empresa_id]);
+
+  // ── solicitar permissão de notificação do navegador ──────────────────────
+  useEffect(() => {
+    if (typeof Notification === "undefined") return;
+    if (Notification.permission === "default") {
+      Notification.requestPermission().then(p => setNotifPerm(p === "granted"));
+    } else {
+      setNotifPerm(Notification.permission === "granted");
+    }
+  }, []);
+
+  // ── badge no título da aba ────────────────────────────────────────────────
+  useEffect(() => {
+    const total = conversas.reduce((s, c) => s + (c.nao_lidas || 0), 0);
+    document.title = total > 0 ? `(${total}) WhatsApp · C4 OS` : "C4 OS";
+    return () => { document.title = "C4 OS"; };
+  }, [conversas]);
+
+  // ── subscription a notificações pessoais (transferências / atribuições) ───
+  useEffect(() => {
+    if (!user?.id) return;
+    const ch = supabase.channel(`notif:${user.id}:${Date.now()}`)
+      .on("postgres_changes", {
+        event: "INSERT", schema: "public", table: "notificacoes",
+        filter: `usuario_id=eq.${user.id}`,
+      }, (payload) => {
+        const n = payload.new;
+        playNotificationSound();
+        showBrowserNotification(n.titulo || "Nova notificação", n.conteudo || "");
+        setToast({ msg: n.conteudo || n.titulo || "Você recebeu uma notificação", tipo: n.tipo || "info" });
+        setTimeout(() => setToast(null), 7000);
+      })
+      .subscribe();
+    return () => supabase.removeChannel(ch);
+  }, [user?.id]);
 
   // ── load conversations ────────────────────────────────────────────────────
   const loadConversas = useCallback(async (silent = false) => {
@@ -420,6 +492,18 @@ export default function PageChat({ user }) {
           return [...filtered, payload.new];
         });
         setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+
+        // Som + notificação apenas para mensagens recebidas (não enviadas por nós)
+        if (!isOutgoing(payload.new)) {
+          playNotificationSound();
+          if (document.visibilityState !== "visible") {
+            const conv = activeConvRef.current;
+            showBrowserNotification(
+              conv?.contato_nome || conv?.contato_telefone || "Nova mensagem",
+              msgTexto(payload.new) || "📎 Mídia recebida"
+            );
+          }
+        }
       }).subscribe();
     const timer = setInterval(() => loadMensagens(convId), 5000);
     return () => { supabase.removeChannel(ch); clearInterval(timer); };
@@ -475,6 +559,19 @@ export default function PageChat({ user }) {
     setActiveConv(p => ({ ...p, atendente_id, status: "em_atendimento", _atendente_nome: at?.nome || null }));
     setConversas(p => p.map(c => c.id === activeConv.id ? { ...c, atendente_id, status: "em_atendimento", _atendente_nome: at?.nome || null } : c));
     logAtendimento(user.empresa_id, activeConv.id, user.id, "atribuiu", `Atribuído a: ${at?.nome || atendente_id}`);
+
+    // Notifica o atendente destinatário (se não for o próprio usuário)
+    if (atendente_id && atendente_id !== user.id) {
+      supabase.from("notificacoes").insert({
+        empresa_id:  user.empresa_id,
+        usuario_id:  atendente_id,
+        tipo:        "atribuicao",
+        titulo:      "Conversa atribuída a você",
+        conteudo:    `"${activeConv.contato_nome || activeConv.contato_telefone || "Contato"}" foi atribuído a você`,
+        conversa_id: activeConv.id,
+        lida:        false,
+      }).catch(() => {}); // silencia erro se tabela não existir
+    }
   };
 
   const assignSetor = async (setor_id) => {
@@ -520,6 +617,20 @@ export default function PageChat({ user }) {
       });
     }
     logAtendimento(user.empresa_id, activeConv.id, user.id, "transferiu", `Para: ${dest}${obs ? ` | Obs: ${obs}` : ""}`);
+
+    // Notifica o destinatário da transferência
+    if (destTipo === "atendente" && destId && destId !== user.id) {
+      supabase.from("notificacoes").insert({
+        empresa_id:  user.empresa_id,
+        usuario_id:  destId,
+        tipo:        "transferencia",
+        titulo:      "Conversa transferida para você",
+        conteudo:    `"${activeConv.contato_nome || activeConv.contato_telefone || "Contato"}" foi transferido para você por ${user.nome || "um colega"}${obs ? ` · "${obs}"` : ""}`,
+        conversa_id: activeConv.id,
+        lida:        false,
+      }).catch(() => {});
+    }
+
     setTransferModal(false);
     loadConversas(true);
   };
@@ -1607,6 +1718,49 @@ export default function PageChat({ user }) {
           userId={user.id}
           onClose={() => { setAgendarModal(false); supabase.from("mensagens_agendadas").select("*").eq("conversa_id", activeConv.id).eq("status", "pendente").order("agendado_para").then(({ data }) => setAgendadas(data || [])); }}
         />
+      )}
+
+      {/* ── Toast de notificação ── */}
+      {toast && (
+        <div style={{
+          position: "fixed", bottom: 24, right: 24, zIndex: 9999,
+          background: L.t1, color: "white", padding: "12px 18px",
+          borderRadius: 12, boxShadow: "0 6px 24px rgba(0,0,0,.28)",
+          fontSize: 12.5, maxWidth: 320, animation: "up .2s ease",
+          display: "flex", alignItems: "flex-start", gap: 10,
+        }}>
+          <span style={{ fontSize: 18, lineHeight: 1, flexShrink: 0 }}>
+            {toast.tipo === "transferencia" ? "🔄" : toast.tipo === "atribuicao" ? "👤" : "🔔"}
+          </span>
+          <div>
+            <div style={{ fontWeight: 700, marginBottom: 3 }}>
+              {toast.tipo === "transferencia" ? "Conversa transferida" :
+               toast.tipo === "atribuicao"    ? "Conversa atribuída"  : "Notificação"}
+            </div>
+            <div style={{ opacity: .85, lineHeight: 1.4 }}>{toast.msg}</div>
+          </div>
+          <button onClick={() => setToast(null)}
+            style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(255,255,255,.6)", fontSize: 16, lineHeight: 1, padding: 0, marginLeft: "auto", flexShrink: 0 }}>
+            ×
+          </button>
+        </div>
+      )}
+
+      {/* Aviso se notificações do browser não foram permitidas */}
+      {notifPerm === false && (
+        <div style={{
+          position: "fixed", bottom: 24, left: 24, zIndex: 9998,
+          background: L.yellowBg, color: L.yellow, padding: "10px 14px",
+          borderRadius: 10, border: `1px solid ${L.yellow}44`, fontSize: 11,
+          maxWidth: 280, display: "flex", alignItems: "center", gap: 8,
+        }}>
+          <span>🔔</span>
+          <span>Ative notificações do navegador para receber alertas de novas mensagens.</span>
+          <button onClick={() => Notification.requestPermission().then(p => setNotifPerm(p === "granted"))}
+            style={{ ...btnStyle(L.yellow, "white"), fontSize: 10, padding: "3px 8px", flexShrink: 0, border: "none" }}>
+            Ativar
+          </button>
+        </div>
       )}
     </div>
   );
