@@ -318,9 +318,14 @@ export default function PageChat({ user }) {
           setEvoConnected(false);
         }
       });
-    supabase.from("usuarios").select("id, nome, cor, foto_url").eq("empresa_id", user.empresa_id).eq("ativo", true)
+    supabase.from("usuarios").select("id, nome, cor, foto_url")
+      .eq("empresa_id", user.empresa_id)
+      .neq("ativo", false)           // inclui ativo=true E ativo=null
       .then(({ data }) => setAtendentes(data || []));
-    supabase.from("setores").select("*").eq("empresa_id", user.empresa_id).eq("ativo", true).order("ordem")
+    supabase.from("setores").select("*")
+      .eq("empresa_id", user.empresa_id)
+      .neq("ativo", false)           // inclui ativo=true E ativo=null
+      .order("ordem")
       .then(({ data }) => setSetores(data || []));
     supabase.from("etiquetas").select("*").eq("empresa_id", user.empresa_id).eq("ativo", true)
       .then(({ data }) => setEtiquetas(data || []));
