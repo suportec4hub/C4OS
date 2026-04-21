@@ -1023,6 +1023,18 @@ export default function PageWorkspace({ user }) {
                 style={{ padding: "4px 9px", borderRadius: 7, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", background: showReunioes ? L.tealBg : L.surface, color: showReunioes ? L.teal : L.t3, border: `1px solid ${L.line}` }}>
                 🎥 Reuniões
               </button>
+              <button
+                onClick={() => {
+                  const sala = `c4hub-${(user.empresa_id||"").slice(0,8)}-${Date.now()}`;
+                  const r = { titulo: `Reunião agora · ${new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}`, link: `https://meet.jit.si/${sala}` };
+                  setReuniaoAtiva(r); setShowReunioes(true); setMembroView(null);
+                }}
+                style={{ padding:"5px 12px", borderRadius:8, fontSize:11, fontWeight:600, cursor:"pointer", fontFamily:"inherit", background:"#22c55e", color:"white", border:"none", display:"flex", alignItems:"center", gap:5 }}
+                onMouseEnter={e=>e.currentTarget.style.background="#16a34a"}
+                onMouseLeave={e=>e.currentTarget.style.background="#22c55e"}
+              >
+                🎥 Reunir agora
+              </button>
               <PBtn onClick={() => setModalReuniao(true)} style={{ padding: "5px 12px", fontSize: 11 }}>
                 + Agendar
               </PBtn>
