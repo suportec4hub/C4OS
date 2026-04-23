@@ -59,15 +59,21 @@ function TabConfig({ user }) {
 
   const save = async () => {
     setSaving(true); setErr(""); setSucc("");
-    const { id, ...fields } = cfg;
-    const { error } = id
-      ? await supabase.from("chatbot_config").update(fields).eq("id", id)
-      : await supabase.from("chatbot_config").insert({ ...fields, empresa_id: user.empresa_id });
-    if (error) setErr(error.message || "Erro ao salvar.");
-    else {
-      setSucc("Configurações salvas!");
-      // reload to get id if new
-      supabase.from("chatbot_config").select("*").eq("empresa_id", user.empresa_id).single().then(({ data }) => { if(data) setCfg(data); });
+    // upsert usando a constraint UNIQUE (empresa_id) — cria se não existir, atualiza se já existir
+    const { data: saved, error } = await supabase
+      .from("chatbot_config")
+      .upsert(
+        { ...cfg, empresa_id: user.empresa_id },
+        { onConflict: "empresa_id", returning: "representation" }
+      )
+      .select()
+      .single();
+    if (error) {
+      setErr(error.message || "Erro ao salvar.");
+    } else {
+      if (saved) setCfg(saved);           // atualiza cfg com id retornado
+      setSucc("✓ Configurações salvas!");
+      setTimeout(() => setSucc(""), 3000);
     }
     setSaving(false);
   };
