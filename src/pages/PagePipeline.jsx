@@ -65,10 +65,21 @@ export default function PagePipeline({ user, onOpenChat }) {
   const byEtapa = (id) => deals.filter(d => d.etapa === id);
 
   const openNew  = (etapa = "novo") => {
-    const lead = null;
     setForm({ ...VAZIO, etapa }); setEditId(null); setErr(""); setModal(true);
   };
-  const openEdit = (d) => { setForm({ ...VAZIO, ...d, valor: d.valor?.toString() || "" }); setEditId(d.id); setErr(""); setModal(true); };
+  const openEdit = (d) => {
+    setForm({
+      titulo:           d.titulo           || "",
+      valor:            d.valor?.toString() || "",
+      etapa:            d.etapa            || "novo",
+      probabilidade:    d.probabilidade    ?? 50,
+      canal_aquisicao:  d.canal_aquisicao  || "WhatsApp",
+      whatsapp_contato: d.whatsapp_contato || "",
+      lead_id:          d.lead_id          || "",
+      observacoes:      d.observacoes      || "",
+    });
+    setEditId(d.id); setErr(""); setModal(true);
+  };
 
   // Ao selecionar um lead, preenche WhatsApp automaticamente
   const onSelectLead = (leadId) => {
@@ -79,7 +90,20 @@ export default function PagePipeline({ user, onOpenChat }) {
   const save = async () => {
     if (!form.titulo.trim()) { setErr("Título obrigatório."); return; }
     setSaving(true); setErr("");
-    const payload = { ...form, valor: parseFloat(form.valor) || 0, probabilidade: parseInt(form.probabilidade) || 50, empresa_id: user?.empresa_id };
+
+    // Sanitiza payload: campos UUID vazios viram null, nunca string vazia
+    const payload = {
+      empresa_id:       user?.empresa_id,
+      titulo:           form.titulo.trim(),
+      valor:            parseFloat(form.valor) || 0,
+      probabilidade:    parseInt(form.probabilidade) || 50,
+      etapa:            form.etapa || "novo",
+      canal_aquisicao:  form.canal_aquisicao || "WhatsApp",
+      whatsapp_contato: form.whatsapp_contato || null,
+      observacoes:      form.observacoes || null,
+      lead_id:          form.lead_id || null,   // UUID — nunca string vazia
+    };
+
     const { error } = editId ? await update(editId, payload) : await insert(payload);
     if (error) setErr(error.message || "Erro ao salvar.");
     else setModal(false);
@@ -134,7 +158,7 @@ export default function PagePipeline({ user, onOpenChat }) {
 
   const F = k => v => setForm(p => ({ ...p, [k]: v }));
 
-  if (loading) return <div style={{textAlign:"center",padding:40,color:L.t4}}>Carregando PIPELINE...</div>;
+  if (loading) return <div style={{textAlign:"center",padding:40,color:L.t4}}>Carregando Pipeline...</div>;
 
   return (
     <Fade>

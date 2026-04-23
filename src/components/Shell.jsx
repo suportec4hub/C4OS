@@ -41,7 +41,7 @@ import PageRelatoriosAtend  from "../pages/PageRelatoriosAtend";
 const NAV_ITEMS = [
   {id:"dashboard",  label:"Dashboard",      ico:"▦", g:"principal"},
   {id:"leads",      label:"Leads",          ico:"◎", g:"principal"},
-  {id:"pipeline",   label:"PIPELINE",       ico:"⬡", g:"principal"},
+  {id:"pipeline",   label:"Pipeline",       ico:"⬡", g:"principal"},
   {id:"whatsapp",   label:"WhatsApp",       ico:"◈",  g:"comunicação"},
   {id:"chatbot",    label:"Chatbot",        ico:"🤖", g:"comunicação"},
   {id:"chatbotbuilder", label:"Fluxo Visual",ico:"⬡", g:"comunicação"},

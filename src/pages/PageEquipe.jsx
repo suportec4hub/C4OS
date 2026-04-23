@@ -63,8 +63,9 @@ export default function PageEquipe({ user }) {
   const isC4Admin  = hasFullAccess(user) && user?.role === "c4hub_admin";
   const perfisOpt  = isC4Admin ? PERFIS_C4HUB : PERFIS_ACESSO;
 
+  // Sempre filtra por empresa_id — Admin C4HUB vê todos os usuários em PageUsers
   const { data: usuarios, loading, update, remove, refetch } = useTable("usuarios", {
-    empresa_id: user?.role === "c4hub_admin" ? undefined : user?.empresa_id,
+    empresa_id: user?.empresa_id,
   });
 
   const [filtro,   setFiltro]   = useState("Todos");
