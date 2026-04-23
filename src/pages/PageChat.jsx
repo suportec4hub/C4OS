@@ -1462,9 +1462,12 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
 
                 {/* Right panel toggle */}
                 {!isMobile && (
-                  <button onClick={() => setShowRight(p => !p)} title="Painel de info"
-                    style={btnStyle(showRight ? L.tealBg : L.surface, showRight ? L.t1 : L.t3)}>
-                    ⊞
+                  <button onClick={() => setShowRight(p => !p)}
+                    title={showRight ? "Ocultar painel de info" : "Mostrar Info / Tags / Agendadas / Log"}
+                    style={{ ...btnStyle(showRight ? L.tealBg : L.surface, showRight ? L.teal : L.t3),
+                      display: "flex", alignItems: "center", gap: 4, fontWeight: showRight ? 700 : 400 }}>
+                    <span style={{ fontSize: 12 }}>{showRight ? "⊟" : "⊞"}</span>
+                    <span style={{ fontSize: 10 }}>Info</span>
                   </button>
                 )}
               </Row>
@@ -1646,9 +1649,35 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
         ))}
 
         {/* ══════════════════ PAINEL DIREITO ════════════════════ */}
-        {showRightPanel && (
-          <div style={{ width: 260, minWidth: 260, borderLeft: `1px solid ${L.line}`,
-            display: "flex", flexDirection: "column", background: L.white }}>
+        {activeConv && !isMobile && (
+          <div style={{
+            position: "relative", display: "flex", flexShrink: 0,
+            width: showRight ? 261 : 18, minWidth: showRight ? 261 : 18,
+            transition: "width .22s ease, min-width .22s ease",
+            borderLeft: `1px solid ${L.line}`, background: L.white, overflow: "hidden",
+          }}>
+
+            {/* ── Tab de colapso / expansão (sempre visível na borda) ── */}
+            <button
+              onClick={() => setShowRight(p => !p)}
+              title={showRight ? "Ocultar painel" : "Mostrar Info / Tags / Agendadas / Log"}
+              style={{
+                position: "absolute", left: 0, top: "50%", transform: "translateY(-50%)",
+                width: 18, height: 52, background: L.surface,
+                border: `1px solid ${L.line}`, borderLeft: "none",
+                borderRadius: "0 8px 8px 0", cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                color: L.t3, fontSize: 10, zIndex: 10, transition: "all .15s",
+                flexShrink: 0,
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = L.tealBg; e.currentTarget.style.color = L.teal; e.currentTarget.style.borderColor = L.teal + "55"; }}
+              onMouseLeave={e => { e.currentTarget.style.background = L.surface; e.currentTarget.style.color = L.t3; e.currentTarget.style.borderColor = L.line; }}
+            >
+              {showRight ? "›" : "‹"}
+            </button>
+
+            {/* ── Conteúdo do painel (largura fixa, desliza por overflow hidden) ── */}
+            <div style={{ width: 260, minWidth: 260, marginLeft: 18, display: "flex", flexDirection: "column" }}>
 
             {/* Abas do painel */}
             <div style={{ display: "flex", borderBottom: `1px solid ${L.line}` }}>
@@ -1824,6 +1853,7 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
                 </div>
               )}
             </div>
+            </div>{/* fecha inner content div (marginLeft:18) */}
           </div>
         )}
       </div>
