@@ -73,6 +73,109 @@ function showBrowserNotification(title, body) {
   } catch (_) {}
 }
 
+// ─── Custom Audio Player (WhatsApp-style) ────────────────────────────────────
+function AudioPlayer({ src, out }) {
+  const [playing,  setPlaying]  = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [current,  setCurrent]  = useState(0);
+  const [loaded,   setLoaded]   = useState(false);
+  const audioRef = useRef(null);
+
+  const toggle = () => {
+    const a = audioRef.current;
+    if (!a) return;
+    if (playing) { a.pause(); } else { a.play().catch(() => {}); }
+    setPlaying(p => !p);
+  };
+
+  const onTimeUpdate = () => {
+    const a = audioRef.current;
+    if (!a) return;
+    setCurrent(a.currentTime);
+    setProgress(a.duration ? (a.currentTime / a.duration) * 100 : 0);
+  };
+
+  const onLoaded = () => {
+    if (audioRef.current) { setDuration(audioRef.current.duration); setLoaded(true); }
+  };
+
+  const onEnded = () => {
+    setPlaying(false); setProgress(0); setCurrent(0);
+    if (audioRef.current) audioRef.current.currentTime = 0;
+  };
+
+  const seek = (e) => {
+    const a = audioRef.current;
+    if (!a || !duration) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    a.currentTime = ((e.clientX - rect.left) / rect.width) * duration;
+  };
+
+  const fmt = (s) => {
+    if (!s || isNaN(s) || !isFinite(s)) return "0:00";
+    const m = Math.floor(s / 60), sec = Math.floor(s % 60);
+    return `${m}:${String(sec).padStart(2, "0")}`;
+  };
+
+  const accent   = out ? "rgba(255,255,255,.95)" : L.teal;
+  const track    = out ? "rgba(255,255,255,.28)"  : L.line;
+  const dimColor = out ? "rgba(255,255,255,.65)"  : L.t4;
+
+  return (
+    <div style={{ display:"flex", alignItems:"center", gap:10,
+      minWidth:200, maxWidth:260, padding:"2px 0" }}>
+      <audio ref={audioRef} src={src} preload="metadata"
+        onTimeUpdate={onTimeUpdate} onLoadedMetadata={onLoaded}
+        onEnded={onEnded} onCanPlay={onLoaded} style={{ display:"none" }} />
+
+      {/* Play / Pause */}
+      <button onClick={toggle}
+        style={{ width:36, height:36, borderRadius:"50%", border:"none",
+          cursor: loaded ? "pointer" : "default",
+          background: out ? "rgba(255,255,255,.22)" : L.tealBg,
+          color: accent, fontSize:13, display:"flex", alignItems:"center",
+          justifyContent:"center", flexShrink:0, transition:"all .15s",
+          opacity: loaded ? 1 : 0.55 }}>
+        {playing ? "⏸" : "▶"}
+      </button>
+
+      {/* Barra + tempo */}
+      <div style={{ flex:1, minWidth:0 }}>
+        {/* Waveform / progress track */}
+        <div onClick={seek}
+          style={{ height:4, background:track, borderRadius:2,
+            cursor:"pointer", marginBottom:5, position:"relative", overflow:"hidden" }}>
+          <div style={{ width:`${progress}%`, height:"100%",
+            background:accent, borderRadius:2, transition:"width .08s linear" }} />
+        </div>
+
+        {/* Pseudo-waveform bars (visual only) */}
+        <div style={{ display:"flex", alignItems:"flex-end", gap:1.5,
+          height:14, marginBottom:4, overflow:"hidden" }}>
+          {Array.from({ length: 32 }, (_, i) => {
+            const h = [4,6,10,8,13,9,6,12,8,5,11,7,9,14,6,10,8,12,5,9,13,7,11,6,10,8,14,9,6,11,7,9][i % 32];
+            const filled = progress / 100 > i / 32;
+            return (
+              <div key={i} style={{
+                width:2.5, height:h, borderRadius:2, flexShrink:0,
+                background: filled ? accent : track,
+                transition: "background .08s",
+              }} />
+            );
+          })}
+        </div>
+
+        {/* Tempo */}
+        <div style={{ fontSize:10, color:dimColor,
+          fontFamily:"'JetBrains Mono',monospace", letterSpacing:".5px" }}>
+          {fmt(current)} / {fmt(duration || 0)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Media message renderer ──────────────────────────────────────────────────
 function renderMsgContent(m, out) {
   const t    = msgTexto(m);
@@ -93,7 +196,7 @@ function renderMsgContent(m, out) {
   if (tipo === "audio" && url) {
     return (
       <div>
-        <audio controls src={url} style={{ width:"100%", maxWidth:240, display:"block" }}/>
+        <AudioPlayer src={url} out={out} />
         {t && <div style={{ fontSize:11, marginTop:3, opacity:.8 }}>{t}</div>}
       </div>
     );
@@ -311,6 +414,8 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
   // ── modals / panels ───────────────────────────────────────────────────────
   const [novaModal,    setNovaModal]    = useState(false);
   const [novaForm,     setNovaForm]     = useState({ nome: "", telefone: "", empresa_contato: "" });
+  const [savingNova,   setSavingNova]   = useState(false);
+  const [novaErr,      setNovaErr]      = useState("");
   const [transferModal,setTransferModal]= useState(false);
   const [agendarModal, setAgendarModal] = useState(false);
   const [showQuick,    setShowQuick]    = useState(false);
@@ -796,18 +901,46 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
   };
 
   const criarConversa = async () => {
-    if (!novaForm.nome.trim()) return;
-    const { data } = await supabase.from("conversas").insert({
-      empresa_id: user.empresa_id,
-      contato_nome: novaForm.nome.trim(),
-      contato_telefone: novaForm.telefone.replace(/\D/g, ""),
-      contato_empresa: novaForm.empresa_contato.trim(),
-      ultima_mensagem: "", ultima_hora: new Date().toISOString(),
-      nao_lidas: 0, status: "aberta",
+    setNovaErr("");
+    const nome = novaForm.nome.trim();
+    const telefone = novaForm.telefone.replace(/\D/g, "");
+    if (!nome)     { setNovaErr("Nome do contato é obrigatório."); return; }
+    if (!telefone) { setNovaErr("Telefone é obrigatório para enviar mensagens no WhatsApp."); return; }
+    if (telefone.length < 10) { setNovaErr("Telefone inválido. Use DDD + número (ex: 11999998888)."); return; }
+
+    setSavingNova(true);
+    const { data, error } = await supabase.from("conversas").insert({
+      empresa_id:       user.empresa_id,
+      contato_nome:     nome,
+      contato_telefone: telefone,
+      contato_empresa:  novaForm.empresa_contato.trim(),
+      ultima_mensagem:  "",
+      ultima_hora:      new Date().toISOString(),
+      nao_lidas:        0,
+      status:           "aberta",
     }).select().single();
-    if (data) { setConversas(p => [data, ...p]); setActiveConv(data); setMensagens([]); }
+
+    setSavingNova(false);
+
+    if (error) {
+      setNovaErr("Erro ao criar conversa: " + (error.message || "tente novamente."));
+      return;
+    }
+
+    if (data) {
+      // Atualiza lista de conversas e contatos imediatamente
+      setConversas(p => [data, ...p]);
+      setWppContatos(p => [data, ...p]);
+      // Abre a conversa recém-criada
+      setActiveConv(data);
+      setMensagens([]);
+      // Volta para aba conversas para o usuário ver e interagir
+      setSidebarTab("conversas");
+    }
+
     setNovaModal(false);
     setNovaForm({ nome: "", telefone: "", empresa_contato: "" });
+    setNovaErr("");
   };
 
   const cancelAgendada = async (id) => {
@@ -1698,26 +1831,82 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
       {/* ══════════ MODALS ══════════ */}
       {novaModal && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 200,
-          display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setNovaModal(false)}>
+          display: "flex", alignItems: "center", justifyContent: "center" }}
+          onClick={() => { if (!savingNova) { setNovaModal(false); setNovaErr(""); setNovaForm({ nome:"", telefone:"", empresa_contato:"" }); } }}>
           <div className="modal-box" onClick={e => e.stopPropagation()}
-            style={{ background: L.white, borderRadius: 12, padding: 24, width: 380, boxShadow: "0 8px 40px rgba(0,0,0,.18)" }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: L.t1, marginBottom: 16 }}>Nova conversa</div>
+            style={{ background: L.white, borderRadius: 14, padding: 24, width: 400,
+              boxShadow: "0 8px 40px rgba(0,0,0,.20)" }}>
+
+            {/* Header */}
+            <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:18 }}>
+              <div style={{ width:36, height:36, borderRadius:10, background:L.tealBg,
+                display:"flex", alignItems:"center", justifyContent:"center",
+                fontSize:18, color:L.teal, flexShrink:0 }}>💬</div>
+              <div>
+                <div style={{ fontSize:14, fontWeight:700, color:L.t1, lineHeight:1.2 }}>Nova conversa</div>
+                <div style={{ fontSize:11, color:L.t3 }}>O contato aparecerá na lista após criar</div>
+              </div>
+            </div>
+
+            {/* Fields */}
             {[
-              { label: "Nome do contato *", key: "nome", placeholder: "João Silva" },
-              { label: "Telefone (com DDD)", key: "telefone", placeholder: "11999998888" },
-              { label: "Empresa do contato", key: "empresa_contato", placeholder: "Empresa Ltda" },
+              { label: "Nome do contato *", key: "nome",            placeholder: "João Silva",      type: "text" },
+              { label: "Telefone (DDD + número) *", key: "telefone", placeholder: "11999998888",    type: "tel"  },
+              { label: "Empresa do contato",  key: "empresa_contato", placeholder: "Empresa Ltda", type: "text" },
             ].map(f => (
               <div key={f.key} style={{ marginBottom: 12 }}>
-                <label style={{ fontSize: 11, color: L.t3, display: "block", marginBottom: 4 }}>{f.label}</label>
-                <input value={novaForm[f.key]} onChange={e => setNovaForm(p => ({ ...p, [f.key]: e.target.value }))}
+                <label style={{ fontSize: 11, color: L.t3, display: "block", marginBottom: 4,
+                  fontWeight: 600, textTransform: "uppercase", letterSpacing: "1px",
+                  fontFamily: "'JetBrains Mono',monospace" }}>{f.label}</label>
+                <input
+                  type={f.type}
+                  value={novaForm[f.key]}
+                  onChange={e => { setNovaForm(p => ({ ...p, [f.key]: e.target.value })); setNovaErr(""); }}
+                  onKeyDown={e => e.key === "Enter" && criarConversa()}
                   placeholder={f.placeholder}
-                  style={{ width: "100%", border: `1px solid ${L.line}`, borderRadius: 8, padding: "8px 12px",
-                    fontSize: 12, color: L.t1, background: L.white, outline: "none", fontFamily: "inherit", boxSizing: "border-box" }} />
+                  disabled={savingNova}
+                  style={{ width: "100%", border: `1.5px solid ${novaErr && (f.key==="nome"||f.key==="telefone") ? L.red : L.line}`,
+                    borderRadius: 9, padding: "9px 13px", fontSize: 12.5, color: L.t1,
+                    background: savingNova ? L.surface : L.white, outline: "none",
+                    fontFamily: "inherit", boxSizing: "border-box", transition: "border-color .12s" }}
+                  onFocus={e => e.target.style.borderColor = L.teal}
+                  onBlur={e => e.target.style.borderColor = L.line}
+                />
               </div>
             ))}
-            <Row gap={8} style={{ justifyContent: "flex-end", marginTop: 4 }}>
-              <button onClick={() => setNovaModal(false)} style={btnStyle()}>Cancelar</button>
-              <button onClick={criarConversa} style={btnStyle(L.t1, "white")}>Criar conversa</button>
+
+            {/* Error */}
+            {novaErr && (
+              <div style={{ display:"flex", alignItems:"center", gap:7, padding:"8px 12px",
+                background:L.redBg, border:`1px solid ${L.red}28`, borderRadius:8, marginBottom:14 }}>
+                <span style={{ color:L.red, fontSize:13 }}>✕</span>
+                <span style={{ fontSize:12, color:L.red }}>{novaErr}</span>
+              </div>
+            )}
+
+            {/* Actions */}
+            <Row gap={8} style={{ justifyContent: "flex-end", marginTop: 6 }}>
+              <button
+                onClick={() => { setNovaModal(false); setNovaErr(""); setNovaForm({ nome:"", telefone:"", empresa_contato:"" }); }}
+                disabled={savingNova}
+                style={btnStyle()}>
+                Cancelar
+              </button>
+              <button
+                onClick={criarConversa}
+                disabled={savingNova || !novaForm.nome.trim()}
+                style={{ ...btnStyle(savingNova || !novaForm.nome.trim() ? L.t5 : L.teal, "white"),
+                  opacity: savingNova || !novaForm.nome.trim() ? 0.6 : 1,
+                  display: "flex", alignItems: "center", gap: 6 }}>
+                {savingNova ? (
+                  <>
+                    <span style={{ width:13, height:13, border:"2px solid rgba(255,255,255,.4)",
+                      borderTopColor:"white", borderRadius:"50%",
+                      display:"inline-block", animation:"spin .7s linear infinite" }} />
+                    Criando...
+                  </>
+                ) : "✓ Criar conversa"}
+              </button>
             </Row>
           </div>
         </div>

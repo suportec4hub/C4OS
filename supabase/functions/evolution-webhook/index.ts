@@ -236,7 +236,35 @@ async function processMessages(
     const rawTs = info.Timestamp || m.messageTimestamp || m.MessageTimestamp;
     const hora  = safeTimestamp(rawTs, now);
 
-    console.log(`[webhook] ${isHistory?"HIST":"MSG"} from:${senderPhone} fromMe:${fromMe} ts:${hora} text:${texto.slice(0,60)}`);
+    // ── ID da mensagem WhatsApp (wamid) ─────────────────────────────────────
+    const wamid = ((info.ID || info.Id || key.id || key.ID || "") as string);
+
+    // ── Detectar tipo de mídia e extrair URL ─────────────────────────────────
+    const audioC = (msgContent.audioMessage || msgContent.AudioMessage ||
+                    msgContent.pttMessage   || msgContent.PttMessage   || {}) as Record<string,unknown>;
+    let tipoMsg    = "texto";
+    let mediaUrl: string | null = null;
+    let nomeArquivo: string | null = null;
+
+    if (msgContent.audioMessage || msgContent.AudioMessage ||
+        msgContent.pttMessage   || msgContent.PttMessage) {
+      tipoMsg  = "audio";
+      mediaUrl = (audioC.url as string) || null;
+    } else if (msgContent.imageMessage || msgContent.ImageMessage) {
+      tipoMsg  = "imagem";
+      mediaUrl = (imgC.url as string) || null;
+    } else if (msgContent.videoMessage || msgContent.VideoMessage) {
+      tipoMsg  = "video";
+      mediaUrl = (vidC.url as string) || null;
+    } else if (msgContent.documentMessage || msgContent.DocumentMessage) {
+      tipoMsg      = "documento";
+      mediaUrl     = ((docC.url || docC.Url) as string) || null;
+      nomeArquivo  = ((docC.title || docC.Title) as string) || null;
+    } else if (msgContent.stickerMessage || msgContent.StickerMessage) {
+      tipoMsg = "sticker";
+    }
+
+    console.log(`[webhook] ${isHistory?"HIST":"MSG"} from:${senderPhone} fromMe:${fromMe} ts:${hora} tipo:${tipoMsg} text:${texto.slice(0,60)}`);
 
     // ── Busca ou cria conversa ────────────────────────────────────────────────
     let isNew = false;
@@ -293,13 +321,17 @@ async function processMessages(
     if (existing) { console.log("[webhook] dedup: msg já existe, ignorando"); continue; }
 
     await supabase.from("mensagens").insert({
-      conversa_id: conv.id,
+      conversa_id:  conv.id,
       empresa_id,
-      de:        fromMe ? "me" : "contato",
+      de:           fromMe ? "me" : "contato",
       texto,
+      tipo:         tipoMsg,
+      media_url:    mediaUrl,
+      nome_arquivo: nomeArquivo,
+      wamid:        wamid || null,
       hora,
-      status:    fromMe ? "enviado" : "recebido",
-      remetente: fromMe ? "me" : "contato",
+      status:       fromMe ? "enviado" : "recebido",
+      remetente:    fromMe ? "me" : "contato",
     });
 
     // ── Chatbot (apenas mensagens recebidas em tempo real) ────────────────────
