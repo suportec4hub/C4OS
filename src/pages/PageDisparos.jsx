@@ -206,6 +206,10 @@ export default function PageDisparos({ user }) {
       agendado_para: form.agendado_para || null,
       intervalo_min: form.intervalo_min,
       intervalo_max: form.intervalo_max,
+      tipo_midia: form.tipo_midia || "texto",
+      url_midia: midiaUrl || null,
+      chave_pix: form.chave_pix?.trim() || null,
+      caption: form.caption?.trim() || null,
     }).select().single();
     if (error) { setErr(error.message); setSaving(false); return; }
 

@@ -610,18 +610,19 @@ Deno.serve(async (req) => {
 
     // ────────────────────────────────────────────────────────────────────────
     // BROADCAST — dispara campanha para lista de contatos com intervalo aleatório
+    // Suporta: texto, imagem, vídeo, áudio, documento, PIX
     // ────────────────────────────────────────────────────────────────────────
     if (action === "broadcast") {
       const { campanha_id } = body;
       if (!campanha_id) return json({ error: "campanha_id obrigatório" }, 400);
 
       const { data: camp } = await supabase.from("campanhas")
-        .select("id, mensagem, intervalo_min, intervalo_max, total_contatos")
+        .select("id, mensagem, intervalo_min, intervalo_max, total_contatos, tipo_midia, url_midia, chave_pix, caption")
         .eq("id", campanha_id).eq("empresa_id", empresa_id).single();
       if (!camp) return json({ error: "Campanha não encontrada" }, 404);
 
       const { data: contatos } = await supabase.from("transmissao_contatos")
-        .select("id, nome, telefone").eq("campanha_id", campanha_id).eq("status", "pendente");
+        .select("id, nome, telefone, empresa").eq("campanha_id", campanha_id).eq("status", "pendente");
       if (!contatos?.length) return json({ error: "Nenhum contato pendente" }, 400);
 
       // Marca campanha como enviando
@@ -630,22 +631,62 @@ Deno.serve(async (req) => {
       let enviados = 0;
       const minMs = (camp.intervalo_min || 5) * 1000;
       const maxMs = (camp.intervalo_max || 15) * 1000;
+      const tipoMidia = (camp.tipo_midia as string) || "texto";
+
+      // Mapa de tipo de mídia → mediatype da Evolution API
+      const mediaTypeMap: Record<string, string> = {
+        imagem: "image", video: "video", audio: "audio", documento: "document",
+      };
+
+      const sendMsg = async (num: string, texto: string): Promise<boolean> => {
+        for (const [path, bd] of [
+          [`/message/sendText/${instName}`, JSON.stringify({ number: num, text: texto })],
+          ["/send/text", JSON.stringify({ instanceName: instName, id: instName, number: num, text: texto })],
+        ] as [string, string][]) {
+          const res = await iFetch(path, { method: "POST", body: bd }).catch(() => null);
+          if (res?.ok) return true;
+        }
+        return false;
+      };
+
+      const sendMedia = async (num: string, mediatype: string, mediaUrl: string, caption: string): Promise<boolean> => {
+        // Tentativa 1: endpoint sendMedia do Evolution v2
+        const res = await iFetch(`/message/sendMedia/${instName}`, {
+          method: "POST",
+          body: JSON.stringify({ number: num, mediatype, media: mediaUrl, caption }),
+        }).catch(() => null);
+        if (res?.ok) return true;
+        // Fallback: envia URL como texto com legenda
+        const textoFallback = caption ? `${caption}\n${mediaUrl}` : mediaUrl;
+        return sendMsg(num, textoFallback);
+      };
 
       for (const contato of contatos) {
         try {
-          const mensagem = (camp.mensagem as string)
-            .replace(/\{nome\}/gi, contato.nome || "")
-            .replace(/\{telefone\}/gi, contato.telefone || "");
-
           const num = String(contato.telefone).replace(/\D/g, "");
-          // Tenta v2 primeiro, depois GO (mesma lógica do action "send")
+          const interpolate = (t: string) => t
+            .replace(/\{nome\}/gi, (contato as Record<string, string>).nome || "")
+            .replace(/\{empresa\}/gi, (contato as Record<string, string>).empresa || "")
+            .replace(/\{telefone\}/gi, num);
+
+          const mensagem = interpolate((camp.mensagem as string) || "");
           let sent = false;
-          for (const [path, bd] of [
-            [`/message/sendText/${instName}`, JSON.stringify({ number: num, text: mensagem })],
-            ["/send/text", JSON.stringify({ instanceName: instName, id: instName, number: num, text: mensagem })],
-          ] as [string, string][]) {
-            const res = await iFetch(path, { method: "POST", body: bd }).catch(() => null);
-            if (res?.ok) { sent = true; break; }
+
+          if (tipoMidia === "pix") {
+            // PIX: mensagem de texto + chave PIX em destaque
+            const pixKey = (camp.chave_pix as string) || "";
+            const texto  = pixKey ? `${mensagem}\n\n💳 *Chave PIX:* ${pixKey}` : mensagem;
+            sent = await sendMsg(num, texto);
+
+          } else if (tipoMidia !== "texto" && camp.url_midia) {
+            // Mídia (imagem, vídeo, áudio, documento)
+            const mediatype = mediaTypeMap[tipoMidia] || "image";
+            const caption   = interpolate((camp.caption as string) || mensagem);
+            sent = await sendMedia(num, mediatype, camp.url_midia as string, caption);
+
+          } else {
+            // Texto simples
+            sent = await sendMsg(num, mensagem);
           }
 
           if (sent) {
