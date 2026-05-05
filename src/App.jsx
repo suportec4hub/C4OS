@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { SpeedInsights } from "@vercel/speed-insights/react";
 import Login from "./components/Login";
 import Shell from "./components/Shell";
 import { globalCSS, L } from "./constants/theme";
@@ -82,12 +83,25 @@ export default function App() {
 
   if (!ready) {
     return (
-      <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#f5f7fa"}}>
-        <div style={{width:18,height:18,borderRadius:"50%",border:"2px solid #e2e8f0",borderTopColor:"#1aaa96",animation:"spin .7s linear infinite"}}/>
-      </div>
+      <>
+        <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#f5f7fa"}}>
+          <div style={{width:18,height:18,borderRadius:"50%",border:"2px solid #e2e8f0",borderTopColor:"#1aaa96",animation:"spin .7s linear infinite"}}/>
+        </div>
+        <SpeedInsights />
+      </>
     );
   }
 
-  if (!user || !profile) return <Login />;
-  return <Shell user={profile} onLogout={handleLogout} onProfileUpdate={handleProfileUpdate} />;
+  if (!user || !profile) return (
+    <>
+      <Login />
+      <SpeedInsights />
+    </>
+  );
+  return (
+    <>
+      <Shell user={profile} onLogout={handleLogout} onProfileUpdate={handleProfileUpdate} />
+      <SpeedInsights />
+    </>
+  );
 }
