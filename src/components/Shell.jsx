@@ -37,6 +37,7 @@ import PageEtiquetas        from "../pages/PageEtiquetas";
 import PageChatbotBuilder   from "../pages/PageChatbotBuilder";
 import PageDisparos         from "../pages/PageDisparos";
 import PageRelatoriosAtend  from "../pages/PageRelatoriosAtend";
+import PageMeta             from "../pages/PageMeta";
 
 const NAV_ITEMS = [
   {id:"dashboard",  label:"Dashboard",      ico:"▦", g:"principal"},
@@ -56,6 +57,7 @@ const NAV_ITEMS = [
   {id:"propostas",  label:"Propostas",      ico:"◎", g:"negócios"},
   {id:"contratos",  label:"Contratos",      ico:"◫", g:"negócios"},
   {id:"estoque",    label:"Estoque",        ico:"⬡", g:"operações"},
+  {id:"meta",         label:"Metas",         ico:"🎯",  g:"analytics"},
   {id:"reports",      label:"Relatórios",    ico:"◫",  g:"analytics"},
   {id:"relatoriosatend", label:"Atendimento",ico:"📊", g:"analytics"},
   {id:"ai",           label:"C4 AI",         ico:"✦",  g:"analytics"},
@@ -277,6 +279,7 @@ export default function Shell({user,onLogout,onProfileUpdate}) {
           {safe==="disparos"       && <PageDisparos        user={user}/>}
           {safe==="broadcast"      && <PageBroadcast       user={user}/>}
           {safe==="followup"  && <PageFollowUp  user={user} onGoToChat={(leadId)=>navigate("whatsapp")}/>}
+          {safe==="meta"            && <PageMeta           user={user}/>}
           {safe==="reports"         && <PageReports        user={user}/>}
           {safe==="relatoriosatend" && <PageRelatoriosAtend user={user}/>}
           {safe==="ai"              && <PageAI              user={user}/>}
