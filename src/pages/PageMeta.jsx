@@ -126,8 +126,9 @@ export default function PageMeta({ user }) {
   const [historico,   setHistorico]       = useState({});     // { usuario_id: [p1,p2,p3] últimos 3 meses
 
   /* form config */
-  const [fMetaTotal, setFMetaTotal]   = useState("");
-  const [fMetasInd,  setFMetasInd]    = useState({});   // { usuario_id: valor }
+  const [fMetaTotal,        setFMetaTotal]        = useState("");
+  const [fMetasInd,         setFMetasInd]         = useState({});     // { usuario_id: valor }
+  const [selVendedores,     setSelVendedores]     = useState(new Set()); // ids marcados como vendedores
   const [savingMeta, setSavingMeta]   = useState(false);
 
   /* form venda */
@@ -162,8 +163,13 @@ export default function PageMeta({ user }) {
     // seed form
     setFMetaTotal(rMeta.data?.meta_total ?? "");
     const ind = {};
-    (rMV.data||[]).forEach(mv => { ind[mv.usuario_id] = mv.meta_individual; });
+    const sel = new Set();
+    (rMV.data||[]).forEach(mv => {
+      ind[mv.usuario_id] = mv.meta_individual;
+      sel.add(mv.usuario_id);
+    });
     setFMetasInd(ind);
+    setSelVendedores(sel);
 
     // histórico últimos 3 meses para cada vendedor
     const meses3 = [mesOffset(mes,-3), mesOffset(mes,-2), mesOffset(mes,-1)];
@@ -221,13 +227,17 @@ export default function PageMeta({ user }) {
   }, []);
 
   /* ── derived ── */
-  const vendedores = usuarios.map(u => {
-    const meta = parseFloat(fMetasInd[u.id] || metasVend.find(m=>m.usuario_id===u.id)?.meta_individual || 0);
-    const realizado = vendas.filter(v=>v.usuario_id===u.id).reduce((s,v)=>s+parseFloat(v.valor||0),0);
-    const hist3 = historico[u.id] || [0,0,0];
-    const mesesVermelhos = hist3.filter(p=>p < 70).length;
-    return { ...u, meta, realizado, mesesVermelhos };
-  }).sort((a,b) => pct(b.realizado,b.meta) - pct(a.realizado,a.meta));
+  // painel e TV: só quem tem registro em metas_vendedores (selecionados)
+  const idsNoPanel = new Set(metasVend.map(mv => mv.usuario_id));
+  const vendedores = usuarios
+    .filter(u => idsNoPanel.has(u.id))
+    .map(u => {
+      const meta = parseFloat(metasVend.find(m=>m.usuario_id===u.id)?.meta_individual || 0);
+      const realizado = vendas.filter(v=>v.usuario_id===u.id).reduce((s,v)=>s+parseFloat(v.valor||0),0);
+      const hist3 = historico[u.id] || [0,0,0];
+      const mesesVermelhos = hist3.filter(p=>p < 70).length;
+      return { ...u, meta, realizado, mesesVermelhos };
+    }).sort((a,b) => pct(b.realizado,b.meta) - pct(a.realizado,a.meta));
 
   const totalMeta      = parseFloat(metaEmpresa?.meta_total||0);
   const totalRealizado = vendas.reduce((s,v)=>s+parseFloat(v.valor||0),0);
@@ -244,9 +254,16 @@ export default function PageMeta({ user }) {
       { onConflict:"empresa_id,mes" }
     );
 
-    for (const [uid, val] of Object.entries(fMetasInd)) {
+    // remover desmarcados
+    const toDelete = metasVend.filter(mv => !selVendedores.has(mv.usuario_id)).map(mv => mv.id);
+    if (toDelete.length) {
+      await supabase.from("metas_vendedores").delete().in("id", toDelete);
+    }
+
+    // upsert selecionados
+    for (const uid of selVendedores) {
       await supabase.from("metas_vendedores").upsert(
-        { empresa_id:eid, usuario_id:uid, mes, meta_individual:parseFloat(val)||0 },
+        { empresa_id:eid, usuario_id:uid, mes, meta_individual:parseFloat(fMetasInd[uid])||0 },
         { onConflict:"empresa_id,usuario_id,mes" }
       );
     }
@@ -407,27 +424,61 @@ export default function PageMeta({ user }) {
 
                 {/* Metas individuais */}
                 <div style={{background:L.white,borderRadius:10,padding:"20px 22px",border:`1px solid ${L.line}`,marginBottom:20}}>
-                  <div style={{fontSize:14,fontWeight:700,color:L.t1,marginBottom:16}}>Metas Individuais por Vendedor</div>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
+                    <div style={{fontSize:14,fontWeight:700,color:L.t1}}>Vendedores que aparecem no Painel</div>
+                    <div style={{fontSize:11,color:L.t3}}>Marque quem participará das metas</div>
+                  </div>
+                  <div style={{fontSize:12,color:L.t4,marginBottom:16}}>
+                    {selVendedores.size} de {usuarios.length} usuário(s) selecionado(s)
+                  </div>
                   {usuarios.length === 0 ? (
                     <div style={{color:L.t4,fontSize:12}}>Nenhum usuário ativo encontrado.</div>
                   ) : (
-                    <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                      {usuarios.map(u=>(
-                        <div key={u.id} style={{display:"flex",alignItems:"center",gap:12}}>
-                          <div style={{width:32,height:32,borderRadius:"50%",background:L.surface,border:`1px solid ${L.line}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:L.t2,flexShrink:0}}>
-                            {u.nome.split(" ").slice(0,2).map(n=>n[0]).join("").toUpperCase()}
+                    <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                      {usuarios.map(u => {
+                        const marcado = selVendedores.has(u.id);
+                        const toggle = () => {
+                          const s = new Set(selVendedores);
+                          if (marcado) s.delete(u.id); else s.add(u.id);
+                          setSelVendedores(s);
+                        };
+                        return (
+                          <div key={u.id} onClick={toggle} style={{
+                            display:"flex",alignItems:"center",gap:12,
+                            padding:"10px 12px",borderRadius:8,cursor:"pointer",
+                            background: marcado ? L.surface : "transparent",
+                            border:`1.5px solid ${marcado ? L.t1 : L.line}`,
+                            transition:"all .12s",opacity: marcado?1:0.55,
+                          }}>
+                            {/* checkbox visual */}
+                            <div style={{
+                              width:18,height:18,borderRadius:4,flexShrink:0,
+                              background: marcado?L.t1:L.white,
+                              border:`2px solid ${marcado?L.t1:L.line}`,
+                              display:"flex",alignItems:"center",justifyContent:"center",
+                              transition:"all .12s",
+                            }}>
+                              {marcado && <span style={{color:"#fff",fontSize:11,lineHeight:1}}>✓</span>}
+                            </div>
+                            {/* avatar */}
+                            <div style={{width:32,height:32,borderRadius:"50%",background:marcado?L.t1:L.surface,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:marcado?"#fff":L.t2,flexShrink:0,transition:"all .12s"}}>
+                              {u.nome.split(" ").slice(0,2).map(n=>n[0]).join("").toUpperCase()}
+                            </div>
+                            <div style={{flex:1,minWidth:0}}>
+                              <div style={{fontSize:13,fontWeight:600,color:L.t1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{u.nome}</div>
+                              <div style={{fontSize:11,color:L.t3}}>{u.cargo||"—"}</div>
+                            </div>
+                            {/* input meta */}
+                            <div style={{width:180,flexShrink:0}} onClick={e=>e.stopPropagation()}>
+                              <input type="number" min="0" step="100"
+                                placeholder={marcado?"Meta em R$":"—"}
+                                disabled={!marcado}
+                                value={fMetasInd[u.id]??""} onChange={e=>setFMetasInd(p=>({...p,[u.id]:e.target.value}))}
+                                style={{...inpS,padding:"7px 10px",fontSize:12,opacity:marcado?1:0.4,cursor:marcado?"text":"not-allowed"}}/>
+                            </div>
                           </div>
-                          <div style={{flex:1,minWidth:0}}>
-                            <div style={{fontSize:13,fontWeight:500,color:L.t1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{u.nome}</div>
-                            <div style={{fontSize:11,color:L.t3}}>{u.cargo||"—"}</div>
-                          </div>
-                          <div style={{width:180,flexShrink:0}}>
-                            <input type="number" min="0" step="100" placeholder="Meta individual R$"
-                              value={fMetasInd[u.id]??""} onChange={e=>setFMetasInd(p=>({...p,[u.id]:e.target.value}))}
-                              style={{...inpS,padding:"7px 10px",fontSize:12}}/>
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -446,7 +497,7 @@ export default function PageMeta({ user }) {
                       <select value={fVenda.usuario_id} onChange={e=>setFVenda(p=>({...p,usuario_id:e.target.value}))}
                         style={{...inpS,cursor:"pointer"}}>
                         <option value="">Selecione...</option>
-                        {usuarios.map(u=><option key={u.id} value={u.id}>{u.nome}</option>)}
+                        {usuarios.filter(u=>selVendedores.has(u.id)).map(u=><option key={u.id} value={u.id}>{u.nome}</option>)}
                       </select>
                     </div>
                     <div>
