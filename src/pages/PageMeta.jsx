@@ -40,6 +40,8 @@ const mesOffset = (m, n) => {
   const d = new Date(y, mo-1+n, 1);
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
 };
+// Converte "2026-05" → { mes: 5, ano: 2026 }
+const parseMesAno = m => { const [y,mo] = m.split("-").map(Number); return { mes: mo, ano: y }; };
 const mesesOpcoes = () => {
   const list = [];
   const hoje = mesAtual();
@@ -159,8 +161,9 @@ export default function PageMeta({ user }) {
     setLoading(true);
     const eid = user.empresa_id;
 
+    const { mes: mesInt, ano } = parseMesAno(mes);
     const [rMeta, rMV, rVendas, rUsuarios] = await Promise.all([
-      supabase.from("metas").select("*").eq("empresa_id",eid).eq("mes",mes).maybeSingle(),
+      supabase.from("metas").select("*").eq("empresa_id",eid).eq("mes",mesInt).eq("ano",ano).maybeSingle(),
       supabase.from("metas_vendedores").select("*").eq("empresa_id",eid).eq("mes",mes),
       supabase.from("vendas_realizadas").select("*").eq("empresa_id",eid).eq("mes",mes).order("created_at",{ascending:false}),
       supabase.from("usuarios").select("id,nome,cargo,role").eq("empresa_id",eid),
@@ -173,7 +176,7 @@ export default function PageMeta({ user }) {
     setUsuarios(usrs);
 
     // seed form
-    setFMetaTotal(fmtInput(rMeta.data?.meta_total));
+    setFMetaTotal(fmtInput(rMeta.data?.valor_total));
     const ind = {};
     const sel = new Set();
     (rMV.data||[]).forEach(mv => {
@@ -251,7 +254,7 @@ export default function PageMeta({ user }) {
       return { ...u, meta, realizado, mesesVermelhos };
     }).sort((a,b) => pct(b.realizado,b.meta) - pct(a.realizado,a.meta));
 
-  const totalMeta      = parseFloat(metaEmpresa?.meta_total||0);
+  const totalMeta      = parseFloat(metaEmpresa?.valor_total||0);
   const totalRealizado = vendas.reduce((s,v)=>s+parseFloat(v.valor||0),0);
   const pctTotal       = pct(totalRealizado, totalMeta);
 
@@ -261,9 +264,10 @@ export default function PageMeta({ user }) {
     setSavingMeta(true);
     const eid = user.empresa_id;
 
+    const { mes: mesInt, ano } = parseMesAno(mes);
     await supabase.from("metas").upsert(
-      { empresa_id:eid, mes, meta_total:parseBRL(fMetaTotal), updated_at:new Date().toISOString() },
-      { onConflict:"empresa_id,mes" }
+      { empresa_id:eid, mes:mesInt, ano, valor_total:parseBRL(fMetaTotal), updated_at:new Date().toISOString() },
+      { onConflict:"empresa_id,mes,ano" }
     );
 
     // remover desmarcados
