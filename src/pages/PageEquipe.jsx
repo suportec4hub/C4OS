@@ -144,8 +144,10 @@ export default function PageEquipe({ user }) {
   const excluirConfirmado = async () => {
     if (!confirmDelete) return;
     setDeleting(true);
-    await supabase.auth.admin?.deleteUser?.(confirmDelete.id).catch(() => {});
-    await remove(confirmDelete.id);
+    const { error } = await supabase.functions.invoke("excluir-usuario", { body: { id: confirmDelete.id } });
+    if (!error) {
+      refetch();
+    }
     setConfirmDelete(null);
     setDeleting(false);
   };

@@ -75,7 +75,7 @@ export default function PageUsers({ user }) {
 
     // reset de senha se preenchida
     if (editForm.novaSenha && editForm.novaSenha.length >= 6) {
-      await supabase.auth.admin?.updateUserById?.(editTarget.id, { password: editForm.novaSenha }).catch(()=>{});
+      await supabase.functions.invoke("resetar-senha", { body: { id: editTarget.id, novaSenha: editForm.novaSenha } });
     }
 
     setEditTarget(null);
@@ -86,8 +86,10 @@ export default function PageUsers({ user }) {
   const excluirConfirmado = async () => {
     if (!confirmDelete) return;
     setDeleting(true);
-    await supabase.auth.admin?.deleteUser?.(confirmDelete.id).catch(()=>{});
-    await remove(confirmDelete.id);
+    const { error } = await supabase.functions.invoke("excluir-usuario", { body: { id: confirmDelete.id } });
+    if (!error) {
+      refetch();
+    }
     setConfirmDelete(null);
     setDeleting(false);
   };
