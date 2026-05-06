@@ -219,9 +219,9 @@ export default function Shell({user,onLogout,onProfileUpdate}) {
         {/* Collapse toggle (desktop only) */}
         {!isMobile && (
           <button onClick={()=>setCol(p=>!p)}
-            style={{position:"absolute",top:20,right:-10,width:20,height:20,borderRadius:"50%",background:L.white,border:`1.5px solid ${L.line}`,color:L.t3,fontSize:9,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",transition:"all .12s",zIndex:30,boxShadow:"0 1px 4px rgba(0,0,0,0.08)"}}
-            onMouseEnter={e=>{e.currentTarget.style.borderColor=L.teal;e.currentTarget.style.color=L.teal;}}
-            onMouseLeave={e=>{e.currentTarget.style.borderColor=L.line;e.currentTarget.style.color=L.t3;}}
+            style={{position:"absolute",top:"50%",right:-16,transform:"translateY(-50%)",width:16,height:48,borderRadius:"0 8px 8px 0",background:L.white,border:`1.5px solid ${L.line}`,borderLeft:"none",color:L.t3,fontSize:11,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",transition:"all .15s",zIndex:30,boxShadow:"3px 0 8px rgba(0,0,0,0.08)",padding:0}}
+            onMouseEnter={e=>{e.currentTarget.style.background=L.teal;e.currentTarget.style.borderColor=L.teal;e.currentTarget.style.color="#fff";e.currentTarget.style.width="20px";}}
+            onMouseLeave={e=>{e.currentTarget.style.background=L.white;e.currentTarget.style.borderColor=L.line;e.currentTarget.style.color=L.t3;e.currentTarget.style.width="16px";}}
           >
             {col?"›":"‹"}
           </button>
