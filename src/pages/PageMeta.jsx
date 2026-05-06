@@ -150,13 +150,13 @@ export default function PageMeta({ user }) {
       supabase.from("metas").select("*").eq("empresa_id",eid).eq("mes",mes).maybeSingle(),
       supabase.from("metas_vendedores").select("*").eq("empresa_id",eid).eq("mes",mes),
       supabase.from("vendas_realizadas").select("*").eq("empresa_id",eid).eq("mes",mes).order("created_at",{ascending:false}),
-      supabase.from("usuarios").select("id,nome,cargo,role").eq("empresa_id",eid).eq("ativo",true),
+      supabase.from("usuarios").select("id,nome,cargo,role").eq("empresa_id",eid),
     ]);
 
     setMetaEmpresa(rMeta.data || null);
     setMetasVend(rMV.data   || []);
     setVendas(rVendas.data  || []);
-    const usrs = (rUsuarios.data||[]).filter(u => u.role !== "c4hub_admin");
+    const usrs = (rUsuarios.data||[]).filter(u => u.ativo !== false);
     setUsuarios(usrs);
 
     // seed form
