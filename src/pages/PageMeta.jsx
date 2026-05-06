@@ -8,6 +8,18 @@ const fmt  = v  => `R$ ${parseFloat(v||0).toLocaleString("pt-BR",{minimumFractio
 const pct  = (r,m) => m > 0 ? Math.round((r/m)*100) : 0;
 const cap  = v  => Math.min(v, 100);
 
+// Parse valor em formato brasileiro: "1.500,50" → 1500.50
+const parseBRL = v => {
+  if (!v && v !== 0) return 0;
+  return parseFloat(String(v).replace(/\./g,"").replace(",",".")) || 0;
+};
+// Formata número para exibição no input: 1500.5 → "1.500,50"
+const fmtInput = v => {
+  const n = parseFloat(v);
+  if (!v || isNaN(n)) return "";
+  return n.toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+};
+
 const corStatus = p => p >= 100 ? "verde" : p >= 70 ? "amarelo" : "vermelho";
 const corHex    = p => p >= 100 ? L.green  : p >= 70 ? L.yellow  : L.red;
 const corBgHex  = p => p >= 100 ? L.greenBg: p >= 70 ? L.yellowBg: L.redBg;
@@ -161,11 +173,11 @@ export default function PageMeta({ user }) {
     setUsuarios(usrs);
 
     // seed form
-    setFMetaTotal(rMeta.data?.meta_total ?? "");
+    setFMetaTotal(fmtInput(rMeta.data?.meta_total));
     const ind = {};
     const sel = new Set();
     (rMV.data||[]).forEach(mv => {
-      ind[mv.usuario_id] = mv.meta_individual;
+      ind[mv.usuario_id] = fmtInput(mv.meta_individual);
       sel.add(mv.usuario_id);
     });
     setFMetasInd(ind);
@@ -250,7 +262,7 @@ export default function PageMeta({ user }) {
     const eid = user.empresa_id;
 
     await supabase.from("metas").upsert(
-      { empresa_id:eid, mes, meta_total:parseFloat(fMetaTotal)||0, updated_at:new Date().toISOString() },
+      { empresa_id:eid, mes, meta_total:parseBRL(fMetaTotal), updated_at:new Date().toISOString() },
       { onConflict:"empresa_id,mes" }
     );
 
@@ -263,7 +275,7 @@ export default function PageMeta({ user }) {
     // upsert selecionados
     for (const uid of selVendedores) {
       await supabase.from("metas_vendedores").upsert(
-        { empresa_id:eid, usuario_id:uid, mes, meta_individual:parseFloat(fMetasInd[uid])||0 },
+        { empresa_id:eid, usuario_id:uid, mes, meta_individual:parseBRL(fMetasInd[uid]) },
         { onConflict:"empresa_id,usuario_id,mes" }
       );
     }
@@ -279,7 +291,7 @@ export default function PageMeta({ user }) {
       empresa_id: user.empresa_id,
       usuario_id: fVenda.usuario_id,
       mes,
-      valor: parseFloat(fVenda.valor)||0,
+      valor: parseBRL(fVenda.valor),
       descricao: fVenda.descricao||"",
     });
     setFVenda({ usuario_id:"", valor:"", descricao:"" });
@@ -415,7 +427,7 @@ export default function PageMeta({ user }) {
                   <div style={{display:"flex",gap:12,alignItems:"flex-end"}}>
                     <div style={{flex:1}}>
                       <label style={labelS}>Valor da Meta (R$)</label>
-                      <input type="number" min="0" step="100" placeholder="ex: 50000"
+                      <input type="text" inputMode="numeric" placeholder="ex: 50.000,00"
                         value={fMetaTotal} onChange={e=>setFMetaTotal(e.target.value)}
                         style={inpS}/>
                     </div>
@@ -470,8 +482,8 @@ export default function PageMeta({ user }) {
                             </div>
                             {/* input meta */}
                             <div style={{width:180,flexShrink:0}} onClick={e=>e.stopPropagation()}>
-                              <input type="number" min="0" step="100"
-                                placeholder={marcado?"Meta em R$":"—"}
+                              <input type="text" inputMode="numeric"
+                                placeholder={marcado?"ex: 5.000,00":"—"}
                                 disabled={!marcado}
                                 value={fMetasInd[u.id]??""} onChange={e=>setFMetasInd(p=>({...p,[u.id]:e.target.value}))}
                                 style={{...inpS,padding:"7px 10px",fontSize:12,opacity:marcado?1:0.4,cursor:marcado?"text":"not-allowed"}}/>
@@ -502,7 +514,7 @@ export default function PageMeta({ user }) {
                     </div>
                     <div>
                       <label style={labelS}>Valor (R$)</label>
-                      <input type="number" min="0" step="0.01" placeholder="0,00"
+                      <input type="text" inputMode="numeric" placeholder="ex: 1.500,00"
                         value={fVenda.valor} onChange={e=>setFVenda(p=>({...p,valor:e.target.value}))}
                         style={inpS}/>
                     </div>
