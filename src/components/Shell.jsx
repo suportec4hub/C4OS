@@ -126,7 +126,8 @@ export default function Shell({user,onLogout,onProfileUpdate}) {
       {isMobile && mobOpen && (
         <div className="sidebar-overlay" onClick={() => setMobOpen(false)} />
       )}
-      {/* Sidebar */}
+      {/* Sidebar wrapper — position:relative permite o botão sair para a direita sem ser cortado */}
+      <div style={{position:"relative",flexShrink:0,display:"flex"}}>
       <aside className={isMobile ? "sidebar-drawer" : undefined}
         style={isMobile ? {
           position:"fixed",top:0,left:0,bottom:0,width:240,
@@ -216,7 +217,9 @@ export default function Shell({user,onLogout,onProfileUpdate}) {
           </div>
         </div>
 
-        {/* Collapse toggle (desktop only) */}
+      </aside>
+
+        {/* Collapse toggle — fora do aside para não ser cortado pelo overflow:hidden */}
         {!isMobile && (
           <button onClick={()=>setCol(p=>!p)}
             style={{position:"absolute",top:"50%",right:-16,transform:"translateY(-50%)",width:16,height:48,borderRadius:"0 8px 8px 0",background:L.white,border:`1.5px solid ${L.line}`,borderLeft:"none",color:L.t3,fontSize:11,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",transition:"all .15s",zIndex:30,boxShadow:"3px 0 8px rgba(0,0,0,0.08)",padding:0}}
@@ -226,7 +229,7 @@ export default function Shell({user,onLogout,onProfileUpdate}) {
             {col?"›":"‹"}
           </button>
         )}
-      </aside>
+      </div>
 
       {/* Main */}
       <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",minWidth:0}}>
