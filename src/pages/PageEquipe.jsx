@@ -68,13 +68,15 @@ export default function PageEquipe({ user }) {
     empresa_id: user?.empresa_id,
   });
 
-  const [filtro,   setFiltro]   = useState("Todos");
-  const [modal,    setModal]    = useState(false);
-  const [selected, setSelected] = useState(null);
-  const [form,     setForm]     = useState(VAZIO);
-  const [saving,   setSaving]   = useState(false);
-  const [err,      setErr]      = useState("");
-  const [succ,     setSucc]     = useState("");
+  const [filtro,        setFiltro]        = useState("Todos");
+  const [modal,         setModal]         = useState(false);
+  const [selected,      setSelected]      = useState(null);
+  const [form,          setForm]          = useState(VAZIO);
+  const [saving,        setSaving]        = useState(false);
+  const [err,           setErr]           = useState("");
+  const [succ,          setSucc]          = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(null); // usuário a excluir
+  const [deleting,      setDeleting]      = useState(false);
 
   const filtered = usuarios.filter(m => {
     if (filtro === "Todos")   return true;
@@ -139,10 +141,13 @@ export default function PageEquipe({ user }) {
 
   const toggleAtivo = async (m) => { await update(m.id, { ativo: !m.ativo }); };
 
-  const excluir = async (m) => {
-    if (!window.confirm(`Remover ${m.nome} da equipe?`)) return;
-    await supabase.auth.admin?.deleteUser?.(m.id).catch(() => {});
-    await remove(m.id);
+  const excluirConfirmado = async () => {
+    if (!confirmDelete) return;
+    setDeleting(true);
+    await supabase.auth.admin?.deleteUser?.(confirmDelete.id).catch(() => {});
+    await remove(confirmDelete.id);
+    setConfirmDelete(null);
+    setDeleting(false);
   };
 
   const ativos   = usuarios.filter(m => m.ativo).length;
@@ -208,6 +213,7 @@ export default function PageEquipe({ user }) {
                   <IBtn c={L.teal}              title="Ver detalhes"  onClick={()=>openDetalhes(m)}>◷</IBtn>
                   {isAdmin && <IBtn c={L.t3}    title="Editar"        onClick={()=>openEditar(m)}>✎</IBtn>}
                   {isAdmin && <IBtn c={m.ativo?L.red:L.green} title={m.ativo?"Desativar":"Ativar"} onClick={()=>toggleAtivo(m)}>{m.ativo?"⊗":"✓"}</IBtn>}
+                  {isC4Admin && <IBtn c={L.red}  title="Excluir permanentemente" onClick={()=>setConfirmDelete(m)}>🗑</IBtn>}
                 </Row>
               </td>
             </tr>
@@ -328,6 +334,37 @@ export default function PageEquipe({ user }) {
               </button>
             </div>
           )}
+        </Modal>
+      )}
+      {/* Modal confirmação de exclusão */}
+      {confirmDelete && (
+        <Modal title="Excluir usuário permanentemente" onClose={()=>setConfirmDelete(null)} width={420}>
+          <div style={{padding:"8px 0 20px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:14,padding:"16px",background:L.redBg,borderRadius:10,border:`1px solid ${L.red}33`,marginBottom:18}}>
+              <span style={{fontSize:28}}>⚠️</span>
+              <div>
+                <div style={{fontSize:13,fontWeight:700,color:L.red,marginBottom:3}}>Esta ação é permanente</div>
+                <div style={{fontSize:12,color:L.t2,lineHeight:1.5}}>O usuário será removido do sistema e perderá acesso imediatamente. Esta operação não pode ser desfeita.</div>
+              </div>
+            </div>
+
+            <div style={{background:L.surface,borderRadius:8,padding:"12px 14px",marginBottom:20,border:`1px solid ${L.line}`}}>
+              <div style={{fontSize:12,color:L.t3,marginBottom:4}}>Usuário a ser excluído:</div>
+              <div style={{fontSize:14,fontWeight:700,color:L.t1}}>{confirmDelete.nome}</div>
+              <div style={{fontSize:12,color:L.t3}}>{confirmDelete.cargo||"—"} · {confirmDelete.role}</div>
+            </div>
+
+            <div style={{display:"flex",gap:10}}>
+              <button onClick={()=>setConfirmDelete(null)} disabled={deleting}
+                style={{flex:1,padding:"10px",borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:L.surface,color:L.t2,border:`1px solid ${L.line}`}}>
+                Cancelar
+              </button>
+              <button onClick={excluirConfirmado} disabled={deleting}
+                style={{flex:1,padding:"10px",borderRadius:8,fontSize:13,fontWeight:600,cursor:deleting?"wait":"pointer",fontFamily:"inherit",background:L.red,color:"#fff",border:"none",opacity:deleting?.7:1}}>
+                {deleting ? "Excluindo..." : "🗑 Excluir Permanentemente"}
+              </button>
+            </div>
+          </div>
         </Modal>
       )}
     </Fade>
