@@ -87,7 +87,8 @@ export default function Shell({user,onLogout,onProfileUpdate}) {
   const [perfilOpen,setPerfilOpen] = useState(false);
   const [chatTarget,setChatTarget] = useState(null); // telefone para auto-abrir no WhatsApp
   const { isMobile, isTablet } = useBreakpoint();
-  const isAdmin = hasFullAccess(user);
+  const isAdmin     = hasFullAccess(user);
+  const isC4HubAdmin = user?.role === "c4hub_admin"; // somente equipe C4HUB vê o menu C4HUB
 
   // Auto-collapse sidebar on tablet
   useEffect(() => {
@@ -109,15 +110,14 @@ export default function Shell({user,onLogout,onProfileUpdate}) {
       });
   }, [user?.empresa_id]);
 
-  const allNav   = isAdmin ? [...NAV_ITEMS, ...ADMIN_ITEMS] : NAV_ITEMS;
+  const allNav   = isC4HubAdmin ? [...NAV_ITEMS, ...ADMIN_ITEMS] : NAV_ITEMS;
   const navItems = allNav.filter(item => {
-    if (ADMIN_ONLY.has(item.id)) return isAdmin;
-    // Marketing apenas para empresa C4HUB
+    if (ADMIN_ONLY.has(item.id)) return isC4HubAdmin; // só c4hub_admin vê Clientes/Logs/Suporte/Usuários/Planos
     if (item.c4hubOnly && !isAdmin) return false;
     return hasPageAccess(user, item.id);
   });
   const groups   = [...new Set(navItems.map(n => n.g))];
-  const safe     = (!isAdmin && ADMIN_ONLY.has(sec)) ? "dashboard" : sec;
+  const safe     = (!isC4HubAdmin && ADMIN_ONLY.has(sec)) ? "dashboard" : sec;
   const curr     = navItems.find(n => n.id === safe);
 
   const showCollapsed = isMobile ? false : col;
@@ -297,11 +297,11 @@ export default function Shell({user,onLogout,onProfileUpdate}) {
           {safe==="departs"    && <PageDeps      user={user}/>}
           {safe==="setores"    && <PageSetores   user={user}/>}
           {safe==="etiquetas"  && <PageEtiquetas user={user}/>}
-          {safe==="clientes"  && isAdmin && <PageClientes user={user}/>}
-          {safe==="logs"      && isAdmin && <PageLogs     user={user}/>}
-          {safe==="suporte"   && isAdmin && <PageSuporte  user={user}/>}
-          {safe==="users"     && isAdmin && <PageUsers    user={user}/>}
-          {safe==="planos"    && isAdmin && <PagePlanos   user={user}/>}
+          {safe==="clientes"  && isC4HubAdmin && <PageClientes user={user}/>}
+          {safe==="logs"      && isC4HubAdmin && <PageLogs     user={user}/>}
+          {safe==="suporte"   && isC4HubAdmin && <PageSuporte  user={user}/>}
+          {safe==="users"     && isC4HubAdmin && <PageUsers    user={user}/>}
+          {safe==="planos"    && isC4HubAdmin && <PagePlanos   user={user}/>}
         </div>
       </div>
     </div>
