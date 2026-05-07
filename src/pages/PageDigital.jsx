@@ -83,19 +83,35 @@ function isTiOrCLevel(user) {
 
 export default function PageDigital({ user, isAdmin }) {
   const { isMobile } = useBreakpoint();
-  // Detecta se usuário tem acesso total (TI ou C-Level)
+  const isC4Admin = user?.role === "c4hub_admin";
   const podeVerTudo = isTiOrCLevel(user) || !!isAdmin;
-  // Categorias disponíveis: admins C4HUB veem tudo; clientes veem as suas + as de CRM
-  const CATEGORIAS = podeVerTudo
-    ? [...CATEGORIAS_INTERNAS, ...CATEGORIAS_CRM]
-    : isAdmin
-      ? [...CATEGORIAS_INTERNAS, ...CATEGORIAS_CRM]
-      : [...CATEGORIAS_INTERNAS, ...CATEGORIAS_CRM];
+  const CATEGORIAS = [...CATEGORIAS_INTERNAS, ...CATEGORIAS_CRM];
 
-  const { data:projetos,  loading:loadP, insert:insP, update:updP, remove:remP, refetch:refP } = useTable("digital_projetos",  { empresa_id:user?.empresa_id });
-  const { data:tarefas,   loading:loadT, insert:insT, update:updT, remove:remT, refetch:refT } = useTable("digital_tarefas",   { empresa_id:user?.empresa_id });
-  const { data:chamadosAll, loading:loadC, insert:insC, update:updC, remove:remC, refetch:refC } = useTable("digital_chamados",  { empresa_id:user?.empresa_id });
-  const { data:usuarios }                                                                          = useTable("usuarios",          { empresa_id:user?.empresa_id });
+  const { data:projetos,    loading:loadP, insert:insP, update:updP, remove:remP, refetch:refP } = useTable("digital_projetos",  { empresa_id:user?.empresa_id });
+  const { data:tarefas,     loading:loadT, insert:insT, update:updT, remove:remT, refetch:refT } = useTable("digital_tarefas",   { empresa_id:user?.empresa_id });
+  const { data:meusChamados, loading:loadC, insert:insC, update:updC, remove:remC, refetch:refC } = useTable("digital_chamados",  { empresa_id:user?.empresa_id });
+  const { data:usuarios }                                                                           = useTable("usuarios",          { empresa_id:user?.empresa_id });
+
+  // Fila C4HUB: chamados CRM de todos os clientes (apenas c4hub_admin vê)
+  const [filaC4Hub,  setFilaC4Hub]  = useState([]);
+  const [loadFila,   setLoadFila]   = useState(false);
+
+  const carregarFilaC4Hub = useCallback(async () => {
+    if (!isC4Admin) return;
+    setLoadFila(true);
+    const { data } = await supabase.from("digital_chamados").select("*").eq("c4hub_fila", true).order("created_at", { ascending: false });
+    setFilaC4Hub(data || []);
+    setLoadFila(false);
+  }, [isC4Admin]);
+
+  useEffect(() => { carregarFilaC4Hub(); }, [carregarFilaC4Hub]);
+
+  const refetchTudo = () => { refC(); carregarFilaC4Hub(); };
+
+  // Merge: fila C4HUB + chamados da própria empresa (sem duplicar)
+  const chamadosAll = isC4Admin
+    ? [...filaC4Hub, ...meusChamados.filter(c => !filaC4Hub.find(f => f.id === c.id))]
+    : meusChamados;
 
   // Usuários sem acesso TI/C-Level veem apenas seus próprios chamados
   const chamados = podeVerTudo
@@ -110,7 +126,7 @@ export default function PageDigital({ user, isAdmin }) {
   const [novoComent,   setNovoComent]   = useState("");
   const [tipoComent,   setTipoComent]   = useState("comentario");
   const [savingComent, setSavingComent] = useState(false);
-  const [filtroStatus, setFiltroStatus] = useState("Abertos");
+  const [filtroStatus, setFiltroStatus] = useState(user?.role === "c4hub_admin" ? "Fila C4HUB" : "Abertos");
 
   const [modal,  setModal]  = useState(false);
   const [edit,   setEdit]   = useState(null);
@@ -208,23 +224,38 @@ export default function PageDigital({ user, isAdmin }) {
   const saveChamado = async () => {
     if (!form.titulo.trim()) { setErr("Título é obrigatório."); return; }
     setSaving(true); setErr("");
-    const payload = { ...form, empresa_id:user?.empresa_id, solicitante_id:edit?undefined:user?.id, updated_at:new Date().toISOString() };
-    const {error, data:saved} = edit ? await updC(edit,payload) : await insC(payload);
+    const isCRM = CATEGORIAS_CRM.includes(form.categoria);
+    const payload = {
+      ...form,
+      empresa_id:    user?.empresa_id,
+      solicitante_id: edit ? undefined : user?.id,
+      responsavel_id: form.responsavel_id || null,   // evita "" em campo UUID
+      c4hub_fila:    isCRM,                           // roteamento automático
+      updated_at:    new Date().toISOString(),
+    };
+    const {error, data:saved} = edit ? await updC(edit, payload) : await insC(payload);
     if (error) { setErr(error.message); setSaving(false); return; }
     if (!edit && saved) {
-      // Log de abertura
       await supabase.from("digital_chamados_comentarios").insert({
-        chamado_id: saved.id, usuario_id:user?.id,
-        usuario_nome: user?.nome||"Usuário",
-        conteudo: `Chamado aberto por ${form.solicitante_nome||user?.nome||"Usuário"}.`,
+        chamado_id:   saved.id,
+        usuario_id:   user?.id,
+        usuario_nome: user?.nome || "Usuário",
+        conteudo:     isCRM
+          ? `Chamado aberto por ${form.solicitante_nome||user?.nome||"Usuário"}. Encaminhado automaticamente para a fila da equipe C4HUB.`
+          : `Chamado aberto por ${form.solicitante_nome||user?.nome||"Usuário"}.`,
         tipo: "atualizacao",
       });
     }
-    setModal(false); refC(); setSaving(false);
+    setModal(false); refetchTudo(); setSaving(false);
   };
 
   /* ── Chamados filtro ── */
+  const filtroTabs = isC4Admin
+    ? ["Fila C4HUB", "Abertos", "Atendimento", "Resolvidos", "Todos"]
+    : ["Abertos", "Atendimento", "Resolvidos", "Todos"];
+
   const chamadosFiltrados = chamados.filter(c => {
+    if (filtroStatus === "Fila C4HUB")   return c.c4hub_fila === true;
     if (filtroStatus === "Abertos")      return c.status === "aberto";
     if (filtroStatus === "Atendimento")  return c.status === "em_atendimento" || c.status === "aguardando_resposta";
     if (filtroStatus === "Resolvidos")   return c.status === "resolvido";
@@ -326,7 +357,7 @@ export default function PageDigital({ user, isAdmin }) {
           <div style={{flex:"0 0 420px",minWidth:0,display:isMobile&&chamadoAtivo?"none":"flex",flexDirection:"column",gap:0,background:L.white,borderRadius:12,border:`1px solid ${L.line}`,overflow:"hidden",boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}>
             {/* Filtros */}
             <div style={{padding:"10px 12px",borderBottom:`1px solid ${L.lineSoft}`,flexShrink:0}}>
-              <TabPills tabs={["Abertos","Atendimento","Resolvidos","Todos"]} active={filtroStatus} onChange={setFiltroStatus}/>
+              <TabPills tabs={filtroTabs} active={filtroStatus} onChange={setFiltroStatus}/>
             </div>
 
             {loadC ? (
@@ -726,6 +757,12 @@ export default function PageDigital({ user, isAdmin }) {
               <Input value={form.cliente_nome||""} onChange={F("cliente_nome")} placeholder="Nome da empresa cliente (deixar vazio se for interno)"/>
             </Field>
           </div>
+          {CATEGORIAS_CRM.includes(form.categoria) && (
+            <div style={{padding:"10px 14px",background:L.tealBg,borderRadius:8,fontSize:11,color:L.teal,marginTop:4,border:`1px solid ${L.teal}33`,display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:16}}>🔀</span>
+              <span><strong>Chamado CRM:</strong> será encaminhado automaticamente para a fila da equipe <strong>C4HUB</strong>, que irá tratar e responder.</span>
+            </div>
+          )}
           {form.prioridade&&(
             <div style={{padding:"8px 12px",background:PRIO_BG[form.prioridade],borderRadius:8,fontSize:11,color:PRIO_C[form.prioridade],marginTop:4}}>
               SLA para prioridade {form.prioridade}: resposta em até <strong>{SLA_HORAS[form.prioridade]} hora{SLA_HORAS[form.prioridade]!==1?"s":""}</strong>
