@@ -11,15 +11,136 @@ const GROQ_URL   = "https://api.groq.com/openai/v1/chat/completions";
 
 const SYSTEM_PROMPT = `Você é o C4 AI, assistente inteligente do C4 OS — um CRM focado em vendas e gestão comercial.
 
+Você tem acesso em tempo real aos dados do sistema do usuário logado (leads, pipeline, metas, equipe, vendas). Use esses dados para responder com precisão, sem pedir informações que já estão disponíveis no contexto fornecido.
+
 Você ajuda times de vendas a:
 - Analisar funis de conversão e identificar gargalos
 - Priorizar leads com maior potencial de fechamento
 - Sugerir estratégias para melhorar taxas de conversão
-- Gerar insights e relatórios a partir de dados de vendas
+- Gerar insights e relatórios a partir dos dados reais
 - Identificar leads em risco de churn
 - Projetar receita, pipeline e metas comerciais
 
-Responda sempre em português brasileiro. Seja objetivo, prático e orientado a resultados. Use formatação markdown quando útil (listas, negrito, seções com ##).`;
+Responda sempre em português brasileiro. Seja objetivo, prático e orientado a resultados. Use formatação markdown quando útil (listas, negrito, seções com ##). Quando apresentar valores monetários, use o formato brasileiro (R$ 1.500,00).`;
+
+/* ─── Busca contexto real do CRM ─── */
+const fmtBRL = v => `R$ ${parseFloat(v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+
+async function buscarContextoCRM(empresaId) {
+  if (!empresaId) return "";
+  try {
+    const now   = new Date();
+    const mesInt = now.getMonth() + 1;
+    const ano    = now.getFullYear();
+    const mesStr = `${ano}-${String(mesInt).padStart(2,"0")}`;
+    const mesNome = now.toLocaleString("pt-BR",{month:"long",year:"numeric"});
+
+    const [rLeads, rDeals, rMeta, rVendas, rEquipe, rMetasVend] = await Promise.all([
+      supabase.from("leads").select("nome,status,valor_estimado,score,origem,ultima_atividade,created_at").eq("empresa_id", empresaId).order("created_at",{ascending:false}),
+      supabase.from("deals").select("titulo,etapa,valor,probabilidade,previsao_fechamento").eq("empresa_id", empresaId),
+      supabase.from("metas").select("valor_total").eq("empresa_id", empresaId).eq("mes", mesInt).eq("ano", ano).maybeSingle(),
+      supabase.from("vendas_realizadas").select("valor,usuario_id,descricao,created_at").eq("empresa_id", empresaId).eq("mes", mesStr),
+      supabase.from("usuarios").select("id,nome,cargo,ativo,role").eq("empresa_id", empresaId),
+      supabase.from("metas_vendedores").select("usuario_id,meta_individual").eq("empresa_id", empresaId).eq("mes", mesStr),
+    ]);
+
+    const leads      = rLeads.data   || [];
+    const deals      = rDeals.data   || [];
+    const equipe     = rEquipe.data  || [];
+    const vendas     = rVendas.data  || [];
+    const metasVend  = rMetasVend.data || [];
+    const metaTotal  = parseFloat(rMeta.data?.valor_total || 0);
+    const vendasTot  = vendas.reduce((s,v)=>s+parseFloat(v.valor||0),0);
+    const pctMeta    = metaTotal>0 ? Math.round((vendasTot/metaTotal)*100) : 0;
+
+    // Leads por status
+    const leadsByStatus = leads.reduce((a,l)=>{
+      const k = l.status || "sem status"; a[k]=(a[k]||0)+1; return a;
+    },{});
+    const valorLeads = leads.reduce((s,l)=>s+parseFloat(l.valor_estimado||0),0);
+
+    // Deals por etapa
+    const dealsByEtapa = deals.reduce((a,d)=>{
+      const k = d.etapa||"sem etapa";
+      if(!a[k]) a[k]={count:0,valor:0,probMedia:0};
+      a[k].count++; a[k].valor+=parseFloat(d.valor||0); a[k].probMedia+=parseInt(d.probabilidade||0);
+      return a;
+    },{});
+    Object.values(dealsByEtapa).forEach(e=>{ e.probMedia=Math.round(e.probMedia/e.count); });
+    const pipelineTotal = deals.reduce((s,d)=>s+parseFloat(d.valor||0),0);
+
+    // Metas individuais por vendedor
+    const metasMap = {};
+    metasVend.forEach(mv=>{
+      const u = equipe.find(u=>u.id===mv.usuario_id);
+      const realizado = vendas.filter(v=>v.usuario_id===mv.usuario_id).reduce((s,v)=>s+parseFloat(v.valor||0),0);
+      metasMap[mv.usuario_id]={ nome:u?.nome||"?", meta:parseFloat(mv.meta_individual||0), realizado };
+    });
+
+    // Montar contexto
+    let ctx = `---\n## DADOS DO SISTEMA — ${now.toLocaleDateString("pt-BR")} (${mesNome})\n\n`;
+
+    ctx += `### 📋 Leads (Total: ${leads.length})\n`;
+    ctx += `- Valor total estimado em carteira: ${fmtBRL(valorLeads)}\n`;
+    if (Object.keys(leadsByStatus).length) {
+      ctx += `- Por status: ${Object.entries(leadsByStatus).map(([k,v])=>`**${k}** (${v})`).join(", ")}\n`;
+    }
+    // Últimos 8 leads
+    if (leads.length > 0) {
+      ctx += `- Leads recentes:\n`;
+      leads.slice(0,8).forEach(l=>{
+        const ult = l.ultima_atividade ? new Date(l.ultima_atividade).toLocaleDateString("pt-BR") : "—";
+        ctx += `  - ${l.nome||"Lead sem nome"} | status: ${l.status||"—"} | valor: ${fmtBRL(l.valor_estimado)} | score: ${l.score||0} | última atividade: ${ult}\n`;
+      });
+    }
+
+    ctx += `\n### 💰 Pipeline / Deals (Total: ${deals.length} | ${fmtBRL(pipelineTotal)})\n`;
+    if (Object.keys(dealsByEtapa).length) {
+      Object.entries(dealsByEtapa).forEach(([etapa,d])=>{
+        ctx += `- **${etapa}**: ${d.count} deal(s), ${fmtBRL(d.valor)}, prob. média ${d.probMedia}%\n`;
+      });
+    } else {
+      ctx += `- Nenhum deal cadastrado\n`;
+    }
+    // Deals com previsão próxima
+    const proxFech = deals.filter(d=>d.previsao_fechamento).sort((a,b)=>new Date(a.previsao_fechamento)-new Date(b.previsao_fechamento)).slice(0,5);
+    if (proxFech.length) {
+      ctx += `- Próximos fechamentos previstos:\n`;
+      proxFech.forEach(d=>{ ctx += `  - "${d.titulo||"Deal"}" | ${fmtBRL(d.valor)} | ${d.etapa||"—"} | previsão: ${new Date(d.previsao_fechamento).toLocaleDateString("pt-BR")}\n`; });
+    }
+
+    ctx += `\n### 🎯 Metas — ${mesNome}\n`;
+    ctx += `- Meta total empresa: ${fmtBRL(metaTotal)}\n`;
+    ctx += `- Vendas realizadas: ${fmtBRL(vendasTot)} (${pctMeta}% da meta)\n`;
+    ctx += `- Falta para bater a meta: ${fmtBRL(Math.max(0, metaTotal-vendasTot))}\n`;
+    if (Object.keys(metasMap).length) {
+      ctx += `- Por vendedor:\n`;
+      Object.values(metasMap).forEach(m=>{
+        const p = m.meta>0?Math.round((m.realizado/m.meta)*100):0;
+        ctx += `  - ${m.nome}: meta ${fmtBRL(m.meta)} | realizado ${fmtBRL(m.realizado)} | ${p}%\n`;
+      });
+    }
+    if (vendas.length > 0) {
+      ctx += `- Últimas vendas registradas:\n`;
+      vendas.slice(0,5).forEach(v=>{
+        const vend = equipe.find(u=>u.id===v.usuario_id);
+        ctx += `  - ${fmtBRL(v.valor)} por ${vend?.nome||"—"} | ${v.descricao||"sem descrição"}\n`;
+      });
+    }
+
+    ctx += `\n### 👥 Equipe (${equipe.filter(u=>u.ativo!==false).length} ativos)\n`;
+    equipe.filter(u=>u.ativo!==false).forEach(u=>{
+      ctx += `- ${u.nome} (${u.cargo||"sem cargo"}) — ${u.role||"user"}\n`;
+    });
+
+    ctx += `---\n`;
+    return ctx;
+
+  } catch(e) {
+    console.warn("Erro ao buscar contexto CRM:", e);
+    return "";
+  }
+}
 
 /* ─── Markdown renderer ─── */
 function MdLine({ text }) {
@@ -107,6 +228,7 @@ export default function PageAI({ user }) {
   const [loading, setLoading] = useState(false);
   const [err, setErr]       = useState("");
   const [model, setModel]   = useState("");
+  const [ctxLoaded, setCtxLoaded] = useState(false);
 
   // Mobile: mostrar sidebar ou chat
   const [showSidebar, setShowSidebar] = useState(!isMobile);
@@ -155,7 +277,7 @@ export default function PageAI({ user }) {
   const novaConversa = () => {
     setActiveConversa(null);
     setChat([{ role: "assistant", content: welcome }]);
-    setErr(""); setModel(""); setInput("");
+    setErr(""); setModel(""); setInput(""); setCtxLoaded(false);
     if (isMobile) setShowSidebar(false);
   };
 
@@ -203,9 +325,14 @@ export default function PageAI({ user }) {
         await supabase.from("ai_mensagens").insert({ conversa_id: convId, role: "user", content: q });
       }
 
+      // Buscar dados reais do CRM e montar contexto
+      const contexto = await buscarContextoCRM(user?.empresa_id);
+      if (contexto) setCtxLoaded(true);
+      const systemContent = SYSTEM_PROMPT + (contexto ? `\n\n${contexto}` : "");
+
       // Chamar Groq
       const messages = [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: systemContent },
         ...history
           .filter(m => m.role === "user" || m.role === "assistant")
           .map(m => ({ role: m.role, content: m.content })),
@@ -335,7 +462,12 @@ export default function PageAI({ user }) {
             </div>
           )}
         </div>
-        <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 5, flexWrap: "wrap", alignItems: "center" }}>
+          {ctxLoaded && (
+            <div style={{ fontSize: 10, color: L.green, background: L.greenBg, border: `1px solid ${L.green}33`, borderRadius: 6, padding: "3px 8px", fontFamily: "'JetBrains Mono',monospace", whiteSpace: "nowrap" }}>
+              ● dados do sistema
+            </div>
+          )}
           {["Análise","Relatório","Sugestão"].map(t => (
             <Tag key={t} color={L.teal} bg={L.tealBg} small>{t}</Tag>
           ))}
