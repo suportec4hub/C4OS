@@ -650,12 +650,31 @@ Deno.serve(async (req) => {
       };
 
       const sendMedia = async (num: string, mediatype: string, mediaUrl: string, caption: string): Promise<boolean> => {
-        // Tentativa 1: endpoint sendMedia do Evolution v2
-        const res = await iFetch(`/message/sendMedia/${instName}`, {
+        // Tentativa 1: POST /message/sendMedia/{instanceName} — Evolution API v2
+        const r1 = await iFetch(`/message/sendMedia/${instName}`, {
           method: "POST",
-          body: JSON.stringify({ number: num, mediatype, media: mediaUrl, caption }),
+          body: JSON.stringify({ number: num, mediatype, media: mediaUrl, caption, fileName: caption }),
         }).catch(() => null);
-        if (res?.ok) return true;
+        if (r1?.ok) return true;
+
+        // Tentativa 2: endpoint específico por tipo (sendImage / sendVideo / sendAudio / sendDocument)
+        const typeEndpointMap: Record<string, string> = { image: "sendImage", video: "sendVideo", audio: "sendAudio", document: "sendDocument" };
+        const specificEndpoint = typeEndpointMap[mediatype];
+        if (specificEndpoint) {
+          const r2 = await iFetch(`/message/${specificEndpoint}/${instName}`, {
+            method: "POST",
+            body: JSON.stringify({ number: num, mediatype, media: mediaUrl, caption }),
+          }).catch(() => null);
+          if (r2?.ok) return true;
+        }
+
+        // Tentativa 3: formato Evolution GO /send/media
+        const r3 = await iFetch("/send/media", {
+          method: "POST",
+          body: JSON.stringify({ instanceName: instName, id: instName, number: num, mediatype, media: mediaUrl, caption }),
+        }).catch(() => null);
+        if (r3?.ok) return true;
+
         // Fallback: envia URL como texto com legenda
         const textoFallback = caption ? `${caption}\n${mediaUrl}` : mediaUrl;
         return sendMsg(num, textoFallback);
@@ -913,6 +932,97 @@ Deno.serve(async (req) => {
       results.historico = { imported };
 
       return json({ success: true, ...results });
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // SEND MEDIA — envia imagem/vídeo/áudio/documento pelo chat
+    // ────────────────────────────────────────────────────────────────────────
+    if (action === "sendMedia") {
+      const { phone, url: mediaUrl, tipo, caption } = body;
+      if (!phone || !mediaUrl) return json({ error: "phone e url obrigatórios" }, 400);
+
+      const rawPhone   = String(phone).trim();
+      const cleanPhone = rawPhone.includes("@") ? rawPhone : rawPhone.replace(/\D/g, "");
+
+      const mediaTypeMap: Record<string, string> = {
+        imagem: "image", video: "video", audio: "audio", documento: "document",
+      };
+      const mediatype = mediaTypeMap[tipo as string] || "image";
+      const cap = (caption as string) || "";
+
+      // Tentativa 1: /message/sendMedia/{instanceName}
+      try {
+        const r1 = await iFetch(`/message/sendMedia/${instName}`, {
+          method: "POST",
+          body: JSON.stringify({ number: cleanPhone, mediatype, media: mediaUrl, caption: cap, fileName: cap }),
+        });
+        const d1 = await r1.json().catch(() => ({}));
+        console.log("[sendMedia] v2 status:", r1.status, JSON.stringify(d1).slice(0, 200));
+        if (r1.ok) return json(d1);
+      } catch (e) { console.log("[sendMedia] v2 err:", (e as Error).message); }
+
+      // Tentativa 2: endpoint específico por tipo
+      const typeEndpointMap: Record<string, string> = { image: "sendImage", video: "sendVideo", audio: "sendAudio", document: "sendDocument" };
+      const specificEp = typeEndpointMap[mediatype];
+      if (specificEp) {
+        try {
+          const r2 = await iFetch(`/message/${specificEp}/${instName}`, {
+            method: "POST",
+            body: JSON.stringify({ number: cleanPhone, mediatype, media: mediaUrl, caption: cap }),
+          });
+          const d2 = await r2.json().catch(() => ({}));
+          console.log("[sendMedia] specific status:", r2.status);
+          if (r2.ok) return json(d2);
+        } catch (e) { console.log("[sendMedia] specific err:", (e as Error).message); }
+      }
+
+      // Tentativa 3: formato Evolution GO
+      try {
+        const r3 = await iFetch("/send/media", {
+          method: "POST",
+          body: JSON.stringify({ instanceName: instName, id: instName, number: cleanPhone, mediatype, media: mediaUrl, caption: cap }),
+        });
+        const d3 = await r3.json().catch(() => ({}));
+        console.log("[sendMedia] go status:", r3.status);
+        if (r3.ok) return json(d3);
+      } catch (e) { console.log("[sendMedia] go err:", (e as Error).message); }
+
+      return json({ error: "Falha ao enviar mídia — verifique conexão WhatsApp" }, 400);
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // FETCH PROFILE PHOTO — busca foto de perfil de contato/grupo
+    // ────────────────────────────────────────────────────────────────────────
+    if (action === "fetchProfilePhoto") {
+      const { phone } = body;
+      if (!phone) return json({ error: "phone obrigatório" }, 400);
+
+      const rawPhone = String(phone).trim();
+
+      // Tentativa 1: GET /chat/fetchProfilePicture/{instanceName}?number={phone}
+      try {
+        const r1 = await iFetch(`/chat/fetchProfilePicture/${instName}?number=${rawPhone}`);
+        if (r1.ok) {
+          const d1 = await r1.json();
+          const photoUrl = d1?.profilePictureUrl || d1?.url || d1?.data?.url || d1?.picture || null;
+          if (photoUrl) return json({ success: true, photoUrl });
+        }
+      } catch (_) {}
+
+      // Tentativa 2: POST format
+      try {
+        const r2 = await iFetch(`/chat/fetchProfilePicture/${instName}`, {
+          method: "POST",
+          body: JSON.stringify({ number: rawPhone }),
+        });
+        if (r2.ok) {
+          const d2 = await r2.json();
+          const photoUrl = d2?.profilePictureUrl || d2?.url || d2?.data?.url || null;
+          if (photoUrl) return json({ success: true, photoUrl });
+        }
+      } catch (_) {}
+
+      return json({ success: true, photoUrl: null });
     }
 
     return json({ error: `Ação desconhecida: ${action}` }, 400);

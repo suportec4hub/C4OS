@@ -424,6 +424,9 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
   // ── media upload ──────────────────────────────────────────────────────────
   const [uploadingMedia, setUploadingMedia] = useState(false);
 
+  // ── profile photos cache (phone → url) ───────────────────────────────────
+  const [profilePhotos, setProfilePhotos] = useState({});
+
   // ── notifications ─────────────────────────────────────────────────────────
   const [toast, setToast]         = useState(null); // { msg, tipo }
   const [notifPerm, setNotifPerm] = useState(false);
@@ -643,6 +646,17 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
     setQuickFilter("");
     setSendErr("");
     setInput("");
+    // Busca foto de perfil lazily (se ainda não cacheada)
+    const phone = c?.contato_telefone;
+    if (phone && !profilePhotos[phone] && user?.empresa_id) {
+      supabase.functions.invoke("evolution-action", {
+        body: { action: "fetchProfilePhoto", empresa_id: user.empresa_id, phone },
+      }).then(({ data }) => {
+        if (data?.photoUrl) {
+          setProfilePhotos(prev => ({ ...prev, [phone]: data.photoUrl }));
+        }
+      }).catch(() => {});
+    }
   };
 
   // ── auto-abrir conversa quando vindo de Leads / Pipeline ─────────────────
@@ -892,7 +906,12 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
     if (activeConv.contato_telefone?.trim()) {
       supabase.functions.invoke("evolution-action", {
         body: { action: "sendMedia", empresa_id: user.empresa_id, phone: activeConv.contato_telefone, url: publicUrl, tipo, caption: file.name },
-      }).catch(console.warn);
+      }).then(({ data: fnData, error: fnErr }) => {
+        if (fnErr || fnData?.error) {
+          const msg = fnErr?.message || fnData?.error || "verifique conexão.";
+          setSendErr("⚠️ Arquivo salvo mas não enviado ao WhatsApp: " + msg);
+        }
+      }).catch((e) => setSendErr("⚠️ Arquivo salvo mas não enviado ao WhatsApp: " + (e?.message || "erro de rede.")));
     }
 
     setUploadingMedia(false);
@@ -1268,7 +1287,7 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
                     onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = "transparent"; }}>
                     <Row gap={9}>
                       <div style={{ position: "relative", flexShrink: 0 }}>
-                        <Av name={nomeExibido} color={isGrp ? L.blue : L.t1} size={36} />
+                        <Av name={nomeExibido} color={isGrp ? L.blue : L.t1} size={36} src={profilePhotos[c.contato_telefone]} />
                         {isGrp && (
                           <div style={{ position: "absolute", bottom: -1, right: -1, width: 14, height: 14,
                             borderRadius: "50%", background: L.blue, border: `2px solid ${L.white}`,
@@ -1390,7 +1409,7 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
                   <button onClick={() => setActiveConv(null)} style={btnStyle()}>←</button>
                 )}
                 <div style={{ position: "relative" }}>
-                  <Av name={activeConv.contato_nome || "?"} color={L.t1} size={34} />
+                  <Av name={activeConv.contato_nome || "?"} color={L.t1} size={34} src={profilePhotos[activeConv.contato_telefone]} />
                   {evoConnected && (
                     <div style={{ position: "absolute", bottom: 0, right: 0, width: 8, height: 8,
                       borderRadius: "50%", background: L.green, border: `2px solid white` }} />
@@ -1517,6 +1536,7 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
                     <div style={{ display: "flex", justifyContent: out ? "flex-end" : "flex-start", marginBottom: 3 }}>
                       {!out && (
                         <Av name={activeConv.contato_nome || "?"} color={L.t3} size={22}
+                          src={profilePhotos[activeConv.contato_telefone]}
                           style={{ marginRight: 6, marginTop: 2, flexShrink: 0 }} />
                       )}
                       <div style={{
@@ -1705,6 +1725,7 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
               {rightTab === "info" && activeConv && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                   <Av name={activeConv.contato_nome || "?"} color={L.t1} size={48}
+                    src={profilePhotos[activeConv.contato_telefone]}
                     style={{ alignSelf: "center" }} />
                   <div style={{ textAlign: "center" }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: L.t1 }}>
