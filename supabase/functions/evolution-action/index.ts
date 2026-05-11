@@ -1010,35 +1010,61 @@ Deno.serve(async (req) => {
         (d?.profilePictureUrl || d?.url || d?.data?.url || d?.picture ||
          d?.profilePicture || d?.imgUrl || null) as string | null;
 
+      let cdnUrl: string | null = null;
+
       // Tentativa 1: GET /chat/fetchProfilePicture/{instanceName}?number={phone}
       try {
         const r1 = await iFetch(`/chat/fetchProfilePicture/${instName}?number=${rawPhone}`);
-        if (r1.ok) { const d = await r1.json(); const u = extractUrl(d); if (u) return json({ success: true, photoUrl: u }); }
+        if (r1.ok) { const d = await r1.json(); cdnUrl = extractUrl(d); }
       } catch (_) {}
 
       // Tentativa 2: POST /chat/fetchProfilePicture/{instanceName}
-      try {
+      if (!cdnUrl) try {
         const r2 = await iFetch(`/chat/fetchProfilePicture/${instName}`, {
           method: "POST", body: JSON.stringify({ number: rawPhone }),
         });
-        if (r2.ok) { const d = await r2.json(); const u = extractUrl(d); if (u) return json({ success: true, photoUrl: u }); }
+        if (r2.ok) { const d = await r2.json(); cdnUrl = extractUrl(d); }
       } catch (_) {}
 
       // Tentativa 3: GET /contact/getProfilePicture/{instanceName}?number={phone}
-      try {
+      if (!cdnUrl) try {
         const r3 = await iFetch(`/contact/getProfilePicture/${instName}?number=${rawPhone}`);
-        if (r3.ok) { const d = await r3.json(); const u = extractUrl(d); if (u) return json({ success: true, photoUrl: u }); }
+        if (r3.ok) { const d = await r3.json(); cdnUrl = extractUrl(d); }
       } catch (_) {}
 
       // Tentativa 4: POST /contact/getProfilePicture
-      try {
+      if (!cdnUrl) try {
         const r4 = await iFetch(`/contact/getProfilePicture/${instName}`, {
           method: "POST", body: JSON.stringify({ number: rawPhone }),
         });
-        if (r4.ok) { const d = await r4.json(); const u = extractUrl(d); if (u) return json({ success: true, photoUrl: u }); }
+        if (r4.ok) { const d = await r4.json(); cdnUrl = extractUrl(d); }
       } catch (_) {}
 
-      return json({ success: true, photoUrl: null });
+      if (!cdnUrl) return json({ success: true, photoUrl: null });
+
+      // Download and re-host in fotos-perfil bucket so URL doesn't expire
+      try {
+        const imgRes = await fetch(cdnUrl);
+        if (!imgRes.ok) return json({ success: true, photoUrl: null });
+        const imgBytes = await imgRes.arrayBuffer();
+        const contentType = imgRes.headers.get("content-type") || "image/jpeg";
+        const ext = contentType.includes("png") ? "png" : "jpg";
+        const storagePath = `${empresa_id}/${rawPhone}.${ext}`;
+        const { error: upErr } = await supabase.storage
+          .from("fotos-perfil")
+          .upload(storagePath, imgBytes, { contentType, upsert: true });
+        if (!upErr) {
+          const { data: pub } = supabase.storage.from("fotos-perfil").getPublicUrl(storagePath);
+          const publicUrl = pub.publicUrl;
+          await supabase.from("conversas")
+            .update({ foto_perfil: publicUrl })
+            .eq("empresa_id", empresa_id)
+            .eq("contato_telefone", rawPhone);
+          return json({ success: true, photoUrl: publicUrl });
+        }
+      } catch (e) { console.log("[fetchProfilePhoto] upload err:", (e as Error).message); }
+
+      return json({ success: true, photoUrl: cdnUrl });
     }
 
     return json({ error: `Ação desconhecida: ${action}` }, 400);
