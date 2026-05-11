@@ -133,7 +133,8 @@ function safeTimestamp(rawTs: unknown, fallback: string): string {
 // ─────────────────────────────────────────────────────────────────────────────
 interface FluxoNo {
   id: string;
-  tipo: "inicio" | "mensagem" | "opcoes" | "condicao" | "transferir" | "encerrar" | "aguardar";
+  tipo: "inicio" | "mensagem" | "opcoes" | "condicao" | "transferir" | "encerrar" | "aguardar"
+      | "imagem" | "video" | "audio" | "documento" | "respostas" | "lista" | "controle_fluxo";
   nome?: string;
   mensagem?: string;
   opcoes?: string[];
@@ -143,6 +144,11 @@ interface FluxoNo {
   gatilhos?: string;
   numero_opcao?: string;
   variavel?: string;
+  media_url?: string;
+  botao_1?: string; botao_2?: string; botao_3?: string;
+  lista_titulo_botao?: string; lista_itens?: string;
+  controle_tipo?: "reiniciar" | "encerrar";
+  intervalo_reativacao?: number;
   x?: number; y?: number;
 }
 
@@ -173,7 +179,7 @@ async function executarFluxo(
   empresa_id: string,
   isNew: boolean,
   supabase: ReturnType<typeof createClient>,
-  sendBot: (msg: string) => Promise<void>,
+  sendBot: (msg: string, tipo?: string, extra?: Record<string, unknown>) => Promise<void>,
 ): Promise<boolean> {
   // Carrega fluxo ativo
   const fluxoId = cfg.fluxo_ativo_id as string | null;
@@ -239,6 +245,17 @@ async function executarFluxo(
 
   if (!deveDisparar) return false;
 
+  // ── Intervalo de reativação ───────────────────────────────────────────────
+  if (noInicioRaw.intervalo_reativacao && noInicioRaw.intervalo_reativacao > 0) {
+    const ultimaHora = conv.ultima_hora as string | null;
+    if (ultimaHora && !estado) {
+      const diffMinutes = (Date.now() - new Date(ultimaHora).getTime()) / 60000;
+      if (diffMinutes < noInicioRaw.intervalo_reativacao) {
+        return false; // Too soon to reactivate
+      }
+    }
+  }
+
   // ── Inicia fluxo do zero ──────────────────────────────────────────────────
   const novoEstado: FluxoEstado = {
     fluxo_id: fluxoId,
@@ -270,7 +287,7 @@ async function executarNosSequencialmente(
   senderName: string,
   isNew: boolean,
   supabase: ReturnType<typeof createClient>,
-  sendBot: (msg: string) => Promise<void>,
+  sendBot: (msg: string, tipo?: string, extra?: Record<string, unknown>) => Promise<void>,
   profundidade = 0,
 ): Promise<void> {
   if (profundidade > 20) return; // proteção anti-loop
@@ -516,6 +533,12 @@ async function processMessages(
         const { data: cfg } = await supabase.from("chatbot_config").select("*").eq("empresa_id", empresa_id).maybeSingle();
         if (!cfg?.ativo) continue;
 
+        // Regra: não responder grupos (se desativado)
+        if (isGroup && !cfg.responder_grupos) continue;
+
+        // Regra: não responder se conversa estiver aberta
+        if (cfg.nao_responder_aberta && conv.status === "aberta") continue;
+
         const { data: empData } = await supabase.from("empresas")
           .select("evolution_instance_id, evolution_instance_token, evolution_api_url")
           .eq("id", empresa_id).single();
@@ -523,16 +546,33 @@ async function processMessages(
         const instToken = empData?.evolution_instance_token;
         const evoUrl    = ((empData?.evolution_api_url || GLOBAL_URL) as string).replace(/\/$/, "");
 
-        const sendBot = async (msgText: string) => {
+        const sendBot = async (msgText: string, tipo = "texto", extra?: Record<string, unknown>) => {
           if (!instId || !instToken || !evoUrl) return;
-          await fetch(`${evoUrl}/send/text`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "apikey": instToken },
-            body: JSON.stringify({ instanceName: instId, id: instId, number: senderPhone, text: msgText }),
-          });
+
+          if (["imagem","video","audio","documento"].includes(tipo)) {
+            const mediaType = tipo === "imagem" ? "image" : tipo === "video" ? "video" : tipo === "audio" ? "audio" : "document";
+            await fetch(`${evoUrl}/send/media`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "apikey": instToken },
+              body: JSON.stringify({
+                instanceName: instId, id: instId, number: senderPhone,
+                mediatype: mediaType, media: extra?.url as string || "",
+                caption: msgText || "",
+                ...(extra?.fileName ? { fileName: extra.fileName } : {}),
+              }),
+            });
+          } else {
+            await fetch(`${evoUrl}/send/text`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "apikey": instToken },
+              body: JSON.stringify({ instanceName: instId, id: instId, number: senderPhone, text: msgText }),
+            });
+          }
+
           if (conv?.id) {
             await supabase.from("mensagens").insert({
               conversa_id: conv.id, empresa_id, de: "me", texto: msgText,
+              tipo: tipo, media_url: (extra?.url as string) || null, nome_arquivo: (extra?.fileName as string) || null,
               hora: new Date().toISOString(), status: "enviado", remetente: "bot",
             });
             await supabase.from("conversas").update({
