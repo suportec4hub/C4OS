@@ -50,6 +50,12 @@ function TabConfig({ user }) {
           horario_fim: "18:00",
           dias_semana: [1,2,3,4,5],
           transferir_palavra: "atendente",
+          responder_grupos: false,
+          nao_responder_aberta: false,
+          desativar_assinatura: false,
+          simular_digitando: false,
+          nao_responder_se_crm: false,
+          responder_apenas_crm: false,
         });
       });
     supabase.from("chatbot_fluxos").select("id, nome, ativo").eq("empresa_id", user.empresa_id)
@@ -145,6 +151,35 @@ function TabConfig({ user }) {
               Fluxo selecionado será executado para cada nova mensagem recebida
             </div>
           )}
+        </Card>
+
+        {/* Regras de Atendimento */}
+        <Card title="Regras de Atendimento">
+          {/* Regras gerais */}
+          <div style={{fontSize:10,fontWeight:700,color:L.t3,textTransform:"uppercase",letterSpacing:"1.2px",marginBottom:10,fontFamily:"'JetBrains Mono',monospace"}}>Regras gerais</div>
+          {[
+            { key: "responder_grupos",    label: "Permitir responder a grupos" },
+            { key: "nao_responder_aberta",label: "Não responder se conversa estiver aberta" },
+            { key: "desativar_assinatura",label: "Personalizar ou desativar a assinatura" },
+            { key: "simular_digitando",   label: "Simular que está digitando antes de responder" },
+          ].map(({ key, label }) => (
+            <div key={key} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 0",borderBottom:`1px solid ${L.lineSoft}`}}>
+              <span style={{fontSize:12.5,color:L.t2}}>{label}</span>
+              <Toggle on={cfg[key]} onChange={v=>setCfg(p=>({...p,[key]:v}))}/>
+            </div>
+          ))}
+
+          {/* Regras de CRM */}
+          <div style={{fontSize:10,fontWeight:700,color:L.t3,textTransform:"uppercase",letterSpacing:"1.2px",margin:"14px 0 10px",fontFamily:"'JetBrains Mono',monospace"}}>Regras de CRM</div>
+          {[
+            { key: "nao_responder_se_crm", label: "Não responder se contato estiver em um CRM" },
+            { key: "responder_apenas_crm", label: "Responder apenas contatos no CRM" },
+          ].map(({ key, label }) => (
+            <div key={key} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 0",borderBottom:`1px solid ${L.lineSoft}`}}>
+              <span style={{fontSize:12.5,color:L.t2}}>{label}</span>
+              <Toggle on={cfg[key]} onChange={v=>setCfg(p=>({...p,[key]:v}))}/>
+            </div>
+          ))}
         </Card>
 
         {/* Palavra de transferência */}

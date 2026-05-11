@@ -37,13 +37,20 @@ export const GATILHO_TIPOS = [
 
 // ─── Tipos de nó ─────────────────────────────────────────────────────────────
 const NODE_TYPES = {
-  inicio:    { label: "Início",         cor: "#16a34a", icone: "▶",  desc: "Ponto de entrada do fluxo"    },
-  mensagem:  { label: "Mensagem",       cor: "#2563eb", icone: "💬", desc: "Envia uma mensagem de texto"  },
-  opcoes:    { label: "Menu de opções", cor: "#ca8a04", icone: "📋", desc: "Apresenta opções numeradas"   },
-  condicao:  { label: "Condição",       cor: "#7c3aed", icone: "⟐",  desc: "Bifurca o fluxo por regra"   },
-  transferir:{ label: "Transferir",     cor: "#b8845a", icone: "⇄",  desc: "Transfere para atendente"     },
-  encerrar:  { label: "Encerrar",       cor: "#dc2626", icone: "⊗",  desc: "Encerra o fluxo"              },
-  aguardar:  { label: "Aguardar input", cor: "#0891b2", icone: "⏳", desc: "Aguarda resposta do usuário"  },
+  inicio:         { label: "Início",           cor: "#16a34a", icone: "▶",  desc: "Ponto de entrada do fluxo"                    },
+  mensagem:       { label: "Mensagem",         cor: "#2563eb", icone: "💬", desc: "Envia uma mensagem de texto"                  },
+  opcoes:         { label: "Menu de opções",   cor: "#ca8a04", icone: "📋", desc: "Apresenta opções numeradas"                   },
+  condicao:       { label: "Condição",         cor: "#7c3aed", icone: "⟐",  desc: "Bifurca o fluxo por regra"                   },
+  transferir:     { label: "Transferir",       cor: "#b8845a", icone: "⇄",  desc: "Transfere para atendente"                     },
+  encerrar:       { label: "Encerrar",         cor: "#dc2626", icone: "⊗",  desc: "Encerra o fluxo"                              },
+  aguardar:       { label: "Aguardar input",   cor: "#0891b2", icone: "⏳", desc: "Aguarda resposta do usuário"                  },
+  imagem:         { label: "Enviar Imagem",    cor: "#0284c7", icone: "🖼",  desc: "Envia imagem com legenda opcional"            },
+  video:          { label: "Enviar Vídeo",     cor: "#7c3aed", icone: "🎬", desc: "Envia vídeo com legenda opcional"             },
+  audio:          { label: "Enviar Áudio",     cor: "#16a34a", icone: "🎵", desc: "Envia arquivo de áudio"                       },
+  documento:      { label: "Enviar Documento", cor: "#ca8a04", icone: "📄", desc: "Envia documento/arquivo"                      },
+  respostas:      { label: "Respostas",        cor: "#2563eb", icone: "🔘", desc: "Botões de resposta rápida (até 3)"            },
+  lista:          { label: "Enviar Lista",     cor: "#059669", icone: "☰",  desc: "Menu de lista interativo WhatsApp"            },
+  controle_fluxo: { label: "Controle de Fluxo",cor: "#dc2626", icone: "⇄",  desc: "Reinicia ou encerra o fluxo"                 },
 };
 
 // ─── Condição: tipos disponíveis ─────────────────────────────────────────────
@@ -130,9 +137,10 @@ function FieldSelect({ label, value, onChange, options }) {
 function TriggerSelectorModal({ no, onSave, onClose }) {
   const [selected, setSelected] = useState(no.gatilho_tipo || "mensagem_recebida");
   const [palavras, setPalavras] = useState(no.gatilho_palavras || "");
+  const [intervalo, setIntervalo] = useState(no.intervalo_reativacao || 0);
 
   const handleSave = () => {
-    onSave({ ...no, gatilho_tipo: selected, gatilho_palavras: palavras });
+    onSave({ ...no, gatilho_tipo: selected, gatilho_palavras: palavras, intervalo_reativacao: Number(intervalo) });
     onClose();
   };
 
@@ -256,6 +264,27 @@ function TriggerSelectorModal({ no, onSave, onClose }) {
               />
             </div>
           )}
+
+          {/* Intervalo de reativação */}
+          <div style={{ marginTop: 4, padding: "12px 14px", background: "#f0f9ff", border: "1.5px solid #bae6fd", borderRadius: 9 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "#0284c7", textTransform: "uppercase", letterSpacing: "1px", marginBottom: 7, fontFamily: "'JetBrains Mono',monospace" }}>
+              ⏱ Intervalo de Reativação
+            </div>
+            <div style={{ fontSize: 11.5, color: L.t3, marginBottom: 8, lineHeight: 1.4 }}>
+              Tempo mínimo (em minutos) antes do fluxo ser acionado novamente para o mesmo contato.
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input
+                type="number"
+                value={intervalo}
+                onChange={e => setIntervalo(e.target.value)}
+                min="0"
+                placeholder="0"
+                style={{ width: 80, border: "1.5px solid #bae6fd", borderRadius: 8, padding: "7px 10px", fontSize: 12, outline: "none", fontFamily: "inherit", background: "white", color: L.t1 }}
+              />
+              <span style={{ fontSize: 12, color: L.t3 }}>minutos (0 = sempre reativar)</span>
+            </div>
+          </div>
         </div>
 
         {/* Footer */}
@@ -301,6 +330,21 @@ function NodeCard({ no, selected, connecting, onClick, onEdit, onDelete, onConne
   if (no.tipo === "inicio") {
     const g = GATILHO_TIPOS.find(t => t.id === (no.gatilho_tipo || "mensagem_recebida"));
     preview = g ? `${g.ico} ${g.label}` : "💬 Por Mensagem Recebida";
+  } else if (no.tipo === "imagem") {
+    preview = "🖼 " + (no.media_url ? no.media_url.slice(-30) : "URL não configurada");
+  } else if (no.tipo === "video") {
+    preview = "🎬 " + (no.media_url ? "Vídeo configurado" : "URL não configurada");
+  } else if (no.tipo === "audio") {
+    preview = "🎵 " + (no.media_url ? "Áudio configurado" : "URL não configurada");
+  } else if (no.tipo === "documento") {
+    preview = "📄 " + (no.media_url ? "Documento configurado" : "URL não configurada");
+  } else if (no.tipo === "respostas") {
+    const count = [no.botao_1, no.botao_2, no.botao_3].filter(Boolean).length;
+    preview = count > 0 ? `${count} botão${count !== 1 ? "ões" : ""} configurado${count !== 1 ? "s" : ""}` : "Botões não configurados";
+  } else if (no.tipo === "lista") {
+    preview = no.lista_titulo_botao || "Lista não configurada";
+  } else if (no.tipo === "controle_fluxo") {
+    preview = no.controle_tipo === "reiniciar" ? "↺ Reinicia o fluxo" : "⊗ Encerra o fluxo";
   } else if (no.mensagem) {
     preview = no.mensagem.length > 55 ? no.mensagem.slice(0, 55) + "…" : no.mensagem;
   } else if (no.tipo === "opcoes" && no.opcoes?.length) {
@@ -581,6 +625,67 @@ function NodeEditPanel({ no, onSave, onClose }) {
             rows={3}
           />
         )}
+
+        {/* ── IMAGEM ── */}
+        {form.tipo === "imagem" && (
+          <>
+            <FieldInput label="URL da mídia" value={form.media_url} onChange={v => set("media_url", v)} placeholder="https://exemplo.com/imagem.jpg" />
+            <FieldInput label="Legenda (opcional)" value={form.mensagem} onChange={v => set("mensagem", v)} placeholder="Texto da legenda..." />
+          </>
+        )}
+
+        {/* ── VÍDEO ── */}
+        {form.tipo === "video" && (
+          <>
+            <FieldInput label="URL da mídia" value={form.media_url} onChange={v => set("media_url", v)} placeholder="https://exemplo.com/video.mp4" />
+            <FieldInput label="Legenda (opcional)" value={form.mensagem} onChange={v => set("mensagem", v)} placeholder="Texto da legenda..." />
+          </>
+        )}
+
+        {/* ── ÁUDIO ── */}
+        {form.tipo === "audio" && (
+          <FieldInput label="URL do áudio" value={form.media_url} onChange={v => set("media_url", v)} placeholder="https://exemplo.com/audio.mp3" />
+        )}
+
+        {/* ── DOCUMENTO ── */}
+        {form.tipo === "documento" && (
+          <>
+            <FieldInput label="URL da mídia" value={form.media_url} onChange={v => set("media_url", v)} placeholder="https://exemplo.com/documento.pdf" />
+            <FieldInput label="Legenda (opcional)" value={form.mensagem} onChange={v => set("mensagem", v)} placeholder="Texto da legenda..." />
+          </>
+        )}
+
+        {/* ── RESPOSTAS ── */}
+        {form.tipo === "respostas" && (
+          <>
+            <FieldTextarea label="Texto da mensagem" value={form.mensagem} onChange={v => set("mensagem", v)} placeholder="Texto exibido antes dos botões..." rows={3} />
+            <FieldInput label="Botão 1" value={form.botao_1} onChange={v => set("botao_1", v)} placeholder="Texto do botão 1" />
+            <FieldInput label="Botão 2 (opcional)" value={form.botao_2} onChange={v => set("botao_2", v)} placeholder="Texto do botão 2" />
+            <FieldInput label="Botão 3 (opcional)" value={form.botao_3} onChange={v => set("botao_3", v)} placeholder="Texto do botão 3" />
+          </>
+        )}
+
+        {/* ── LISTA ── */}
+        {form.tipo === "lista" && (
+          <>
+            <FieldTextarea label="Texto introdutório" value={form.mensagem} onChange={v => set("mensagem", v)} placeholder="Ex: Escolha uma opção da lista:" rows={2} />
+            <FieldInput label="Texto do botão" value={form.lista_titulo_botao} onChange={v => set("lista_titulo_botao", v)} placeholder="Ver opções" />
+            <FieldTextarea label="Itens da lista (um por linha)" value={form.lista_itens} onChange={v => set("lista_itens", v)} placeholder={"Opção 1\nOpção 2\nOpção 3"} rows={5} />
+          </>
+        )}
+
+        {/* ── CONTROLE DE FLUXO ── */}
+        {form.tipo === "controle_fluxo" && (
+          <>
+            <FieldSelect
+              label="Ação de controle"
+              value={form.controle_tipo || "reiniciar"}
+              onChange={v => set("controle_tipo", v)}
+              options={[{ id: "reiniciar", label: "Reiniciar fluxo" }, { id: "encerrar", label: "Encerrar fluxo" }]}
+            />
+            <FieldTextarea label="Mensagem antes de controlar (opcional)" value={form.mensagem} onChange={v => set("mensagem", v)} placeholder="Ex: Reiniciando o atendimento..." rows={3} />
+          </>
+        )}
       </div>
 
       <div style={{ padding: "12px 16px", borderTop: `1px solid ${L.line}` }}>
@@ -800,11 +905,19 @@ export default function PageChatbotBuilder({ user }) {
   // ── Nós ──
   const addNo = (tipo) => {
     const id = `no-${Date.now()}`;
+    const extraProps = (() => {
+      if (["imagem","video","audio","documento"].includes(tipo)) return { media_url: "", mensagem: "" };
+      if (tipo === "respostas") return { mensagem: "", botao_1: "", botao_2: "", botao_3: "" };
+      if (tipo === "lista") return { mensagem: "", lista_titulo_botao: "Ver opções", lista_itens: "" };
+      if (tipo === "controle_fluxo") return { controle_tipo: "reiniciar", mensagem: "" };
+      return {};
+    })();
     setNos(p => [...p, {
       id, tipo, nome: NODE_TYPES[tipo]?.label || tipo,
       mensagem: "", x: 160 + Math.random() * 260, y: 100 + Math.random() * 200,
       opcoes: [], gatilhos: "", variavel: "",
       condicao_tipo: "contem_palavra",
+      ...extraProps,
     }]);
   };
 
