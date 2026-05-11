@@ -646,14 +646,20 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
     setQuickFilter("");
     setSendErr("");
     setInput("");
-    // Busca foto de perfil lazily (se ainda não cacheada)
     const phone = c?.contato_telefone;
-    if (phone && !profilePhotos[phone] && user?.empresa_id) {
+    if (!phone) return;
+    // Use DB-stored URL if available, otherwise fetch from Evolution API
+    if (c.foto_perfil) {
+      setProfilePhotos(prev => ({ ...prev, [phone]: c.foto_perfil }));
+    } else if (!profilePhotos[phone] && user?.empresa_id) {
       supabase.functions.invoke("evolution-action", {
         body: { action: "fetchProfilePhoto", empresa_id: user.empresa_id, phone },
       }).then(({ data }) => {
         if (data?.photoUrl) {
           setProfilePhotos(prev => ({ ...prev, [phone]: data.photoUrl }));
+          setConversas(prev => prev.map(cv =>
+            cv.contato_telefone === phone ? { ...cv, foto_perfil: data.photoUrl } : cv
+          ));
         }
       }).catch(() => {});
     }
