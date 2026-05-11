@@ -911,6 +911,7 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
     setSavingNova(true);
     const { data, error } = await supabase.from("conversas").insert({
       empresa_id:       user.empresa_id,
+      whatsapp_numero:  telefone,
       contato_nome:     nome,
       contato_telefone: telefone,
       contato_empresa:  novaForm.empresa_contato.trim(),
