@@ -19,12 +19,9 @@ const ST = {
 
 const VARIAVEIS = ["{nome}", "{empresa}", "{telefone}"];
 const TIPOS_MIDIA = [
-  { id: "texto",    label: "Texto",    ico: "✉️" },
-  { id: "imagem",   label: "Imagem",   ico: "🖼️" },
-  { id: "video",    label: "Vídeo",    ico: "🎬" },
-  { id: "audio",    label: "Áudio",    ico: "🎵" },
-  { id: "documento",label: "Documento",ico: "📎" },
-  { id: "pix",      label: "Chave PIX",ico: "💳" },
+  { id: "texto",  label: "Texto",  ico: "✉️" },
+  { id: "imagem", label: "Imagem", ico: "🖼️" },
+  { id: "video",  label: "Vídeo",  ico: "🎬" },
 ];
 
 const VAZIO = { titulo: "", mensagem: "", intervalo_min: 5, intervalo_max: 15, agendado_para: "", tipo_midia: "texto", chave_pix: "", caption: "" };

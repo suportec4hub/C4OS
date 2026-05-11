@@ -599,43 +599,52 @@ async function processMessages(
         const dentroHorario = diasOk && hAtu >= (hI*60+mI) && hAtu < (hF*60+mF);
 
         if (!dentroHorario) {
-          if (isNew && cfg.mensagem_fora_horario) await sendBot(cfg.mensagem_fora_horario);
+          const primeiraInteracao = isNew || (conv.nao_lidas || 0) === 0;
+          if (primeiraInteracao && cfg.mensagem_fora_horario) await sendBot(cfg.mensagem_fora_horario);
           continue;
         }
 
-        // ── Tenta executar fluxo visual (prioridade máxima) ─────────────────
-        // Enriquece conv com a última mensagem para uso no estado de fluxo
-        const convComMsg = {
-          ...conv,
-          fluxo_estado: conv.fluxo_estado
-            ? {
-                ...(conv.fluxo_estado as Record<string, unknown>),
-                variaveis: {
-                  ...((conv.fluxo_estado as Record<string, unknown>).variaveis as Record<string, unknown> || {}),
-                  _ultima_msg: texto,
-                },
-              }
-            : null,
-        };
-
-        const fluxoExecutado = await executarFluxo(
-          cfg as Record<string, unknown>,
-          texto, senderPhone, senderName,
-          convComMsg as Record<string, unknown>,
-          empresa_id, isNew, supabase, sendBot,
-        );
-
-        // ── Fallback: regras de palavra-chave (quando não há fluxo ativo) ────
-        if (!fluxoExecutado) {
-          if (isNew && cfg.mensagem_boas_vindas) await sendBot(cfg.mensagem_boas_vindas);
-
-          const { data: regras } = await supabase.from("chatbot_regras")
-            .select("*").eq("empresa_id", empresa_id).eq("ativo", true).order("ordem");
-          if (regras?.length) {
-            const tl = texto.toLowerCase();
-            for (const r of regras) {
-              if (tl.includes(r.gatilho.toLowerCase())) { await sendBot(r.resposta); break; }
+        // ── Gatilhos de palavra-chave (sempre verificam, com prioridade) ──────
+        const { data: regras } = await supabase.from("chatbot_regras")
+          .select("*").eq("empresa_id", empresa_id).eq("ativo", true).order("ordem");
+        let gatilhoAtivado = false;
+        if (regras?.length) {
+          const tl = texto.toLowerCase();
+          for (const r of regras) {
+            if (tl.includes(r.gatilho.toLowerCase())) {
+              await sendBot(r.resposta);
+              gatilhoAtivado = true;
+              break;
             }
+          }
+        }
+
+        if (!gatilhoAtivado) {
+          // ── Tenta executar fluxo visual ────────────────────────────────────
+          const convComMsg = {
+            ...conv,
+            fluxo_estado: conv.fluxo_estado
+              ? {
+                  ...(conv.fluxo_estado as Record<string, unknown>),
+                  variaveis: {
+                    ...((conv.fluxo_estado as Record<string, unknown>).variaveis as Record<string, unknown> || {}),
+                    _ultima_msg: texto,
+                  },
+                }
+              : null,
+          };
+
+          const fluxoExecutado = await executarFluxo(
+            cfg as Record<string, unknown>,
+            texto, senderPhone, senderName,
+            convComMsg as Record<string, unknown>,
+            empresa_id, isNew, supabase, sendBot,
+          );
+
+          // ── Fallback: mensagem de boas-vindas ──────────────────────────────
+          if (!fluxoExecutado) {
+            const primeiraInteracao = isNew || (conv.nao_lidas || 0) === 0;
+            if (primeiraInteracao && cfg.mensagem_boas_vindas) await sendBot(cfg.mensagem_boas_vindas);
           }
         }
 

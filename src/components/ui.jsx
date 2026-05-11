@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { L } from "../constants/theme";
 
 export const TT = {background:"white",border:`1px solid ${L.line}`,borderRadius:9,color:L.t1,fontSize:11,boxShadow:"0 4px 16px rgba(0,0,0,0.1)"};
@@ -62,18 +63,19 @@ export function DataTable({heads,children}) {
   );
 }
 
-export function Av({name,color,size=28,src}) {
-  const initials = (name||"?").split(" ").map(n => n[0]).slice(0,2).join("");
+export function Av({name,color,size=28,src,style:extraStyle}) {
+  const [imgErr, setImgErr] = useState(false);
+  const initials = (name||"?").split(" ").map(n => n[0]).filter(Boolean).slice(0,2).join("").toUpperCase();
   const radius = Math.round(size*.28);
-  if (src) {
+  if (src && !imgErr) {
     return (
-      <img src={src} alt={name}
-        style={{width:size,height:size,borderRadius:radius,flexShrink:0,objectFit:"cover",border:`1.5px solid ${color}25`,display:"block"}}
+      <img src={src} alt={name} onError={() => setImgErr(true)}
+        style={{width:size,height:size,borderRadius:radius,flexShrink:0,objectFit:"cover",border:`1.5px solid ${color}25`,display:"block",...extraStyle}}
       />
     );
   }
   return (
-    <div style={{width:size,height:size,borderRadius:radius,flexShrink:0,background:`${color}18`,border:`1.5px solid ${color}25`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:size*.37,fontWeight:700,color,fontFamily:"'Outfit',sans-serif"}}>
+    <div style={{width:size,height:size,borderRadius:radius,flexShrink:0,background:`${color}18`,border:`1.5px solid ${color}25`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:size*.37,fontWeight:700,color,fontFamily:"'Outfit',sans-serif",...extraStyle}}>
       {initials}
     </div>
   );
