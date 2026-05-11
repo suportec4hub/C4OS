@@ -398,6 +398,56 @@ async function executarNosSequencialmente(
       break;
     }
 
+    // ── Enviar mídia (imagem / vídeo / áudio / documento) ───────────────────
+    case "imagem":
+    case "video":
+    case "audio":
+    case "documento": {
+      if (proximoNo.media_url?.trim()) {
+        await sendBot(
+          interpolarVariaveis(proximoNo.mensagem || "", estado.variaveis),
+          proximoNo.tipo,
+          { url: proximoNo.media_url },
+        );
+      }
+      await executarNosSequencialmente(proximoNo.id, nos, conexoes, estado, convId, empresa_id, senderPhone, senderName, isNew, supabase, sendBot, profundidade + 1);
+      break;
+    }
+
+    // ── Respostas rápidas (botões) ───────────────────────────────────────────
+    case "respostas": {
+      const botoes = [proximoNo.botao_1, proximoNo.botao_2, proximoNo.botao_3].filter(Boolean);
+      if (proximoNo.mensagem?.trim()) {
+        const texto = proximoNo.mensagem + (botoes.length > 0 ? "\n\n" + botoes.map((b, i) => `${i + 1}. ${b}`).join("\n") : "");
+        await sendBot(interpolarVariaveis(texto, estado.variaveis));
+      }
+      await supabase.from("conversas").update({ fluxo_estado: estado }).eq("id", convId);
+      break;
+    }
+
+    // ── Lista interativa ─────────────────────────────────────────────────────
+    case "lista": {
+      const itens = (proximoNo.lista_itens || "").split("\n").filter(Boolean);
+      const textoLista = (proximoNo.mensagem || "") +
+        (itens.length > 0 ? "\n\n" + itens.map((item, i) => `${i + 1}. ${item}`).join("\n") : "") +
+        (proximoNo.lista_titulo_botao ? `\n\n[${proximoNo.lista_titulo_botao}]` : "");
+      if (textoLista.trim()) {
+        await sendBot(interpolarVariaveis(textoLista, estado.variaveis));
+      }
+      await supabase.from("conversas").update({ fluxo_estado: estado }).eq("id", convId);
+      break;
+    }
+
+    // ── Controle de fluxo (reiniciar / encerrar) ────────────────────────────
+    case "controle_fluxo": {
+      if (proximoNo.mensagem?.trim()) {
+        await sendBot(interpolarVariaveis(proximoNo.mensagem, estado.variaveis));
+      }
+      // Reiniciar ou encerrar: ambos limpam o estado do fluxo
+      await supabase.from("conversas").update({ fluxo_estado: null }).eq("id", convId);
+      break;
+    }
+
     default:
       await supabase.from("conversas").update({ fluxo_estado: null }).eq("id", convId);
   }
