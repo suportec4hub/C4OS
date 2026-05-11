@@ -40,6 +40,23 @@ const btnStyle = (bg = L.surface, color = L.t2, extra = {}) => ({
   fontWeight: 500, transition: "all .12s", ...extra,
 });
 
+// ─── WhatsApp Web design tokens ───────────────────────────────────────────────
+const WA = {
+  bg:       "#f0f2f5",
+  chatBg:   "#efeae2",
+  white:    "#ffffff",
+  sent:     "#d9fdd3",
+  border:   "#e9edef",
+  green:    "#25d366",
+  teal:     "#00a884",
+  text:     "#111b21",
+  sub:      "#667781",
+  icon:     "#54656f",
+  tick:     "#53bdeb",
+  itemHov:  "#f5f6f6",
+  itemAct:  "#f0f2f5",
+};
+
 // ─── Notification helpers ────────────────────────────────────────────────────
 function playNotificationSound() {
   try {
@@ -1107,20 +1124,20 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
       {/* Banner status WhatsApp */}
       {evoConnected === false && (
-        <div style={{ padding: "8px 16px", background: "#fffbf0", border: `1px solid ${L.yellow}44`,
-          borderRadius: 10, marginBottom: 10, fontSize: 12 }}>
+        <div style={{ padding: "8px 16px", background: "#fffbf0", border: "1px solid #f59e0b44",
+          borderRadius: 10, marginBottom: 10, fontSize: 12, color: WA.text }}>
           ⚠️ <b>WhatsApp desconectado.</b> Conecte em <b>Minha Empresa → Integrações</b>.
         </div>
       )}
       {evoConnected === true && (
-        <div style={{ padding: "6px 16px", background: L.greenBg, border: `1px solid ${L.green}33`,
+        <div style={{ padding: "6px 16px", background: "#f0fdf4", border: `1px solid ${WA.green}33`,
           borderRadius: 10, marginBottom: 10, display: "flex", alignItems: "center", gap: 8, fontSize: 11, flexWrap: "wrap" }}>
-          <span style={{ width: 7, height: 7, borderRadius: "50%", background: L.green, display: "inline-block", flexShrink: 0 }} />
-          <span style={{ color: L.green, fontWeight: 600 }}>WhatsApp conectado</span>
-          <span style={{ color: L.t3 }}>· Evolution GO</span>
+          <span style={{ width: 7, height: 7, borderRadius: "50%", background: WA.green, display: "inline-block", flexShrink: 0 }} />
+          <span style={{ color: WA.teal, fontWeight: 600 }}>WhatsApp conectado</span>
+          <span style={{ color: WA.sub }}>· Evolution GO</span>
           <span style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
             {importInfo && (
-              <span style={{ color: importInfo.error ? L.red : L.t3, fontSize: 10 }}>
+              <span style={{ color: importInfo.error ? L.red : WA.sub, fontSize: 10 }}>
                 {importing
                   ? `⏳ Sincronizando… ${importInfo.imported || 0}`
                   : importInfo.error
@@ -1131,13 +1148,13 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
               </span>
             )}
             <button onClick={() => syncGroups()} disabled={importing}
-              style={{ ...btnStyle(importing ? L.surface : L.blue, importing ? L.t4 : "white"),
-                fontSize: 10, padding: "3px 9px", opacity: importing ? 0.6 : 1 }}>
+              style={{ padding: "3px 10px", borderRadius: 6, fontSize: 10, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+                background: importing ? WA.bg : WA.teal, color: importing ? WA.sub : "white", border: "none", opacity: importing ? 0.7 : 1 }}>
               {importing ? "Sincronizando…" : "👥 Grupos"}
             </button>
             <button onClick={() => importHistory(1)} disabled={importing}
-              style={{ ...btnStyle(importing ? L.surface : L.t1, importing ? L.t4 : "white"),
-                fontSize: 10, padding: "3px 9px", opacity: importing ? 0.6 : 1 }}>
+              style={{ padding: "3px 10px", borderRadius: 6, fontSize: 10, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+                background: importing ? WA.bg : WA.text, color: importing ? WA.sub : "white", border: "none", opacity: importing ? 0.7 : 1 }}>
               {importing ? "Importando…" : "⬇ Histórico"}
             </button>
           </span>
@@ -1145,112 +1162,89 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
       )}
 
       <div style={{ display: "flex", height: isMobile ? "calc(100dvh - 130px)" : "calc(100vh - 162px)",
-        background: L.white, borderRadius: 12, border: `1px solid ${L.line}`,
-        overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
+        background: WA.bg, borderRadius: 12, border: `1px solid ${WA.border}`,
+        overflow: "hidden", boxShadow: "0 2px 8px rgba(0,0,0,0.08)" }}>
 
         {/* ══════════════════ SIDEBAR ESQUERDA ══════════════════ */}
         {(!isMobile || !activeConv) && (
-          <div style={{ width: isMobile ? "100%" : 280, minWidth: isMobile ? 0 : 280,
-            borderRight: isMobile ? "none" : `1px solid ${L.line}`, display: "flex", flexDirection: "column" }}>
+          <div style={{ width: isMobile ? "100%" : 300, minWidth: isMobile ? 0 : 300,
+            borderRight: isMobile ? "none" : `1px solid ${WA.border}`, display: "flex", flexDirection: "column", background: WA.white }}>
 
             {/* Header */}
-            <div style={{ padding: "12px 14px", borderBottom: `1px solid ${L.lineSoft}` }}>
-              <Row between mb={8}>
-                <Row gap={8}>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: L.t1 }}>Chat</span>
-                  {totalNaoLidas > 0 && (
-                    <span style={{ background: L.green, color: "white", borderRadius: 10, padding: "1px 7px", fontSize: 10, fontWeight: 700 }}>
-                      {totalNaoLidas}
-                    </span>
-                  )}
-                </Row>
-                <Row gap={5}>
-                  {syncMsg && (
-                    <span style={{ fontSize: 10, color: syncMsg.startsWith("Erro") ? L.red : L.green,
-                      fontWeight: 600, whiteSpace: "nowrap" }}>{syncMsg}</span>
-                  )}
-                  <button onClick={forceSincronizar} disabled={syncing} title="Forçar sincronização"
-                    style={{ ...btnStyle(syncing ? L.surface : L.blueBg, syncing ? L.t4 : L.blue),
-                      opacity: syncing ? 0.6 : 1, padding: "5px 8px" }}>
-                    {syncing ? "⟳" : "🔄"}
+            <div style={{ padding: "10px 16px", background: WA.bg, borderBottom: `1px solid ${WA.border}`, flexShrink: 0 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <span style={{ fontSize: 18, fontWeight: 700, color: WA.text, letterSpacing: "-.3px" }}>WhatsApp</span>
+                <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                  {syncMsg && <span style={{ fontSize: 10, color: syncMsg.startsWith("Erro") ? L.red : WA.teal, fontWeight: 600 }}>{syncMsg}</span>}
+                  <button onClick={forceSincronizar} disabled={syncing} title="Sincronizar"
+                    style={{ background: "none", border: "none", cursor: "pointer", color: WA.icon, fontSize: 16, padding: "4px 6px", borderRadius: 6, opacity: syncing ? 0.5 : 1 }}>
+                    🔄
                   </button>
-                  <button onClick={() => loadConversas()} title="Atualizar" style={btnStyle()}>⟳</button>
-                  <button onClick={() => setNovaModal(true)} style={btnStyle(L.t1, "white")}>+ Nova</button>
-                </Row>
-              </Row>
+                  <button onClick={() => setNovaModal(true)}
+                    style={{ background: WA.green, border: "none", borderRadius: 8, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", color: "white", fontFamily: "inherit" }}>
+                    + Nova
+                  </button>
+                </div>
+              </div>
+
+              {/* Busca */}
+              <div style={{ display: "flex", alignItems: "center", gap: 8, background: WA.white, borderRadius: 8, padding: "7px 12px", border: `1px solid ${WA.border}`, marginBottom: 8 }}>
+                <span style={{ color: WA.sub, fontSize: 14 }}>🔍</span>
+                <input value={busca} onChange={e => setBusca(e.target.value)}
+                  placeholder={sidebarTab === "contatos" ? "Buscar contato..." : "Buscar conversa..."}
+                  style={{ background: "none", border: "none", outline: "none", color: WA.text, fontSize: 13, width: "100%", fontFamily: "inherit" }} />
+              </div>
 
               {/* Toggle Conversas / Contatos */}
-              <div style={{ display: "flex", gap: 3, marginBottom: 8 }}>
-                {[
-                  { id: "conversas", label: "💬 Conversas" },
-                  { id: "contatos",  label: "👥 Contatos"  },
-                ].map(t => (
+              <div style={{ display: "flex", gap: 4, marginBottom: sidebarTab === "conversas" ? 8 : 0 }}>
+                {[{ id:"conversas", label:"💬 Conversas" }, { id:"contatos", label:"👥 Contatos" }].map(t => (
                   <button key={t.id} onClick={() => setSidebarTab(t.id)}
-                    style={{ flex: 1, padding: "5px 8px", borderRadius: 7, fontSize: 11, cursor: "pointer",
-                      fontFamily: "inherit", border: `1px solid ${sidebarTab === t.id ? L.teal : L.line}`,
-                      fontWeight: sidebarTab === t.id ? 700 : 400,
-                      background: sidebarTab === t.id ? L.tealBg : L.surface,
-                      color: sidebarTab === t.id ? L.teal : L.t3, transition: "all .1s" }}>
+                    style={{ flex: 1, padding: "5px 8px", borderRadius: 20, fontSize: 11.5, cursor: "pointer",
+                      fontFamily: "inherit", border: "none", fontWeight: sidebarTab === t.id ? 700 : 500,
+                      background: sidebarTab === t.id ? WA.green : WA.bg,
+                      color: sidebarTab === t.id ? "white" : WA.sub, transition: "all .12s" }}>
                     {t.label}
                   </button>
                 ))}
               </div>
 
-              {/* Busca (unificada) */}
-              <div style={{ display: "flex", alignItems: "center", gap: 7, background: L.surface,
-                border: `1px solid ${L.line}`, borderRadius: 8, padding: "5px 10px", marginBottom: 8 }}>
-                <span style={{ color: L.t4, fontSize: 13 }}>⌕</span>
-                <input value={busca} onChange={e => setBusca(e.target.value)}
-                  placeholder={sidebarTab === "contatos" ? "Buscar contato..." : "Buscar conversa..."}
-                  style={{ background: "none", border: "none", outline: "none", color: L.t1, fontSize: 12, width: "100%", fontFamily: "inherit" }} />
-              </div>
-
               {/* Filtros só na aba Conversas */}
               {sidebarTab === "conversas" && (
                 <>
-                  {/* Filtro por setor */}
                   {setores.length > 0 && (
                     <select value={setorFiltro} onChange={e => setSetorFiltro(e.target.value)}
-                      style={{ width: "100%", border: `1px solid ${L.line}`, borderRadius: 7, padding: "4px 8px",
-                        fontSize: 11, color: L.t2, background: L.white, outline: "none", fontFamily: "inherit", marginBottom: 8 }}>
+                      style={{ width: "100%", border: `1px solid ${WA.border}`, borderRadius: 8, padding: "5px 10px",
+                        fontSize: 12, color: WA.text, background: WA.white, outline: "none", fontFamily: "inherit", marginBottom: 6 }}>
                       <option value="">🏢 Todos os setores</option>
                       {setores.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
                     </select>
                   )}
-
-                  {/* Filtro Tipo: Todos / Contatos / Grupos */}
-                  <div style={{ display: "flex", gap: 3, marginBottom: 6 }}>
-                    {[
-                      { id: "todos",    label: "Todos",     emoji: "" },
-                      { id: "contatos", label: "Contatos",  emoji: "👤" },
-                      { id: "grupos",   label: "Grupos",    emoji: "👥" },
-                    ].map(t => (
+                  {/* Filtro tipo */}
+                  <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
+                    {[{ id:"todos", label:"Todos" }, { id:"contatos", label:"👤 Contatos" }, { id:"grupos", label:"👥 Grupos" }].map(t => (
                       <button key={t.id} onClick={() => setTipoFiltro(t.id)}
-                        style={{ flex: 1, padding: "4px 6px", borderRadius: 6, fontSize: 10, cursor: "pointer",
-                          fontFamily: "inherit", border: `1px solid ${tipoFiltro === t.id ? L.teal : L.line}`,
-                          fontWeight: tipoFiltro === t.id ? 700 : 400,
-                          background: tipoFiltro === t.id ? L.tealBg : L.surface,
-                          color: tipoFiltro === t.id ? L.teal : L.t3, transition: "all .1s" }}>
-                        {t.emoji && <span style={{ marginRight: 3 }}>{t.emoji}</span>}
+                        style={{ flex: 1, padding: "4px 6px", borderRadius: 20, fontSize: 10.5, cursor: "pointer",
+                          fontFamily: "inherit", border: "none", fontWeight: tipoFiltro === t.id ? 700 : 400,
+                          background: tipoFiltro === t.id ? WA.teal : WA.bg,
+                          color: tipoFiltro === t.id ? "white" : WA.sub, transition: "all .1s" }}>
                         {t.label}
                       </button>
                     ))}
                   </div>
-
-                  {/* Abas de status */}
+                  {/* Status tabs */}
                   <div style={{ display: "flex", gap: 2, overflowX: "auto", scrollbarWidth: "none" }}>
                     {STATUS_TABS.map(t => {
                       const count = t.id === "todas" ? totalNaoLidas : conversas.filter(c => c.status === t.id && c.nao_lidas > 0).reduce((s, c) => s + (c.nao_lidas || 0), 0);
                       return (
                         <button key={t.id} onClick={() => setStatusTab(t.id)}
-                          style={{ flexShrink: 0, padding: "4px 8px", borderRadius: 6, fontSize: 10, cursor: "pointer",
+                          style={{ flexShrink: 0, padding: "4px 9px", borderRadius: 20, fontSize: 10.5, cursor: "pointer",
                             fontFamily: "inherit", border: "none", fontWeight: statusTab === t.id ? 700 : 400,
-                            background: statusTab === t.id ? L.t1 : "transparent",
-                            color: statusTab === t.id ? "white" : L.t3, transition: "all .1s", position: "relative" }}>
+                            background: statusTab === t.id ? WA.text : "transparent",
+                            color: statusTab === t.id ? "white" : WA.sub, transition: "all .1s", position: "relative" }}>
                           {t.label}
                           {count > 0 && (
-                            <span style={{ position: "absolute", top: -3, right: -3, background: L.green,
-                              color: "white", borderRadius: "50%", width: 12, height: 12,
+                            <span style={{ position: "absolute", top: -2, right: -2, background: WA.green,
+                              color: "white", borderRadius: "50%", width: 13, height: 13,
                               fontSize: 8, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>
                               {count > 9 ? "9+" : count}
                             </span>
@@ -1267,79 +1261,81 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
             {sidebarTab === "conversas" && (
             <div style={{ flex: 1, overflowY: "auto" }}>
               {loading ? (
-                <div style={{ padding: 24, textAlign: "center", color: L.t4, fontSize: 12 }}>
-                  <div style={{ animation: "spin 1s linear infinite", fontSize: 20, marginBottom: 6, display: "inline-block" }}>⟳</div>
+                <div style={{ padding: 32, textAlign: "center", color: WA.sub, fontSize: 13 }}>
+                  <div style={{ animation: "spin 1s linear infinite", fontSize: 24, marginBottom: 8, display: "inline-block" }}>⟳</div>
                   <div>Carregando...</div>
                 </div>
               ) : filtradas.length === 0 ? (
-                <div style={{ padding: 24, textAlign: "center", color: L.t4 }}>
-                  <div style={{ fontSize: 28, marginBottom: 8 }}>◈</div>
-                  <div style={{ fontSize: 12 }}>Nenhuma conversa</div>
-                  <div style={{ fontSize: 11, marginTop: 4 }}>Aguardando mensagens via WhatsApp</div>
+                <div style={{ padding: 32, textAlign: "center", color: WA.sub }}>
+                  <div style={{ fontSize: 36, marginBottom: 10 }}>💬</div>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: WA.text }}>Nenhuma conversa</div>
+                  <div style={{ fontSize: 12, marginTop: 4 }}>Aguardando mensagens via WhatsApp</div>
                 </div>
               ) : filtradas.map(c => {
                 const st = STATUS_LABELS[c.status] || STATUS_LABELS.aberta;
                 const isActive = activeConv?.id === c.id;
                 const isGrp = c.contato_telefone?.endsWith("@g.us");
                 const nomeExibido = c.contato_nome ||
-                  (isGrp ? `Grupo ${c.contato_telefone?.slice(-8,-4)}` : c.contato_telefone) ||
-                  "Desconhecido";
+                  (isGrp ? `Grupo ${c.contato_telefone?.slice(-8,-4)}` : c.contato_telefone) || "Desconhecido";
                 return (
                   <div key={c.id} onClick={() => selectConv(c)}
-                    style={{ padding: "10px 14px", cursor: "pointer", borderBottom: `1px solid ${L.lineSoft}`,
-                      background: isActive ? "#f0f0f044" : "transparent",
-                      borderLeft: `3px solid ${isActive ? L.t1 : "transparent"}`, transition: "all .1s" }}
-                    onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = L.surface; }}
-                    onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = "transparent"; }}>
-                    <Row gap={9}>
+                    style={{ padding: "12px 16px", cursor: "pointer", borderBottom: `1px solid ${WA.border}`,
+                      background: isActive ? WA.itemAct : WA.white, transition: "background .1s" }}
+                    onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = WA.itemHov; }}
+                    onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = WA.white; }}>
+                    <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
                       <div style={{ position: "relative", flexShrink: 0 }}>
-                        <Av name={nomeExibido} color={isGrp ? L.blue : L.t1} size={36} src={profilePhotos[c.contato_telefone]} />
+                        <Av name={nomeExibido} color={isGrp ? "#00a884" : "#54656f"} size={46} src={profilePhotos[c.contato_telefone]} />
                         {isGrp && (
-                          <div style={{ position: "absolute", bottom: -1, right: -1, width: 14, height: 14,
-                            borderRadius: "50%", background: L.blue, border: `2px solid ${L.white}`,
-                            display: "flex", alignItems: "center", justifyContent: "center", fontSize: 7 }}>👥</div>
-                        )}
-                        {!isGrp && c.nao_lidas > 0 && (
-                          <div style={{ position: "absolute", bottom: -1, right: -1, width: 10, height: 10,
-                            borderRadius: "50%", background: L.green, border: `2px solid ${L.white}` }} />
+                          <div style={{ position: "absolute", bottom: -1, right: -1, width: 16, height: 16,
+                            borderRadius: "50%", background: "#00a884", border: `2px solid ${WA.white}`,
+                            display: "flex", alignItems: "center", justifyContent: "center", fontSize: 8 }}>👥</div>
                         )}
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <Row between>
-                          <span style={{ fontSize: 12.5, fontWeight: c.nao_lidas > 0 ? 700 : 500, color: L.t1,
-                            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 130 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 2 }}>
+                          <span style={{ fontSize: 14, fontWeight: c.nao_lidas > 0 ? 700 : 400, color: WA.text,
+                            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 155 }}>
                             {nomeExibido}
                           </span>
-                          <span style={{ fontSize: 10, color: L.t4, flexShrink: 0 }}>{fmtHora(c.ultima_hora)}</span>
-                        </Row>
-                        <div style={{ fontSize: 11, color: L.t3, overflow: "hidden", textOverflow: "ellipsis",
-                          whiteSpace: "nowrap", marginTop: 1 }}>
-                          {c.ultima_mensagem || "Sem mensagens"}
+                          <span style={{ fontSize: 11, color: c.nao_lidas > 0 ? WA.green : WA.sub, flexShrink: 0, marginLeft: 6 }}>
+                            {fmtHora(c.ultima_hora)}
+                          </span>
                         </div>
-                        <Row gap={4} style={{ marginTop: 3, flexWrap: "wrap" }}>
-                          <span style={{ fontSize: 9, background: st.bg, color: st.c, padding: "1px 5px", borderRadius: 4, fontWeight: 600 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <div style={{ display: "flex", gap: 5, alignItems: "center", minWidth: 0 }}>
+                            <span style={{ fontSize: 12.5, color: WA.sub, overflow: "hidden", textOverflow: "ellipsis",
+                              whiteSpace: "nowrap", flex: 1 }}>
+                              {c.ultima_mensagem || "Sem mensagens"}
+                            </span>
+                          </div>
+                          <div style={{ display: "flex", gap: 4, alignItems: "center", flexShrink: 0, marginLeft: 6 }}>
+                            {c.bot_ativo && <span style={{ fontSize: 11 }}>🤖</span>}
+                            {c.nao_lidas > 0 && (
+                              <span style={{ background: WA.green, borderRadius: "50%", width: 20, height: 20,
+                                display: "flex", alignItems: "center", justifyContent: "center",
+                                fontSize: 11, fontWeight: 700, color: "white" }}>
+                                {c.nao_lidas > 99 ? "99" : c.nao_lidas}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", gap: 4, marginTop: 3, flexWrap: "wrap" }}>
+                          <span style={{ fontSize: 10, background: st.bg, color: st.c, padding: "1px 6px", borderRadius: 10, fontWeight: 600 }}>
                             {st.label}
                           </span>
                           {c._setor && (
-                            <span style={{ fontSize: 9, background: c._setor.cor + "22", color: c._setor.cor,
-                              padding: "1px 5px", borderRadius: 4, fontWeight: 600, border: `1px solid ${c._setor.cor}33` }}>
+                            <span style={{ fontSize: 10, background: c._setor.cor + "22", color: c._setor.cor,
+                              padding: "1px 6px", borderRadius: 10, fontWeight: 600 }}>
                               {c._setor.nome}
                             </span>
                           )}
                           {c._atendente_nome && (
-                            <span style={{ fontSize: 9, color: L.t3 }}>👤 {c._atendente_nome.split(" ")[0]}</span>
+                            <span style={{ fontSize: 10, color: WA.sub }}>👤 {c._atendente_nome.split(" ")[0]}</span>
                           )}
-                          {c.bot_ativo && <span style={{ fontSize: 9, color: L.t3 }}>🤖</span>}
-                          {c.nao_lidas > 0 && (
-                            <span style={{ background: L.green, borderRadius: "50%", width: 16, height: 16,
-                              display: "flex", alignItems: "center", justifyContent: "center",
-                              fontSize: 9, fontWeight: 700, color: "white", marginLeft: "auto" }}>
-                              {c.nao_lidas}
-                            </span>
-                          )}
-                        </Row>
+                        </div>
                       </div>
-                    </Row>
+                    </div>
                   </div>
                 );
               })}
@@ -1350,51 +1346,40 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
             {sidebarTab === "contatos" && (
             <div style={{ flex: 1, overflowY: "auto" }}>
               {contatosLoading ? (
-                <div style={{ padding: 24, textAlign: "center", color: L.t4, fontSize: 12 }}>
-                  <div style={{ animation: "spin 1s linear infinite", fontSize: 20, marginBottom: 6, display: "inline-block" }}>⟳</div>
+                <div style={{ padding: 32, textAlign: "center", color: WA.sub, fontSize: 13 }}>
+                  <div style={{ animation: "spin 1s linear infinite", fontSize: 24, marginBottom: 8, display: "inline-block" }}>⟳</div>
                   <div>Carregando contatos...</div>
                 </div>
               ) : wppContatos.filter(c =>
-                  !busca ||
-                  c.contato_nome?.toLowerCase().includes(busca.toLowerCase()) ||
-                  c.contato_telefone?.includes(busca)
+                  !busca || c.contato_nome?.toLowerCase().includes(busca.toLowerCase()) || c.contato_telefone?.includes(busca)
                 ).length === 0 ? (
-                <div style={{ padding: 24, textAlign: "center", color: L.t4 }}>
-                  <div style={{ fontSize: 28, marginBottom: 8 }}>◈</div>
-                  <div style={{ fontSize: 12 }}>Nenhum contato</div>
+                <div style={{ padding: 32, textAlign: "center", color: WA.sub }}>
+                  <div style={{ fontSize: 36, marginBottom: 10 }}>👥</div>
+                  <div style={{ fontSize: 13, color: WA.text }}>Nenhum contato</div>
                 </div>
               ) : wppContatos.filter(c =>
-                  !busca ||
-                  c.contato_nome?.toLowerCase().includes(busca.toLowerCase()) ||
-                  c.contato_telefone?.includes(busca)
+                  !busca || c.contato_nome?.toLowerCase().includes(busca.toLowerCase()) || c.contato_telefone?.includes(busca)
                 ).map(c => {
                 const isActive = activeConv?.id === c.id;
                 const isGrp = c.contato_telefone?.endsWith("@g.us");
                 const nomeExibido = c.contato_nome || c.contato_telefone || "Desconhecido";
                 return (
-                  <div key={c.id} onClick={() => {
-                    const conv = conversas.find(cv => cv.id === c.id);
-                    if (conv) selectConv(conv);
-                    setSidebarTab("conversas");
-                  }}
-                    style={{ padding: "10px 14px", cursor: "pointer", borderBottom: `1px solid ${L.lineSoft}`,
-                      background: isActive ? "#f0f0f044" : "transparent",
-                      borderLeft: `3px solid ${isActive ? L.t1 : "transparent"}`, transition: "all .1s" }}
-                    onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = L.surface; }}
-                    onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = "transparent"; }}>
-                    <Row gap={9}>
-                      <Av name={nomeExibido} color={isGrp ? L.blue : L.t1} size={36} />
+                  <div key={c.id} onClick={() => { const conv = conversas.find(cv => cv.id === c.id); if (conv) selectConv(conv); setSidebarTab("conversas"); }}
+                    style={{ padding: "12px 16px", cursor: "pointer", borderBottom: `1px solid ${WA.border}`,
+                      background: isActive ? WA.itemAct : WA.white, transition: "background .1s" }}
+                    onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = WA.itemHov; }}
+                    onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = WA.white; }}>
+                    <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                      <Av name={nomeExibido} color={isGrp ? WA.teal : WA.icon} size={46} />
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 12.5, fontWeight: 500, color: L.t1,
-                          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        <div style={{ fontSize: 14, fontWeight: 500, color: WA.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           {nomeExibido}
                         </div>
-                        <div style={{ fontSize: 11, color: L.t3,
-                          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        <div style={{ fontSize: 12.5, color: WA.sub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           {c.contato_telefone || ""}
                         </div>
                       </div>
-                    </Row>
+                    </div>
                   </div>
                 );
               })}
@@ -1408,101 +1393,90 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
           <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
 
             {/* Header da conversa */}
-            <div style={{ padding: "9px 14px", borderBottom: `1px solid ${L.line}`, display: "flex",
-              justifyContent: "space-between", alignItems: "center", flexShrink: 0, background: L.white, gap: 8 }}>
-              <Row gap={9} style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ padding: "10px 16px", borderBottom: `1px solid ${WA.border}`, display: "flex",
+              justifyContent: "space-between", alignItems: "center", flexShrink: 0, background: WA.bg, gap: 8 }}>
+              <div style={{ display: "flex", gap: 12, alignItems: "center", minWidth: 0, flex: 1 }}>
                 {isMobile && (
-                  <button onClick={() => setActiveConv(null)} style={btnStyle()}>←</button>
+                  <button onClick={() => setActiveConv(null)}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: WA.icon, fontSize: 18, padding: 2 }}>←</button>
                 )}
-                <div style={{ position: "relative" }}>
-                  <Av name={activeConv.contato_nome || "?"} color={L.t1} size={34} src={profilePhotos[activeConv.contato_telefone]} />
+                <div style={{ position: "relative", flexShrink: 0 }}>
+                  <Av name={activeConv.contato_nome || "?"} color={WA.icon} size={40} src={profilePhotos[activeConv.contato_telefone]} />
                   {evoConnected && (
-                    <div style={{ position: "absolute", bottom: 0, right: 0, width: 8, height: 8,
-                      borderRadius: "50%", background: L.green, border: `2px solid white` }} />
+                    <div style={{ position: "absolute", bottom: 1, right: 1, width: 9, height: 9,
+                      borderRadius: "50%", background: WA.green, border: `2px solid ${WA.bg}` }} />
                   )}
                 </div>
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: L.t1,
-                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <div style={{ fontSize: 14.5, fontWeight: 600, color: WA.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {activeConv.contato_nome || activeConv.contato_telefone || "Desconhecido"}
                   </div>
-                  <Row gap={8} style={{ flexWrap: "wrap" }}>
-                    <span style={{ fontSize: 10, color: L.t3 }}>
-                      {activeConv.contato_telefone || "Sem telefone"}
-                    </span>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 12, color: WA.sub }}>{activeConv.contato_telefone || "Sem telefone"}</span>
                     {activeConv._setor && (
-                      <span style={{ fontSize: 9, background: activeConv._setor.cor + "22",
-                        color: activeConv._setor.cor, padding: "1px 6px", borderRadius: 4,
-                        fontWeight: 600, border: `1px solid ${activeConv._setor.cor}33` }}>
+                      <span style={{ fontSize: 10, background: activeConv._setor.cor + "22", color: activeConv._setor.cor,
+                        padding: "1px 7px", borderRadius: 10, fontWeight: 600 }}>
                         {activeConv._setor.nome}
                       </span>
                     )}
                     {activeConv._atendente_nome && (
-                      <span style={{ fontSize: 10, color: L.t3 }}>👤 {activeConv._atendente_nome}</span>
+                      <span style={{ fontSize: 11, color: WA.sub }}>👤 {activeConv._atendente_nome}</span>
                     )}
-                  </Row>
+                  </div>
                 </div>
-              </Row>
+              </div>
 
-              <Row gap={4} style={{ flexShrink: 0, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                {/* Status select */}
+              <div style={{ display: "flex", gap: 5, flexShrink: 0, flexWrap: "wrap", justifyContent: "flex-end", alignItems: "center" }}>
                 <select value={activeConv.status || "aberta"} onChange={e => updateConvStatus(e.target.value)}
-                  style={{ fontSize: 10, border: `1px solid ${L.line}`, borderRadius: 6, padding: "4px 7px",
+                  style={{ fontSize: 11, border: `1px solid ${WA.border}`, borderRadius: 8, padding: "5px 8px",
                     background: STATUS_LABELS[activeConv.status]?.bg || L.greenBg,
                     color: STATUS_LABELS[activeConv.status]?.c || L.green,
                     cursor: "pointer", fontFamily: "inherit", fontWeight: 600, outline: "none" }}>
                   {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                 </select>
-
-                {/* Atribuir setor */}
                 {setores.length > 0 && (
                   <select value={activeConv.setor_id || ""} onChange={e => assignSetor(e.target.value)}
-                    style={{ fontSize: 10, border: `1px solid ${L.line}`, borderRadius: 6, padding: "4px 7px",
-                      background: L.white, color: L.t2, cursor: "pointer", fontFamily: "inherit", outline: "none", maxWidth: 100 }}>
+                    style={{ fontSize: 11, border: `1px solid ${WA.border}`, borderRadius: 8, padding: "5px 8px",
+                      background: WA.white, color: WA.text, cursor: "pointer", fontFamily: "inherit", outline: "none", maxWidth: 110 }}>
                     <option value="">🏢 Setor</option>
                     {setores.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
                   </select>
                 )}
-
-                {/* Atribuir atendente */}
                 <select value={activeConv.atendente_id || ""} onChange={e => assignAtendente(e.target.value)}
-                  style={{ fontSize: 10, border: `1px solid ${L.line}`, borderRadius: 6, padding: "4px 7px",
-                    background: L.white, color: L.t2, cursor: "pointer", fontFamily: "inherit", outline: "none", maxWidth: 110 }}>
+                  style={{ fontSize: 11, border: `1px solid ${WA.border}`, borderRadius: 8, padding: "5px 8px",
+                    background: WA.white, color: WA.text, cursor: "pointer", fontFamily: "inherit", outline: "none", maxWidth: 120 }}>
                   <option value="">👤 Atribuir</option>
                   {atendentes.map(a => <option key={a.id} value={a.id}>{a.nome}</option>)}
                 </select>
-
-                {/* Transferir */}
-                <button onClick={() => setTransferModal(true)} title="Transferir"
-                  style={btnStyle()}>⇄</button>
-
-                {/* Bot toggle */}
-                <button onClick={toggleBot} title={activeConv.bot_ativo ? "Desativar bot" : "Ativar bot"}
-                  style={btnStyle(activeConv.bot_ativo ? L.yellow + "33" : L.surface, activeConv.bot_ativo ? L.yellow : L.t3)}>
-                  🤖
-                </button>
-
-                {/* Agendar */}
-                <button onClick={() => setAgendarModal(true)} title="Agendar mensagem"
-                  style={btnStyle()}>⏰</button>
-
-                {/* Right panel toggle */}
+                {[
+                  { icon: "⇄", title: "Transferir", onClick: () => setTransferModal(true), active: false },
+                  { icon: "🤖", title: activeConv.bot_ativo ? "Desativar bot" : "Ativar bot", onClick: toggleBot, active: activeConv.bot_ativo },
+                  { icon: "⏰", title: "Agendar mensagem", onClick: () => setAgendarModal(true), active: false },
+                ].map(b => (
+                  <button key={b.icon} onClick={b.onClick} title={b.title}
+                    style={{ background: b.active ? "#fef3c7" : WA.white, border: `1px solid ${WA.border}`,
+                      borderRadius: 8, padding: "5px 9px", fontSize: 14, cursor: "pointer", color: b.active ? "#d97706" : WA.icon,
+                      transition: "all .1s" }}
+                    onMouseEnter={e => e.currentTarget.style.background = WA.bg}
+                    onMouseLeave={e => e.currentTarget.style.background = b.active ? "#fef3c7" : WA.white}>
+                    {b.icon}
+                  </button>
+                ))}
                 {!isMobile && (
                   <button onClick={() => setShowRight(p => !p)}
-                    title={showRight ? "Ocultar painel de info" : "Mostrar Info / Tags / Agendadas / Log"}
-                    style={{ ...btnStyle(showRight ? L.tealBg : L.surface, showRight ? L.teal : L.t3),
-                      display: "flex", alignItems: "center", gap: 4, fontWeight: showRight ? 700 : 400 }}>
-                    <span style={{ fontSize: 12 }}>{showRight ? "⊟" : "⊞"}</span>
-                    <span style={{ fontSize: 10 }}>Info</span>
+                    style={{ background: showRight ? WA.teal : WA.white, border: `1px solid ${showRight ? WA.teal : WA.border}`,
+                      borderRadius: 8, padding: "5px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer",
+                      color: showRight ? "white" : WA.icon, transition: "all .12s" }}>
+                    {showRight ? "⊟ Info" : "⊞ Info"}
                   </button>
                 )}
-              </Row>
+              </div>
             </div>
 
             {/* Etiquetas da conversa */}
             {convEtiquetas.length > 0 && (
-              <div style={{ padding: "6px 14px", borderBottom: `1px solid ${L.lineSoft}`,
-                display: "flex", gap: 5, flexWrap: "wrap", background: L.bgWarm }}>
+              <div style={{ padding: "6px 16px", borderBottom: `1px solid ${WA.border}`,
+                display: "flex", gap: 5, flexWrap: "wrap", background: WA.bg }}>
                 {convEtiquetas.map(e => (
                   <EtiquetaChip key={e.id} etiqueta={e} onRemove={() => removeEtiqueta(e.id)} />
                 ))}
@@ -1510,14 +1484,15 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
             )}
 
             {/* Mensagens */}
-            <div style={{ flex: 1, overflowY: "auto", padding: "16px 14px",
-              background: "#fafafa", display: "flex", flexDirection: "column", gap: 2 }}>
+            <div style={{ flex: 1, overflowY: "auto", padding: "12px 60px",
+              background: WA.chatBg, display: "flex", flexDirection: "column", gap: 1 }}>
               {mensagens.length === 0 && (
                 <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
-                  color: L.t4, fontSize: 12, textAlign: "center" }}>
+                  color: WA.sub, fontSize: 13, textAlign: "center", paddingTop: 60 }}>
                   <div>
-                    <div style={{ fontSize: 32, marginBottom: 8 }}>◈</div>
-                    Nenhuma mensagem ainda
+                    <div style={{ fontSize: 48, marginBottom: 12 }}>💬</div>
+                    <div style={{ fontWeight: 500, color: WA.text, marginBottom: 4 }}>Nenhuma mensagem ainda</div>
+                    <div style={{ fontSize: 12 }}>Envie uma mensagem para começar</div>
                   </div>
                 </div>
               )}
@@ -1532,40 +1507,39 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
                 return (
                   <div key={m.id}>
                     {showDate && h && (
-                      <div style={{ textAlign: "center", margin: "10px 0 6px" }}>
-                        <span style={{ fontSize: 10, color: L.t4, background: L.surface,
-                          padding: "2px 10px", borderRadius: 10, border: `1px solid ${L.line}` }}>
+                      <div style={{ textAlign: "center", margin: "14px 0 10px" }}>
+                        <span style={{ fontSize: 11.5, color: WA.sub, background: "#d1f4cc",
+                          padding: "4px 12px", borderRadius: 7.5, boxShadow: "0 1px 2px rgba(0,0,0,0.1)" }}>
                           {new Date(h).toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" })}
                         </span>
                       </div>
                     )}
-                    <div style={{ display: "flex", justifyContent: out ? "flex-end" : "flex-start", marginBottom: 3 }}>
+                    <div style={{ display: "flex", justifyContent: out ? "flex-end" : "flex-start", marginBottom: 2 }}>
                       {!out && (
-                        <Av name={activeConv.contato_nome || "?"} color={L.t3} size={22}
+                        <Av name={activeConv.contato_nome || "?"} color={WA.icon} size={28}
                           src={profilePhotos[activeConv.contato_telefone]}
-                          style={{ marginRight: 6, marginTop: 2, flexShrink: 0 }} />
+                          style={{ marginRight: 6, marginTop: 4, flexShrink: 0 }} />
                       )}
                       <div style={{
-                        maxWidth: "72%", padding: nota ? "6px 10px" : "8px 12px",
-                        borderRadius: out ? "12px 12px 4px 12px" : "12px 12px 12px 4px",
-                        background: nota ? "#fffbeb" : out ? L.t1 : L.white,
-                        color: nota ? "#92400e" : out ? "white" : L.t1,
-                        border: nota ? "1px dashed #f59e0b" : `1px solid ${out ? "transparent" : L.line}`,
-                        boxShadow: "0 1px 2px rgba(0,0,0,0.06)",
-                        fontSize: 12.5, lineHeight: 1.5, wordBreak: "break-word",
-                        opacity: m.status === "enviando" ? 0.6 : 1,
+                        maxWidth: "65%", padding: nota ? "6px 12px" : "7px 12px 6px",
+                        borderRadius: nota ? 10 : out ? "8px 0 8px 8px" : "0 8px 8px 8px",
+                        background: nota ? "#fffbeb" : out ? WA.sent : WA.white,
+                        color: nota ? "#92400e" : WA.text,
+                        border: nota ? "1px dashed #f59e0b" : "none",
+                        boxShadow: "0 1px 0.5px rgba(11,20,26,.13)",
+                        fontSize: 13.5, lineHeight: 1.5, wordBreak: "break-word",
+                        opacity: m.status === "enviando" ? 0.7 : 1,
                         transition: "opacity .2s",
                       }}>
-                        {nota && <div style={{ fontSize: 9, fontWeight: 700, marginBottom: 3, opacity: .7 }}>📝 NOTA INTERNA</div>}
+                        {nota && <div style={{ fontSize: 10, fontWeight: 700, marginBottom: 3, opacity: .75 }}>📝 NOTA INTERNA</div>}
                         {m.remetente === "bot" && !nota && (
-                          <div style={{ fontSize: 9, marginBottom: 2, opacity: .7 }}>🤖 Bot</div>
+                          <div style={{ fontSize: 10, marginBottom: 2, color: WA.sub }}>🤖 Bot</div>
                         )}
                         {renderMsgContent(m, out)}
-                        <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 3,
-                          justifyContent: "flex-end" }}>
-                          <span style={{ fontSize: 9, opacity: .5 }}>{fmtHora(h)}</span>
+                        <div style={{ display: "flex", alignItems: "center", gap: 3, marginTop: 2, justifyContent: "flex-end" }}>
+                          <span style={{ fontSize: 11, color: WA.sub }}>{fmtHora(h)}</span>
                           {out && !nota && (
-                            <span style={{ fontSize: 9, opacity: .6 }}>
+                            <span style={{ fontSize: 12, color: m.lido ? WA.tick : WA.sub }}>
                               {m.status === "enviando" ? "⟳" : m.lido ? "✓✓" : m.entregue ? "✓✓" : "✓"}
                             </span>
                           )}
@@ -1579,24 +1553,23 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
             </div>
 
             {/* Input */}
-            <div style={{ padding: "10px 14px", borderTop: `1px solid ${L.line}`,
-              background: L.white, flexShrink: 0 }}>
+            <div style={{ padding: "8px 16px 10px", background: WA.bg, flexShrink: 0, borderTop: `1px solid ${WA.border}` }}>
 
               {/* Quick replies popup */}
               {showQuick && filteredQuick.length > 0 && (
-                <div style={{ background: L.white, border: `1px solid ${L.line}`, borderRadius: 10,
+                <div style={{ background: WA.white, border: `1px solid ${WA.border}`, borderRadius: 12,
                   boxShadow: "0 4px 20px rgba(0,0,0,.12)", marginBottom: 8, maxHeight: 200, overflowY: "auto" }}>
-                  <div style={{ padding: "6px 10px", borderBottom: `1px solid ${L.lineSoft}`,
-                    fontSize: 10, color: L.t4, fontWeight: 600 }}>
-                    RESPOSTAS RÁPIDAS — /atalho para filtrar
+                  <div style={{ padding: "7px 12px", borderBottom: `1px solid ${WA.border}`,
+                    fontSize: 11, color: WA.sub, fontWeight: 600, letterSpacing: "0.5px" }}>
+                    RESPOSTAS RÁPIDAS
                   </div>
                   {filteredQuick.map(r => (
                     <div key={r.id} onClick={() => { send(r.mensagem); setShowQuick(false); setInput(""); }}
-                      style={{ padding: "8px 12px", cursor: "pointer", borderBottom: `1px solid ${L.lineSoft}`, transition: "background .1s" }}
-                      onMouseEnter={e => e.currentTarget.style.background = L.surface}
+                      style={{ padding: "9px 14px", cursor: "pointer", borderBottom: `1px solid ${WA.border}`, transition: "background .1s" }}
+                      onMouseEnter={e => e.currentTarget.style.background = WA.bg}
                       onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                      <div style={{ fontSize: 11, fontWeight: 600, color: L.t1 }}>{r.titulo}</div>
-                      <div style={{ fontSize: 11, color: L.t3, marginTop: 2, overflow: "hidden",
+                      <div style={{ fontSize: 12.5, fontWeight: 600, color: WA.text }}>{r.titulo}</div>
+                      <div style={{ fontSize: 12, color: WA.sub, marginTop: 2, overflow: "hidden",
                         textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.mensagem}</div>
                     </div>
                   ))}
@@ -1604,74 +1577,70 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
               )}
 
               {sendErr && (
-                <div style={{ padding: "5px 10px", background: L.redBg, borderRadius: 7, marginBottom: 8,
-                  fontSize: 11, color: L.red, border: `1px solid ${L.red}22` }}>
+                <div style={{ padding: "6px 12px", background: "#fef2f2", borderRadius: 8, marginBottom: 8,
+                  fontSize: 12, color: "#dc2626", border: "1px solid #fca5a533" }}>
                   {sendErr}
                 </div>
               )}
 
-              {/* Hidden file input */}
               <input ref={fileRef} type="file" accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.zip"
                 style={{ display:"none" }} onChange={e => { if (e.target.files?.[0]) sendMedia(e.target.files[0]); e.target.value = ""; }}/>
 
-              <Row gap={8}>
-                {/* Note toggle */}
-                <button onClick={() => {
-                  if (input.startsWith("/nota ")) setInput(input.slice(6));
-                  else setInput("/nota " + input);
-                }}
-                  title="Nota interna (/nota texto)"
-                  style={{ ...btnStyle(input.startsWith("/nota") ? "#fffbeb" : L.surface, input.startsWith("/nota") ? "#92400e" : L.t3), flexShrink: 0, padding: "7px 10px" }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+                {/* Nota toggle */}
+                <button onClick={() => { if (input.startsWith("/nota ")) setInput(input.slice(6)); else setInput("/nota " + input); }}
+                  title="Nota interna" style={{ flexShrink: 0, width: 40, height: 40, borderRadius: "50%", border: "none",
+                    cursor: "pointer", background: input.startsWith("/nota") ? "#fef3c7" : WA.white,
+                    color: input.startsWith("/nota") ? "#d97706" : WA.icon, fontSize: 17,
+                    display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 3px rgba(0,0,0,0.12)" }}>
                   📝
                 </button>
-
-                {/* Media upload */}
+                {/* Attachment */}
                 <button onClick={() => fileRef.current?.click()} disabled={uploadingMedia}
-                  title="Enviar imagem / áudio / arquivo"
-                  style={{ ...btnStyle(L.surface, uploadingMedia ? L.t4 : L.t3), flexShrink: 0, padding: "7px 10px", opacity: uploadingMedia ? 0.5 : 1 }}>
+                  title="Enviar arquivo" style={{ flexShrink: 0, width: 40, height: 40, borderRadius: "50%", border: "none",
+                    cursor: "pointer", background: WA.white, color: uploadingMedia ? WA.border : WA.icon, fontSize: 17,
+                    display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 3px rgba(0,0,0,0.12)" }}>
                   {uploadingMedia ? "⟳" : "📎"}
                 </button>
 
-                <div style={{ flex: 1, position: "relative" }}>
+                {/* Text input */}
+                <div style={{ flex: 1, background: WA.white, borderRadius: 24, boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+                  padding: "9px 16px", border: `1px solid ${input.startsWith("/nota") ? "#f59e0b" : WA.border}`,
+                  background: input.startsWith("/nota") ? "#fffbeb" : WA.white }}>
                   <textarea
                     ref={inputRef}
                     value={input}
                     onChange={handleInputChange}
                     onKeyDown={handleKeyDown}
-                    placeholder={input.startsWith("/nota") ? "Nota interna (não enviada ao contato)..." : "Digite / para respostas rápidas · Enter para enviar · Shift+Enter nova linha"}
+                    placeholder={input.startsWith("/nota") ? "Nota interna (não enviada ao contato)..." : "Digite uma mensagem · / para respostas rápidas"}
                     rows={1}
-                    style={{ width: "100%", border: `1px solid ${input.startsWith("/nota") ? "#f59e0b" : L.line}`,
-                      borderRadius: 9, padding: "8px 12px", fontSize: 12.5, color: L.t1,
-                      background: input.startsWith("/nota") ? "#fffbeb" : L.white,
-                      outline: "none", fontFamily: "inherit", resize: "none",
-                      maxHeight: 100, overflowY: "auto", boxSizing: "border-box", lineHeight: 1.5 }}
+                    style={{ width: "100%", border: "none", outline: "none", fontFamily: "inherit",
+                      resize: "none", maxHeight: 100, overflowY: "auto", boxSizing: "border-box",
+                      lineHeight: 1.55, fontSize: 13.5, color: WA.text, background: "transparent" }}
                   />
                 </div>
 
-                <button onClick={() => {
-                  if (input.startsWith("/nota ")) {
-                    sendNote(input.slice(6));
-                    setInput("");
-                  } else {
-                    send();
-                  }
-                }} disabled={!input.trim() || sending}
-                  style={{ ...btnStyle(L.t1, "white"), flexShrink: 0, padding: "8px 14px",
-                    opacity: (!input.trim() || sending) ? .4 : 1 }}>
-                  {sending ? "⟳" : "↑"}
+                {/* Send button */}
+                <button onClick={() => { if (input.startsWith("/nota ")) { sendNote(input.slice(6)); setInput(""); } else { send(); } }}
+                  disabled={!input.trim() || sending}
+                  style={{ flexShrink: 0, width: 44, height: 44, borderRadius: "50%", border: "none",
+                    cursor: (!input.trim() || sending) ? "default" : "pointer",
+                    background: (!input.trim() || sending) ? WA.border : WA.teal,
+                    color: "white", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center",
+                    transition: "background .15s", boxShadow: (!input.trim() || sending) ? "none" : "0 2px 8px rgba(0,168,132,.4)" }}>
+                  {sending ? "⟳" : "➤"}
                 </button>
-              </Row>
-              <div style={{ fontSize: 10, color: L.t4, marginTop: 4, paddingLeft: 2 }}>
-                Digite <b>/</b> para respostas rápidas · <b>/nota texto</b> para nota interna
               </div>
             </div>
           </div>
         ) : (
           <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
-            color: L.t4, flexDirection: "column", gap: 8 }}>
-            <div style={{ fontSize: 40 }}>◈</div>
-            <div style={{ fontSize: 13, fontWeight: 500 }}>Selecione uma conversa</div>
-            <div style={{ fontSize: 11 }}>ou aguarde novas mensagens via WhatsApp</div>
+            color: WA.sub, flexDirection: "column", gap: 12, background: WA.chatBg }}>
+            <div style={{ fontSize: 64 }}>💬</div>
+            <div style={{ fontSize: 18, fontWeight: 300, color: WA.text }}>C4 OS WhatsApp</div>
+            <div style={{ fontSize: 13, color: WA.sub, textAlign: "center", maxWidth: 300, lineHeight: 1.6 }}>
+              Selecione uma conversa para começar a atender ou clique em <b>+ Nova</b> para iniciar uma
+            </div>
           </div>
         ))}
 
@@ -1679,35 +1648,33 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
         {activeConv && !isMobile && (
           <div style={{
             position: "relative", display: "flex", flexShrink: 0,
-            width: showRight ? 261 : 18, minWidth: showRight ? 261 : 18,
+            width: showRight ? 281 : 18, minWidth: showRight ? 281 : 18,
             transition: "width .22s ease, min-width .22s ease",
-            borderLeft: `1px solid ${L.line}`, background: L.white, overflow: "hidden",
+            borderLeft: `1px solid ${WA.border}`, background: WA.white, overflow: "hidden",
           }}>
 
-            {/* ── Tab de colapso / expansão (sempre visível na borda) ── */}
+            {/* ── Tab de colapso / expansão ── */}
             <button
               onClick={() => setShowRight(p => !p)}
               title={showRight ? "Ocultar painel" : "Mostrar Info / Tags / Agendadas / Log"}
               style={{
                 position: "absolute", left: 0, top: "50%", transform: "translateY(-50%)",
-                width: 18, height: 52, background: L.surface,
-                border: `1px solid ${L.line}`, borderLeft: "none",
+                width: 18, height: 52, background: WA.bg,
+                border: `1px solid ${WA.border}`, borderLeft: "none",
                 borderRadius: "0 8px 8px 0", cursor: "pointer",
                 display: "flex", alignItems: "center", justifyContent: "center",
-                color: L.t3, fontSize: 10, zIndex: 10, transition: "all .15s",
-                flexShrink: 0,
+                color: WA.sub, fontSize: 10, zIndex: 10, transition: "all .15s", flexShrink: 0,
               }}
-              onMouseEnter={e => { e.currentTarget.style.background = L.tealBg; e.currentTarget.style.color = L.teal; e.currentTarget.style.borderColor = L.teal + "55"; }}
-              onMouseLeave={e => { e.currentTarget.style.background = L.surface; e.currentTarget.style.color = L.t3; e.currentTarget.style.borderColor = L.line; }}
+              onMouseEnter={e => { e.currentTarget.style.background = WA.teal + "22"; e.currentTarget.style.color = WA.teal; }}
+              onMouseLeave={e => { e.currentTarget.style.background = WA.bg; e.currentTarget.style.color = WA.sub; }}
             >
               {showRight ? "›" : "‹"}
             </button>
 
-            {/* ── Conteúdo do painel (largura fixa, desliza por overflow hidden) ── */}
-            <div style={{ width: 260, minWidth: 260, marginLeft: 18, display: "flex", flexDirection: "column" }}>
+            <div style={{ width: 280, minWidth: 280, marginLeft: 18, display: "flex", flexDirection: "column" }}>
 
             {/* Abas do painel */}
-            <div style={{ display: "flex", borderBottom: `1px solid ${L.line}` }}>
+            <div style={{ display: "flex", borderBottom: `1px solid ${WA.border}`, background: WA.bg }}>
               {[
                 { id: "info",      label: "Info"      },
                 { id: "etiquetas", label: "Tags"      },
@@ -1715,75 +1682,79 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
                 { id: "log",       label: "Log"       },
               ].map(t => (
                 <button key={t.id} onClick={() => setRightTab(t.id)}
-                  style={{ flex: 1, padding: "9px 4px", fontSize: 10, fontWeight: rightTab === t.id ? 700 : 400,
+                  style={{ flex: 1, padding: "10px 4px", fontSize: 11, fontWeight: rightTab === t.id ? 700 : 400,
                     background: "none", border: "none", cursor: "pointer", fontFamily: "inherit",
-                    color: rightTab === t.id ? L.t1 : L.t3,
-                    borderBottom: rightTab === t.id ? `2px solid ${L.t1}` : "2px solid transparent",
+                    color: rightTab === t.id ? WA.teal : WA.sub,
+                    borderBottom: rightTab === t.id ? `2px solid ${WA.teal}` : "2px solid transparent",
                     transition: "all .12s" }}>
                   {t.label}
                 </button>
               ))}
             </div>
 
-            <div style={{ flex: 1, overflowY: "auto", padding: 14 }}>
+            <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
 
               {/* INFO TAB */}
               {rightTab === "info" && activeConv && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                  <Av name={activeConv.contato_nome || "?"} color={L.t1} size={48}
-                    src={profilePhotos[activeConv.contato_telefone]}
-                    style={{ alignSelf: "center" }} />
-                  <div style={{ textAlign: "center" }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: L.t1 }}>
+                  <div style={{ textAlign: "center", padding: "8px 0 4px" }}>
+                    <Av name={activeConv.contato_nome || "?"} color={WA.icon} size={64}
+                      src={profilePhotos[activeConv.contato_telefone]}
+                      style={{ margin: "0 auto 10px" }} />
+                    <div style={{ fontSize: 15, fontWeight: 600, color: WA.text }}>
                       {activeConv.contato_nome || "Desconhecido"}
                     </div>
                     {activeConv.contato_empresa && (
-                      <div style={{ fontSize: 11, color: L.t3 }}>{activeConv.contato_empresa}</div>
+                      <div style={{ fontSize: 12, color: WA.sub, marginTop: 2 }}>{activeConv.contato_empresa}</div>
                     )}
                   </div>
 
-                  {[
-                    { label: "Telefone", value: activeConv.contato_telefone },
-                    { label: "Status", value: STATUS_LABELS[activeConv.status]?.label },
-                    { label: "Setor", value: activeConv._setor?.nome },
-                    { label: "Atendente", value: activeConv._atendente_nome },
-                    { label: "Canal", value: activeConv.canal || "whatsapp" },
-                    { label: "Criado em", value: activeConv.created_at ? new Date(activeConv.created_at).toLocaleDateString("pt-BR") : "" },
-                  ].filter(x => x.value).map(x => (
-                    <div key={x.label} style={{ borderBottom: `1px solid ${L.lineSoft}`, paddingBottom: 8 }}>
-                      <div style={{ fontSize: 9, color: L.t4, textTransform: "uppercase", fontWeight: 700, letterSpacing: "1px", marginBottom: 2 }}>{x.label}</div>
-                      <div style={{ fontSize: 11.5, color: L.t1 }}>{x.value}</div>
-                    </div>
-                  ))}
+                  <div style={{ background: WA.bg, borderRadius: 10, overflow: "hidden" }}>
+                    {[
+                      { label: "Telefone", value: activeConv.contato_telefone },
+                      { label: "Status", value: STATUS_LABELS[activeConv.status]?.label },
+                      { label: "Setor", value: activeConv._setor?.nome },
+                      { label: "Atendente", value: activeConv._atendente_nome },
+                      { label: "Canal", value: activeConv.canal || "whatsapp" },
+                      { label: "Criado em", value: activeConv.created_at ? new Date(activeConv.created_at).toLocaleDateString("pt-BR") : "" },
+                    ].filter(x => x.value).map((x, idx, arr) => (
+                      <div key={x.label} style={{ padding: "9px 12px", borderBottom: idx < arr.length - 1 ? `1px solid ${WA.border}` : "none" }}>
+                        <div style={{ fontSize: 10, color: WA.sub, textTransform: "uppercase", fontWeight: 700, letterSpacing: "0.8px", marginBottom: 2 }}>{x.label}</div>
+                        <div style={{ fontSize: 13, color: WA.text }}>{x.value}</div>
+                      </div>
+                    ))}
+                  </div>
 
-                  {/* Bot ativo */}
+                  {/* Bot */}
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
-                    padding: "8px 10px", background: activeConv.bot_ativo ? L.yellowBg : L.surface,
-                    borderRadius: 8, border: `1px solid ${activeConv.bot_ativo ? L.yellow + "44" : L.line}` }}>
+                    padding: "10px 12px", background: activeConv.bot_ativo ? "#fef3c7" : WA.bg,
+                    borderRadius: 10, border: `1px solid ${activeConv.bot_ativo ? "#f59e0b44" : WA.border}` }}>
                     <div>
-                      <div style={{ fontSize: 11, fontWeight: 600, color: L.t1 }}>🤖 Chatbot</div>
-                      <div style={{ fontSize: 10, color: L.t3 }}>{activeConv.bot_ativo ? "Ativo" : "Inativo"}</div>
+                      <div style={{ fontSize: 12.5, fontWeight: 600, color: WA.text }}>🤖 Chatbot</div>
+                      <div style={{ fontSize: 11, color: WA.sub }}>{activeConv.bot_ativo ? "Ativo" : "Inativo"}</div>
                     </div>
                     <button onClick={toggleBot}
-                      style={{ ...btnStyle(activeConv.bot_ativo ? L.yellow : L.surface, activeConv.bot_ativo ? "white" : L.t2), fontSize: 10 }}>
+                      style={{ padding: "5px 14px", borderRadius: 20, border: "none", cursor: "pointer", fontFamily: "inherit",
+                        fontSize: 12, fontWeight: 600, background: activeConv.bot_ativo ? "#f59e0b" : WA.teal, color: "white" }}>
                       {activeConv.bot_ativo ? "Desligar" : "Ligar"}
                     </button>
                   </div>
 
-                  {/* Ações rápidas */}
-                  <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-                    <button onClick={() => setTransferModal(true)}
-                      style={{ ...btnStyle(L.surface, L.t2), width: "100%", textAlign: "left" }}>
-                      ⇄ Transferir conversa
-                    </button>
-                    <button onClick={() => setAgendarModal(true)}
-                      style={{ ...btnStyle(L.surface, L.t2), width: "100%", textAlign: "left" }}>
-                      ⏰ Agendar mensagem
-                    </button>
-                    <button onClick={() => updateConvStatus("resolvida")}
-                      style={{ ...btnStyle(L.greenBg, L.green), width: "100%", textAlign: "left" }}>
-                      ✓ Marcar resolvida
-                    </button>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {[
+                      { label: "⇄ Transferir conversa", onClick: () => setTransferModal(true), color: WA.teal },
+                      { label: "⏰ Agendar mensagem",   onClick: () => setAgendarModal(true),   color: WA.icon },
+                      { label: "✓ Marcar resolvida",    onClick: () => updateConvStatus("resolvida"), color: "#25d366" },
+                    ].map(b => (
+                      <button key={b.label} onClick={b.onClick}
+                        style={{ padding: "9px 12px", borderRadius: 10, border: `1px solid ${WA.border}`, cursor: "pointer",
+                          fontFamily: "inherit", background: WA.white, color: WA.text, textAlign: "left", fontSize: 13,
+                          fontWeight: 500, transition: "all .1s" }}
+                        onMouseEnter={e => { e.currentTarget.style.background = WA.bg; e.currentTarget.style.color = b.color; }}
+                        onMouseLeave={e => { e.currentTarget.style.background = WA.white; e.currentTarget.style.color = WA.text; }}>
+                        {b.label}
+                      </button>
+                    ))}
                   </div>
                 </div>
               )}
