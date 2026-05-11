@@ -78,7 +78,7 @@ const ADMIN_ITEMS = [
 
 import { hasFullAccess, hasPageAccess } from "../lib/auth";
 
-const ADMIN_ONLY = new Set(["clientes","logs","suporte","users","planos"]);
+const ADMIN_ONLY = new Set(["clientes","logs","suporte","users","planos","reports"]);
 
 export default function Shell({user,onLogout,onProfileUpdate}) {
   const [sec,setSec] = useState("dashboard");
