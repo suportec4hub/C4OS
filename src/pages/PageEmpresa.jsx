@@ -411,7 +411,7 @@ function EvolutionCard({ user, empData, onRefresh }) {
               />
             </div>
             <button onClick={vincularInstancia} disabled={savingManual || !manualName.trim() || !manualToken.trim()}
-              style={{ width: "100%", padding: "9px 0", borderRadius: 9, background: manualName.trim() && manualToken.trim() ? L.t1 : L.surface, color: manualName.trim() && manualToken.trim() ? "white" : L.t4, border: `1px solid ${L.line}`, cursor: savingManual || !manualName.trim() || !manualToken.trim() ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, transition: "all .12s" }}>
+              style={{ width: "100%", padding: "9px 0", borderRadius: 9, background: manualName.trim() && manualToken.trim() ? L.accent : L.surface, color: manualName.trim() && manualToken.trim() ? "white" : L.t4, border: `1px solid ${L.line}`, cursor: savingManual || !manualName.trim() || !manualToken.trim() ? "not-allowed" : "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, transition: "all .12s" }}>
               {savingManual ? "⟳ Vinculando..." : "🔗 Vincular Instância"}
             </button>
           </div>
@@ -574,7 +574,7 @@ export default function PageEmpresa({ empresa, user }) {
           <EvolutionCard user={user} empData={empData} onRefresh={refetchEmpresas} />
 
           {/* ── META ADS + PIXEL + CONVERSIONS API ── */}
-          <div style={{background:L.white,borderRadius:12,border:`1.5px solid ${empData.meta_pixel_id?L.blue+"33":L.line}`,padding:20,boxShadow:"0 1px 4px rgba(0,0,0,0.04)"}}>
+          <div style={{background:L.white,borderRadius:12,border:`1.5px solid ${empData.meta_pixel_id?L.blueA:L.line}`,padding:20,boxShadow:"0 1px 4px rgba(0,0,0,0.04)"}}>
             <Row between mb={16}>
               <Row gap={12}>
                 <div style={{width:42,height:42,borderRadius:11,background:"#1877f222",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>📘</div>
@@ -586,7 +586,7 @@ export default function PageEmpresa({ empresa, user }) {
               <Tag color={empData.meta_pixel_id?L.green:L.red} bg={empData.meta_pixel_id?L.greenBg:L.redBg}>{metaStatus}</Tag>
             </Row>
 
-            <div style={{background:"#fffbf0",border:`1px solid ${L.yellowA2}`,borderRadius:10,padding:12,marginBottom:16,fontSize:11,color:L.t2,lineHeight:1.7}}>
+            <div style={{background:L.yellowBg,border:`1px solid ${L.yellowA2}`,borderRadius:10,padding:12,marginBottom:16,fontSize:11,color:L.t2,lineHeight:1.7}}>
               <div style={{fontWeight:700,color:L.yellow,marginBottom:6}}>⚡ Como configurar</div>
               <ol style={{paddingLeft:18,margin:0}}>
                 <li>Acesse <b>Meta Business Suite → Events Manager → Pixels</b></li>
@@ -610,7 +610,7 @@ export default function PageEmpresa({ empresa, user }) {
           </div>
 
           {/* ── GOOGLE ANALYTICS GA4 ── */}
-          <div style={{background:L.white,borderRadius:12,border:`1.5px solid ${empData.ga4_measurement_id?L.green+"33":L.line}`,padding:20,boxShadow:"0 1px 4px rgba(0,0,0,0.04)"}}>
+          <div style={{background:L.white,borderRadius:12,border:`1.5px solid ${empData.ga4_measurement_id?L.greenA:L.line}`,padding:20,boxShadow:"0 1px 4px rgba(0,0,0,0.04)"}}>
             <Row between mb={16}>
               <Row gap={12}>
                 <div style={{width:42,height:42,borderRadius:11,background:L.greenBg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>📊</div>
@@ -622,7 +622,7 @@ export default function PageEmpresa({ empresa, user }) {
               <Tag color={empData.ga4_measurement_id?L.green:L.red} bg={empData.ga4_measurement_id?L.greenBg:L.redBg}>{ga4Status}</Tag>
             </Row>
 
-            <div style={{background:"#fffbf0",border:`1px solid ${L.yellowA2}`,borderRadius:10,padding:12,marginBottom:16,fontSize:11,color:L.t2,lineHeight:1.7}}>
+            <div style={{background:L.yellowBg,border:`1px solid ${L.yellowA2}`,borderRadius:10,padding:12,marginBottom:16,fontSize:11,color:L.t2,lineHeight:1.7}}>
               <div style={{fontWeight:700,color:L.yellow,marginBottom:6}}>⚡ Como configurar</div>
               <ol style={{paddingLeft:18,margin:0}}>
                 <li>Acesse <b>Google Analytics → Admin → Fluxos de dados</b></li>

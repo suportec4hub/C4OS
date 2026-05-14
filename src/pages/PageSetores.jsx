@@ -111,7 +111,7 @@ export default function PageSetores({ user }) {
             Organize seu time em setores e roteie conversas automaticamente
           </div>
         </div>
-        <button onClick={openNew} style={btn(L.t1, "white")}>+ Novo Setor</button>
+        <button onClick={openNew} style={btn(L.accent, "white")}>+ Novo Setor</button>
       </Row>
 
       {loading ? (
@@ -123,7 +123,7 @@ export default function PageSetores({ user }) {
           <div style={{ fontSize: 12, marginBottom: 20 }}>
             Crie setores como "Vendas", "Suporte", "Financeiro" e atribua atendentes a cada um.
           </div>
-          <button onClick={openNew} style={btn(L.t1, "white")}>+ Criar primeiro setor</button>
+          <button onClick={openNew} style={btn(L.accent, "white")}>+ Criar primeiro setor</button>
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -187,7 +187,7 @@ export default function PageSetores({ user }) {
                           <button key={u.id} onClick={() => toggleMembro(s.id, u.id)}
                             style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 10px",
                               borderRadius: 20, fontSize: 11, cursor: "pointer", fontFamily: "inherit",
-                              background: ativo ? L.t1 : L.white, color: ativo ? "white" : L.t2,
+                              background: ativo ? L.accent : L.white, color: ativo ? "white" : L.t2,
                               border: `1px solid ${ativo ? L.t1 : L.line}`, transition: "all .12s" }}>
                             <div style={{ width: 20, height: 20, borderRadius: "50%", background: ativo ? "rgba(255,255,255,.2)" : L.surface,
                               display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700 }}>
@@ -256,7 +256,7 @@ export default function PageSetores({ user }) {
 
             <Row gap={8} style={{ justifyContent: "flex-end" }}>
               <button onClick={() => setModal(false)} style={btn()}>Cancelar</button>
-              <button onClick={save} disabled={saving} style={btn(L.t1, "white")}>
+              <button onClick={save} disabled={saving} style={btn(L.accent, "white")}>
                 {saving ? "Salvando..." : editId ? "Salvar" : "Criar setor"}
               </button>
             </Row>

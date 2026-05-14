@@ -120,7 +120,7 @@ export function PBtn({children,onClick,full}) {
   return (
     <button
       onClick={onClick}
-      style={{padding:"8px 16px",borderRadius:9,fontSize:12.5,fontWeight:600,cursor:"pointer",fontFamily:"'Instrument Sans',sans-serif",background:L.teal,color:"white",border:"none",transition:"all .12s",whiteSpace:"nowrap",display:full?"block":"inline-block",width:full?"100%":"auto",boxShadow:`0 3px 10px ${ao(L.teal,16)}`}}
+      style={{padding:"8px 16px",borderRadius:9,fontSize:12.5,fontWeight:600,cursor:"pointer",fontFamily:"'Instrument Sans',sans-serif",background:L.accent,color:"white",border:"none",transition:"all .12s",whiteSpace:"nowrap",display:full?"block":"inline-block",width:full?"100%":"auto",boxShadow:`0 3px 10px ${ao(L.accent,16)}`}}
       onMouseEnter={e=>{e.currentTarget.style.opacity=".88";e.currentTarget.style.transform="translateY(-1px)";}}
       onMouseLeave={e=>{e.currentTarget.style.opacity="1";e.currentTarget.style.transform="none";}}
     >

@@ -108,7 +108,7 @@ export default function ModalPerfil({ user, onClose, onUpdate }) {
               <button
                 onClick={()=>fileRef.current?.click()}
                 title="Alterar foto"
-                style={{position:"absolute",bottom:-4,right:-4,width:24,height:24,borderRadius:"50%",background:L.teal,border:`2px solid ${L.white}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:"white",transition:"opacity .12s"}}
+                style={{position:"absolute",bottom:-4,right:-4,width:24,height:24,borderRadius:"50%",background:L.accent,border:`2px solid ${L.white}`,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:"white",transition:"opacity .12s"}}
                 onMouseEnter={e=>e.currentTarget.style.opacity=".8"}
                 onMouseLeave={e=>e.currentTarget.style.opacity="1"}
               >✎</button>
@@ -153,7 +153,7 @@ export default function ModalPerfil({ user, onClose, onUpdate }) {
               onMouseLeave={e=>e.currentTarget.style.borderColor=L.line}
             >Cancelar</button>
             <button onClick={save} disabled={saving}
-              style={{padding:"9px 20px",borderRadius:9,fontSize:12.5,fontWeight:600,cursor:saving?"wait":"pointer",fontFamily:"inherit",background:L.teal,color:"white",border:"none",opacity:saving?.7:1,transition:"all .12s",boxShadow:`0 3px 10px ${L.tealA}`}}
+              style={{padding:"9px 20px",borderRadius:9,fontSize:12.5,fontWeight:600,cursor:saving?"wait":"pointer",fontFamily:"inherit",background:L.accent,color:"white",border:"none",opacity:saving?.7:1,transition:"all .12s",boxShadow:`0 3px 10px ${L.tealA}`}}
             >{saving ? "Salvando..." : "Salvar"}</button>
           </div>
         </div>

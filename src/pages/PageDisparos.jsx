@@ -264,7 +264,7 @@ export default function PageDisparos({ user }) {
           { id: "historico", label: `Histórico (${campanhas.length})`  },
         ].map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
-            style={btn(tab === t.id ? L.t1 : L.surface, tab === t.id ? "white" : L.t2)}>
+            style={btn(tab === t.id ? L.accent : L.surface, tab === t.id ? "white" : L.t2)}>
             {t.label}
           </button>
         ))}
@@ -392,7 +392,7 @@ export default function PageDisparos({ user }) {
               <button onClick={() => salvar("rascunho")} disabled={saving} style={btn(L.surface, L.t2, { flex: 1 })}>
                 Salvar rascunho
               </button>
-              <button onClick={() => salvar("agendado")} disabled={saving} style={btn(L.t1, "white", { flex: 1 })}>
+              <button onClick={() => salvar("agendado")} disabled={saving} style={btn(L.accent, "white", { flex: 1 })}>
                 {saving ? "Salvando..." : "✓ Criar campanha"}
               </button>
             </Row>
@@ -452,7 +452,7 @@ export default function PageDisparos({ user }) {
                   placeholder="Telefone" type="tel"
                   style={{ flex: 1, border: `1px solid ${L.line}`, borderRadius: 7, padding: "6px 10px",
                     fontSize: 11, outline: "none", fontFamily: "inherit" }} />
-                <button onClick={addContato} style={btn(L.t1, "white", { padding: "6px 12px" })}>+</button>
+                <button onClick={addContato} style={btn(L.accent, "white", { padding: "6px 12px" })}>+</button>
               </Row>
             </div>
 
@@ -497,7 +497,7 @@ export default function PageDisparos({ user }) {
             {form.mensagem && contatos.length > 0 && (
               <div style={{ background: L.bgWarm, borderRadius: 10, border: `1px solid ${L.line}`, padding: 14 }}>
                 <div style={{ fontSize: 10, color: L.t4, fontWeight: 700, textTransform: "uppercase", marginBottom: 8 }}>PRÉVIA COM PRIMEIRO CONTATO</div>
-                <div style={{ background: L.t1, color: "white", borderRadius: "12px 12px 4px 12px",
+                <div style={{ background: L.accent, color: "white", borderRadius: "12px 12px 4px 12px",
                   padding: "8px 12px", fontSize: 12, display: "inline-block", maxWidth: "90%", wordBreak: "break-word" }}>
                   {previewMensagem(form.mensagem, contatos[0])}
                 </div>
@@ -513,7 +513,7 @@ export default function PageDisparos({ user }) {
           display: "flex", alignItems: "center", justifyContent: "center" }}
           onClick={() => setWppModal(false)}>
           <div onClick={e => e.stopPropagation()}
-            style={{ background: "white", borderRadius: 12, padding: 24, width: 440, maxHeight: "80vh",
+            style={{ background: L.white, borderRadius: 12, padding: 24, width: 440, maxHeight: "80vh",
               display: "flex", flexDirection: "column", boxShadow: "0 8px 40px rgba(0,0,0,.18)" }}>
             <Row between mb={12}>
               <div style={{ fontSize: 14, fontWeight: 700, color: L.t1 }}>
@@ -577,7 +577,7 @@ export default function PageDisparos({ user }) {
                   <button
                     onClick={wppContatos.some(c => c._isGroup) ? adicionarGruposSelecionados : adicionarWppSelecionados}
                     disabled={wppSelecionados.length === 0}
-                    style={btn(L.t1, "white", { opacity: wppSelecionados.length === 0 ? 0.5 : 1 })}>
+                    style={btn(L.accent, "white", { opacity: wppSelecionados.length === 0 ? 0.5 : 1 })}>
                     Adicionar {wppSelecionados.length > 0 ? `(${wppSelecionados.length})` : "selecionados"}
                   </button>
                 </Row>
@@ -595,7 +595,7 @@ export default function PageDisparos({ user }) {
             <div style={{ textAlign: "center", padding: 60, color: L.t4 }}>
               <div style={{ fontSize: 40, marginBottom: 12 }}>◉</div>
               <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>Nenhuma campanha</div>
-              <button onClick={() => setTab("nova")} style={btn(L.t1, "white", { marginTop: 12 })}>Criar campanha</button>
+              <button onClick={() => setTab("nova")} style={btn(L.accent, "white", { marginTop: 12 })}>Criar campanha</button>
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>

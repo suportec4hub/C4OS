@@ -10,6 +10,8 @@ export const L = {
   teal:"var(--c-teal)", tealDk:"var(--c-tealDk)", tealBg:"var(--c-tealBg)",
   tealA:"var(--c-tealA)",   // ~13% opacity  (substitui ${L.tealA})
   tealA2:"var(--c-tealA2)", // ~20% opacity  (substitui ${L.tealA2})
+  // Accent — botão primário: dark em light mode, teal em dark mode
+  accent:"var(--c-accent)",
 
   // Secondary
   copper:"var(--c-copper)", copperBg:"var(--c-copperBg)",
@@ -49,6 +51,7 @@ export const globalCSS = `
 
     --c-teal:#111827; --c-tealDk:#000000; --c-tealBg:#f3f4f6;
     --c-tealA:rgba(17,24,39,0.13); --c-tealA2:rgba(17,24,39,0.20);
+    --c-accent:#111827;
 
     --c-copper:#6b7280; --c-copperBg:#f9fafb;
     --c-copperA:rgba(107,114,128,0.13);
@@ -76,6 +79,7 @@ export const globalCSS = `
 
     --c-teal:#c9d1d9; --c-tealDk:#ffffff; --c-tealBg:#21262d;
     --c-tealA:rgba(201,209,217,0.13); --c-tealA2:rgba(201,209,217,0.20);
+    --c-accent:#1aaa96;
 
     --c-copper:#8b949e; --c-copperBg:#161b22;
     --c-copperA:rgba(139,148,158,0.13);

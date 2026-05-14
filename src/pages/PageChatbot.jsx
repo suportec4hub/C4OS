@@ -113,7 +113,7 @@ function TabConfig({ user }) {
               {DIAS.map((d,i)=>{
                 const on = cfg.dias_semana.includes(i);
                 return <button key={i} onClick={()=>toggleDia(i)}
-                  style={{width:36,height:36,borderRadius:8,fontSize:11.5,fontWeight:on?700:400,cursor:"pointer",fontFamily:"inherit",background:on?L.tealBg:L.surface,color:on?L.teal:L.t3,border:`1.5px solid ${on?L.teal+"55":L.line}`,transition:"all .1s"}}>
+                  style={{width:36,height:36,borderRadius:8,fontSize:11.5,fontWeight:on?700:400,cursor:"pointer",fontFamily:"inherit",background:on?L.tealBg:L.surface,color:on?L.teal:L.t3,border:`1.5px solid ${on?L.tealA2:L.line}`,transition:"all .1s"}}>
                   {d}
                 </button>;
               })}
@@ -218,7 +218,7 @@ function TabConfig({ user }) {
         {succ && <div style={{padding:"8px 12px",background:L.greenBg,borderRadius:8,fontSize:12,color:L.green}}>{succ}</div>}
 
         <button onClick={save} disabled={saving}
-          style={{padding:"11px",borderRadius:9,background:L.teal,border:"none",color:"white",cursor:"pointer",fontFamily:"inherit",fontWeight:600,fontSize:13,boxShadow:`0 3px 10px ${L.tealA}`}}>
+          style={{padding:"11px",borderRadius:9,background:L.accent,border:"none",color:"white",cursor:"pointer",fontFamily:"inherit",fontWeight:600,fontSize:13,boxShadow:`0 3px 10px ${L.tealA}`}}>
           {saving?"Salvando...":"Salvar Configurações"}
         </button>
       </div>
@@ -416,7 +416,7 @@ function EmptyState({ icon, title, sub, action, onClick }) {
       <div style={{fontSize:36,marginBottom:12}}>{icon}</div>
       <div style={{fontSize:14,fontWeight:600,color:L.t2,marginBottom:6}}>{title}</div>
       <div style={{fontSize:12.5,marginBottom:20}}>{sub}</div>
-      <button onClick={onClick} style={{padding:"9px 18px",borderRadius:9,background:L.teal,color:"white",border:"none",cursor:"pointer",fontFamily:"inherit",fontWeight:600,fontSize:12.5}}>{action}</button>
+      <button onClick={onClick} style={{padding:"9px 18px",borderRadius:9,background:L.accent,color:"white",border:"none",cursor:"pointer",fontFamily:"inherit",fontWeight:600,fontSize:12.5}}>{action}</button>
     </div>
   );
 }

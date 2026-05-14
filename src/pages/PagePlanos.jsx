@@ -162,7 +162,7 @@ export default function PagePlanos({ user }) {
                 onFocus={e=>e.target.style.borderColor=L.teal} onBlur={e=>e.target.style.borderColor=L.line}
               />
               <button onClick={addFeat}
-                style={{padding:"8px 14px",borderRadius:8,background:L.teal,color:"white",border:"none",cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"inherit"}}>
+                style={{padding:"8px 14px",borderRadius:8,background:L.accent,color:"white",border:"none",cursor:"pointer",fontSize:12,fontWeight:600,fontFamily:"inherit"}}>
                 +
               </button>
             </div>

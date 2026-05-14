@@ -536,7 +536,7 @@ export default function PageDigital({ user, isAdmin }) {
                       onKeyDown={e=>{if(e.key==="Enter"&&e.metaKey)enviarComentario();}}
                     />
                     <button onClick={enviarComentario} disabled={savingComent||!novoComent.trim()}
-                      style={{padding:"8px 16px",borderRadius:8,background:novoComent.trim()?L.teal:L.surface,border:"none",color:novoComent.trim()?"white":L.t4,fontWeight:600,cursor:novoComent.trim()?"pointer":"not-allowed",fontSize:12,fontFamily:"inherit",transition:"all .15s",alignSelf:"flex-end"}}>
+                      style={{padding:"8px 16px",borderRadius:8,background:novoComent.trim()?L.accent:L.surface,border:"none",color:novoComent.trim()?"white":L.t4,fontWeight:600,cursor:novoComent.trim()?"pointer":"not-allowed",fontSize:12,fontFamily:"inherit",transition:"all .15s",alignSelf:"flex-end"}}>
                       {savingComent?"...":"Enviar"}
                     </button>
                   </div>
@@ -561,7 +561,7 @@ export default function PageDigital({ user, isAdmin }) {
             <Row between mb={4}>
               <span style={{fontSize:11,fontWeight:600,color:L.t3,textTransform:"uppercase",letterSpacing:"1px",fontFamily:"'JetBrains Mono',monospace"}}>Projetos</span>
               <button onClick={()=>openProjeto()}
-                style={{background:L.teal,color:"white",border:"none",borderRadius:6,padding:"4px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>+</button>
+                style={{background:L.accent,color:"white",border:"none",borderRadius:6,padding:"4px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>+</button>
             </Row>
             {loadP ? <div style={{textAlign:"center",padding:20,color:L.t4,fontSize:11}}>Carregando...</div>
             : projetos.length===0 ? (

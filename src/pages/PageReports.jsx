@@ -123,7 +123,7 @@ function ReportModal({ title, headers, rows, chart, chartKey, chartLabel, color,
             <div style={{border:`1px solid ${L.line}`,borderRadius:10,overflow:"hidden"}}>
               <table style={{width:"100%",borderCollapse:"collapse"}}>
                 <thead>
-                  <tr style={{background:L.teal}}>
+                  <tr style={{background:L.accent}}>
                     {headers.map(h=><th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:11,fontWeight:700,color:"#fff",fontFamily:"'JetBrains Mono',monospace",letterSpacing:"0.5px",textTransform:"uppercase"}}>{h}</th>)}
                   </tr>
                 </thead>

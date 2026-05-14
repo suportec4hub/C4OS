@@ -382,7 +382,7 @@ export default function PageAI({ user }) {
       {/* Header sidebar */}
       <div style={{ padding: "12px 12px 8px", borderBottom: `1px solid ${L.lineSoft}`, flexShrink: 0 }}>
         <button onClick={novaConversa}
-          style={{ width: "100%", padding: "9px 12px", borderRadius: 9, background: L.teal, color: "white", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 7, justifyContent: "center", transition: "all .12s", boxShadow: `0 3px 10px ${L.teal}30` }}
+          style={{ width: "100%", padding: "9px 12px", borderRadius: 9, background: L.accent, color: "white", border: "none", cursor: "pointer", fontSize: 12, fontWeight: 600, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 7, justifyContent: "center", transition: "all .12s", boxShadow: `0 3px 10px ${L.accent}30` }}
           onMouseEnter={e => e.currentTarget.style.filter = "brightness(1.08)"}
           onMouseLeave={e => e.currentTarget.style.filter = "none"}
         >
@@ -450,7 +450,7 @@ export default function PageAI({ user }) {
             ☰
           </button>
         )}
-        <div style={{ width: 30, height: 30, borderRadius: 8, background: L.teal, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, color: "white", flexShrink: 0, boxShadow: `0 3px 10px ${L.teal}40` }}>✦</div>
+        <div style={{ width: 30, height: 30, borderRadius: 8, background: L.accent, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, color: "white", flexShrink: 0, boxShadow: `0 3px 10px ${L.accent}40` }}>✦</div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: L.t1, fontFamily: "'Outfit',sans-serif" }}>
             C4 <span style={{ color: L.teal }}>AI</span>
@@ -492,7 +492,7 @@ export default function PageAI({ user }) {
         {chat.map((m, i) => (
           <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
             {m.role === "assistant"
-              ? <div style={{ width: 28, height: 28, borderRadius: 8, background: L.teal, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "white", flexShrink: 0, marginTop: 1 }}>✦</div>
+              ? <div style={{ width: 28, height: 28, borderRadius: 8, background: L.accent, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "white", flexShrink: 0, marginTop: 1 }}>✦</div>
               : <Av name={user?.nome || "U"} color={user?.cor || L.copper} size={28} src={user?.foto_url}/>
             }
             <div style={{
@@ -512,11 +512,11 @@ export default function PageAI({ user }) {
 
         {loading && (
           <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-            <div style={{ width: 28, height: 28, borderRadius: 8, background: L.teal, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "white", flexShrink: 0 }}>✦</div>
+            <div style={{ width: 28, height: 28, borderRadius: 8, background: L.accent, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "white", flexShrink: 0 }}>✦</div>
             <div style={{ padding: "12px 16px", background: L.white, border: `1px solid ${L.tealA}`, borderRadius: "3px 12px 12px 12px", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
               <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
                 {[0, 1, 2].map(j => (
-                  <div key={j} style={{ width: 6, height: 6, borderRadius: "50%", background: L.teal, animation: `blink 1.2s ease ${j * .22}s infinite` }}/>
+                  <div key={j} style={{ width: 6, height: 6, borderRadius: "50%", background: L.accent, animation: `blink 1.2s ease ${j * .22}s infinite` }}/>
                 ))}
                 <span style={{ fontSize: 11, color: L.t4, marginLeft: 6 }}>Analisando...</span>
               </div>
@@ -542,7 +542,7 @@ export default function PageAI({ user }) {
             onBlur={e => e.target.style.borderColor = L.line}
           />
           <button onClick={() => send()} disabled={loading || !input.trim()}
-            style={{ padding: "11px 20px", borderRadius: 10, background: loading || !input.trim() ? L.surface : L.teal, border: "none", color: loading || !input.trim() ? L.t4 : "white", fontWeight: 600, cursor: loading || !input.trim() ? "not-allowed" : "pointer", fontSize: 13, transition: "all .15s", fontFamily: "inherit", boxShadow: !loading && input.trim() ? `0 4px 12px ${L.teal}30` : "none", whiteSpace: "nowrap" }}>
+            style={{ padding: "11px 20px", borderRadius: 10, background: loading || !input.trim() ? L.surface : L.accent, border: "none", color: loading || !input.trim() ? L.t4 : "white", fontWeight: 600, cursor: loading || !input.trim() ? "not-allowed" : "pointer", fontSize: 13, transition: "all .15s", fontFamily: "inherit", boxShadow: !loading && input.trim() ? `0 4px 12px ${L.accent}30` : "none", whiteSpace: "nowrap" }}>
             {loading ? "..." : "Enviar"}
           </button>
         </div>
