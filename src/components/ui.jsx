@@ -15,9 +15,10 @@ export function Fade({children}) {
   return <div style={{animation:"up .35s ease"}}>{children}</div>;
 }
 
-export function Card({title,sub,children}) {
+export function Card({title,sub,children,accent}) {
   return (
-    <div style={{background:L.white,borderRadius:12,border:`1px solid ${L.line}`,padding:"18px 20px",boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}>
+    <div style={{background:L.white,borderRadius:12,border:`1px solid ${L.line}`,padding:"18px 20px",boxShadow:"0 1px 4px rgba(0,0,0,0.05)",position:"relative",overflow:"hidden"}}>
+      <div style={{position:"absolute",top:0,left:0,right:0,height:2,background:accent?`linear-gradient(90deg,var(--c-accent) 0%,transparent 70%)`:`linear-gradient(90deg,var(--c-line) 0%,transparent 60%)`}}/>
       <div style={{marginBottom:14}}>
         <div style={{fontSize:13,fontWeight:600,color:L.t1}}>{title}</div>
         {sub && <div style={{fontSize:10.5,color:L.t3,marginTop:1}}>{sub}</div>}
@@ -53,12 +54,12 @@ export function Row({children,gap,between,justify,mb,mt}) {
 
 export function DataTable({heads,children}) {
   return (
-    <div className="table-scroll" style={{background:L.white,borderRadius:12,border:`1px solid ${L.line}`,overflow:"hidden",boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}>
+    <div className="table-scroll" style={{background:L.white,borderRadius:12,border:`1px solid ${L.line}`,overflow:"hidden",boxShadow:"0 2px 8px rgba(0,0,0,0.05)"}}>
       <table style={{width:"100%",borderCollapse:"collapse"}}>
         <thead>
-          <tr style={{background:L.surface,borderBottom:`1px solid ${L.line}`}}>
+          <tr style={{background:L.surface,borderBottom:`2px solid ${L.line}`}}>
             {heads.map(h => (
-              <th key={h} style={{padding:"11px 14px",textAlign:"left",fontSize:9.5,fontWeight:700,color:L.t3,letterSpacing:"1.2px",textTransform:"uppercase",whiteSpace:"nowrap",fontFamily:"'JetBrains Mono',monospace"}}>
+              <th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:9,fontWeight:700,color:L.t3,letterSpacing:"1.4px",textTransform:"uppercase",whiteSpace:"nowrap",fontFamily:"'JetBrains Mono',monospace"}}>
                 {h}
               </th>
             ))}
@@ -120,9 +121,9 @@ export function PBtn({children,onClick,full}) {
   return (
     <button
       onClick={onClick}
-      style={{padding:"8px 16px",borderRadius:9,fontSize:12.5,fontWeight:600,cursor:"pointer",fontFamily:"'Instrument Sans',sans-serif",background:L.accent,color:"white",border:"none",transition:"all .12s",whiteSpace:"nowrap",display:full?"block":"inline-block",width:full?"100%":"auto",boxShadow:`0 3px 10px ${ao(L.accent,16)}`}}
-      onMouseEnter={e=>{e.currentTarget.style.opacity=".88";e.currentTarget.style.transform="translateY(-1px)";}}
-      onMouseLeave={e=>{e.currentTarget.style.opacity="1";e.currentTarget.style.transform="none";}}
+      style={{padding:"8px 18px",borderRadius:9,fontSize:12.5,fontWeight:600,cursor:"pointer",fontFamily:"'Instrument Sans',sans-serif",background:L.accent,color:"white",border:"none",transition:"all .15s",whiteSpace:"nowrap",display:full?"block":"inline-block",width:full?"100%":"auto",boxShadow:`0 4px 14px ${ao(L.accent,22)}`,letterSpacing:".1px"}}
+      onMouseEnter={e=>{e.currentTarget.style.opacity=".9";e.currentTarget.style.transform="translateY(-2px)";e.currentTarget.style.boxShadow=`0 6px 20px ${ao(L.accent,32)}`;}}
+      onMouseLeave={e=>{e.currentTarget.style.opacity="1";e.currentTarget.style.transform="none";e.currentTarget.style.boxShadow=`0 4px 14px ${ao(L.accent,22)}`;}}
     >
       {children}
     </button>

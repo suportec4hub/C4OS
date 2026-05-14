@@ -147,14 +147,15 @@ export default function Shell({user,onLogout,onProfileUpdate,theme,toggleTheme})
           boxShadow:"2px 0 12px rgba(0,0,0,0.04)",
         }}>
         {/* Logo */}
-        <div style={{height:68,display:"flex",alignItems:"center",padding:showCollapsed?"0 8px":"0 14px",gap:10,borderBottom:`1px solid ${L.lineSoft}`,flexShrink:0,justifyContent:showCollapsed?"center":"flex-start"}}>
+        <div style={{height:68,display:"flex",alignItems:"center",padding:showCollapsed?"0 8px":"0 14px",gap:10,flexShrink:0,justifyContent:showCollapsed?"center":"flex-start",position:"relative"}}>
           <Logo size={showCollapsed?44:52}/>
           {!showCollapsed && (
             <div style={{animation:"px .2s ease"}}>
-              <div style={{fontFamily:"'Outfit',sans-serif",fontWeight:800,fontSize:16,color:L.t1,lineHeight:1,letterSpacing:"-.3px"}}>C4 <span style={{color:L.teal}}>OS</span></div>
+              <div style={{fontFamily:"'Outfit',sans-serif",fontWeight:800,fontSize:16,color:L.t1,lineHeight:1,letterSpacing:"-.3px"}}>C4 <span style={{color:L.accent}}>OS</span></div>
               <div style={{fontSize:9,color:L.t4,letterSpacing:"2px",textTransform:"uppercase",marginTop:1,fontFamily:"'JetBrains Mono',monospace"}}>by C4HUB</div>
             </div>
           )}
+          <div style={{position:"absolute",bottom:0,left:0,right:0,height:1,background:`linear-gradient(90deg,var(--c-accent),transparent)`}}/>
         </div>
 
         {/* Tenant badge */}
@@ -172,19 +173,25 @@ export default function Shell({user,onLogout,onProfileUpdate,theme,toggleTheme})
         <nav style={{flex:1,overflowY:"auto",padding:"8px 8px"}}>
           {groups.map(g => (
             <div key={g} style={{marginBottom:6}}>
-              {!showCollapsed && <div style={{fontSize:9,fontWeight:700,letterSpacing:"2px",textTransform:"uppercase",color:L.t4,padding:"6px 9px 4px",fontFamily:"'JetBrains Mono',monospace"}}>{g}</div>}
+              {!showCollapsed && (
+                <div style={{display:"flex",alignItems:"center",gap:6,padding:"8px 9px 4px"}}>
+                  <div style={{width:4,height:4,borderRadius:"50%",background:L.tealA2,flexShrink:0}}/>
+                  <div style={{fontSize:9,fontWeight:700,letterSpacing:"2px",textTransform:"uppercase",color:L.t4,fontFamily:"'JetBrains Mono',monospace",flex:1}}>{g}</div>
+                  <div style={{height:1,flex:1,background:L.lineSoft,maxWidth:40}}/>
+                </div>
+              )}
               {navItems.filter(n => n.g === g).map(item => {
                 const on = safe === item.id;
                 return (
                   <button key={item.id} onClick={()=>navigate(item.id)} title={showCollapsed?item.label:undefined}
-                    style={{display:"flex",alignItems:"center",gap:9,width:"100%",padding:showCollapsed?"10px 0":"7px 10px",justifyContent:showCollapsed?"center":"flex-start",background:on?L.tealBg:"transparent",boxShadow:(!showCollapsed&&on)?`inset 2px 0 0 ${L.teal}`:"none",outline:"none",border:"none",borderRadius:showCollapsed?8:"0 8px 8px 0",cursor:"pointer",marginBottom:1,color:on?L.teal:L.t3,fontSize:12.5,fontFamily:"inherit",fontWeight:on?600:400,transition:"all .12s"}}
-                    onMouseEnter={e=>{if(!on){e.currentTarget.style.background=L.surface;e.currentTarget.style.color=L.t2;}}}
-                    onMouseLeave={e=>{if(!on){e.currentTarget.style.background="transparent";e.currentTarget.style.color=L.t3;}}}
+                    style={{display:"flex",alignItems:"center",gap:9,width:"100%",padding:showCollapsed?"10px 0":"7px 10px",justifyContent:showCollapsed?"center":"flex-start",background:on?L.tealA:"transparent",border:on?`1px solid ${L.tealA2}`:"1px solid transparent",outline:"none",borderRadius:8,cursor:"pointer",marginBottom:1,color:on?L.teal:L.t3,fontSize:12.5,fontFamily:"inherit",fontWeight:on?600:400,transition:"all .12s",boxShadow:on?`0 2px 8px ${L.tealA}`:"none"}}
+                    onMouseEnter={e=>{if(!on){e.currentTarget.style.background=L.surface;e.currentTarget.style.color=L.t2;e.currentTarget.style.borderColor=L.lineSoft;}}}
+                    onMouseLeave={e=>{if(!on){e.currentTarget.style.background="transparent";e.currentTarget.style.color=L.t3;e.currentTarget.style.borderColor="transparent";}}}
                   >
-                    <span style={{fontSize:13,flexShrink:0,opacity:on?1:.75}}>{item.ico}</span>
+                    <span style={{fontSize:13,flexShrink:0,opacity:on?1:.7,transition:"opacity .12s"}}>{item.ico}</span>
                     {!showCollapsed && <span style={{whiteSpace:"nowrap"}}>{item.label}</span>}
                     {!showCollapsed && item.id==="ai" && (
-                      <span style={{marginLeft:"auto",background:L.tealBg,color:L.teal,borderRadius:4,padding:"1px 6px",fontSize:8,fontWeight:700,letterSpacing:"1px",fontFamily:"'JetBrains Mono',monospace",border:`1px solid ${L.tealA}`}}>AI</span>
+                      <span style={{marginLeft:"auto",background:L.tealA,color:L.teal,borderRadius:4,padding:"1px 6px",fontSize:8,fontWeight:700,letterSpacing:"1px",fontFamily:"'JetBrains Mono',monospace",border:`1px solid ${L.tealA2}`}}>AI</span>
                     )}
                   </button>
                 );
@@ -194,19 +201,19 @@ export default function Shell({user,onLogout,onProfileUpdate,theme,toggleTheme})
         </nav>
 
         {/* User footer */}
-        <div style={{padding:"10px 8px",borderTop:`1px solid ${L.lineSoft}`,flexShrink:0}}>
+        <div style={{padding:"10px 8px",borderTop:`1px solid ${L.lineSoft}`,flexShrink:0,background:L.surface}}>
           <div
-            style={{display:"flex",alignItems:"center",gap:9,padding:showCollapsed?"8px 0":"8px 10px",borderRadius:8,background:L.surface,justifyContent:showCollapsed?"center":"flex-start",cursor:"pointer",transition:"background .12s"}}
+            style={{display:"flex",alignItems:"center",gap:9,padding:showCollapsed?"8px 0":"8px 10px",borderRadius:9,background:L.white,border:`1px solid ${L.line}`,justifyContent:showCollapsed?"center":"flex-start",cursor:"pointer",transition:"all .12s",boxShadow:"0 1px 4px rgba(0,0,0,0.04)"}}
             onClick={()=>setPerfilOpen(true)}
             title="Editar perfil"
-            onMouseEnter={e=>e.currentTarget.style.background=L.hover}
-            onMouseLeave={e=>e.currentTarget.style.background=L.surface}
+            onMouseEnter={e=>{e.currentTarget.style.borderColor=L.tealA2;e.currentTarget.style.boxShadow=`0 2px 8px ${L.tealA}`;}}
+            onMouseLeave={e=>{e.currentTarget.style.borderColor=L.line;e.currentTarget.style.boxShadow="0 1px 4px rgba(0,0,0,0.04)";}}
           >
             <Av name={user.nome} color={user.cor} size={28} src={user.foto_url}/>
             {!showCollapsed && (
               <div style={{flex:1,minWidth:0}}>
                 <div style={{fontSize:12,fontWeight:600,color:L.t1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{user.nome}</div>
-                <div style={{fontSize:10,color:L.t3,whiteSpace:"nowrap"}}>{user.cargo}</div>
+                <div style={{fontSize:10,color:L.t3,whiteSpace:"nowrap"}}>{user.cargo||"—"}</div>
               </div>
             )}
             {!showCollapsed && (
@@ -236,21 +243,27 @@ export default function Shell({user,onLogout,onProfileUpdate,theme,toggleTheme})
       {/* Main */}
       <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",minWidth:0}}>
         {/* Header */}
-        <header style={{height:58,minHeight:58,flexShrink:0,background:L.white,borderBottom:`1px solid ${L.line}`,display:"flex",alignItems:"center",justifyContent:"space-between",padding:isMobile?"0 14px":"0 24px",gap:12,boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}>
+        <header style={{height:58,minHeight:58,flexShrink:0,background:L.white,borderBottom:`1px solid ${L.line}`,display:"flex",alignItems:"center",justifyContent:"space-between",padding:isMobile?"0 14px":"0 24px",gap:12,boxShadow:"0 2px 8px rgba(0,0,0,0.05)"}}>
           <div style={{display:"flex",alignItems:"center",gap:10}}>
             {isMobile && (
               <button onClick={()=>setMobOpen(p=>!p)}
                 style={{background:"none",border:`1px solid ${L.line}`,borderRadius:8,padding:"6px 9px",cursor:"pointer",color:L.t2,fontSize:15,lineHeight:1,transition:"all .12s"}}
-                onMouseEnter={e=>{e.currentTarget.style.borderColor=L.teal;e.currentTarget.style.color=L.teal;}}
+                onMouseEnter={e=>{e.currentTarget.style.borderColor=L.accent;e.currentTarget.style.color=L.accent;}}
                 onMouseLeave={e=>{e.currentTarget.style.borderColor=L.line;e.currentTarget.style.color=L.t2;}}
               >☰</button>
             )}
-            <span style={{fontSize:isMobile?13:15,fontFamily:"'Outfit',sans-serif",fontWeight:700,color:L.t1,letterSpacing:"-.2px"}}>{curr?.label}</span>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <div style={{width:3,height:18,borderRadius:2,background:L.accent,flexShrink:0}}/>
+              <span style={{fontSize:isMobile?13:15,fontFamily:"'Outfit',sans-serif",fontWeight:700,color:L.t1,letterSpacing:"-.2px"}}>{curr?.label}</span>
+            </div>
             {!isAdmin && !isMobile && <Chip color={L.copper}>{user.empresa}</Chip>}
           </div>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             {!isMobile && (
-              <div style={{display:"flex",alignItems:"center",gap:7,background:L.surface,border:`1px solid ${L.line}`,borderRadius:8,padding:"6px 12px"}}>
+              <div style={{display:"flex",alignItems:"center",gap:7,background:L.surface,border:`1px solid ${L.line}`,borderRadius:20,padding:"6px 14px",transition:"all .15s"}}
+                onMouseEnter={e=>{e.currentTarget.style.borderColor=L.tealA2;e.currentTarget.style.boxShadow=`0 0 0 3px ${L.tealA}`;}}
+                onMouseLeave={e=>{e.currentTarget.style.borderColor=L.line;e.currentTarget.style.boxShadow="none";}}
+              >
                 <span style={{color:L.t4,fontSize:13}}>⌕</span>
                 <input placeholder="Buscar..." style={{background:"none",border:"none",outline:"none",color:L.t1,fontSize:12,width:150,fontFamily:"inherit"}}/>
               </div>
@@ -259,9 +272,9 @@ export default function Shell({user,onLogout,onProfileUpdate,theme,toggleTheme})
             <button
               onClick={toggleTheme}
               title={theme === "dark" ? "Modo claro" : "Modo escuro"}
-              style={{background:"none",border:`1px solid ${L.line}`,borderRadius:8,padding:"5px 8px",cursor:"pointer",color:L.t3,fontSize:15,lineHeight:1,transition:"all .15s",flexShrink:0}}
-              onMouseEnter={e=>{e.currentTarget.style.borderColor=L.teal;e.currentTarget.style.color=L.teal;}}
-              onMouseLeave={e=>{e.currentTarget.style.borderColor=L.line;e.currentTarget.style.color=L.t3;}}
+              style={{background:L.surface,border:`1px solid ${L.line}`,borderRadius:9,padding:"5px 9px",cursor:"pointer",color:L.t3,fontSize:15,lineHeight:1,transition:"all .15s",flexShrink:0}}
+              onMouseEnter={e=>{e.currentTarget.style.borderColor=L.accent;e.currentTarget.style.color=L.accent;e.currentTarget.style.background=L.tealA;}}
+              onMouseLeave={e=>{e.currentTarget.style.borderColor=L.line;e.currentTarget.style.color=L.t3;e.currentTarget.style.background=L.surface;}}
             >
               {theme === "dark" ? "☀" : "☽"}
             </button>

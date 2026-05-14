@@ -103,12 +103,19 @@ export const globalCSS = `
     --c-t1:#f0f6fc; --c-t2:#e6edf3; --c-t3:#c9d1d9; --c-t4:#8b949e; --c-t5:#6e7681;
   }
 
+  :root{color-scheme:light}
+  html[data-theme="dark"]{color-scheme:dark}
   body{background:var(--c-bg);color:var(--c-t1);font-family:'Instrument Sans',sans-serif;font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased;transition:background .2s,color .2s}
   input,textarea,select{color:var(--c-t1);background:var(--c-bg)}
   input::placeholder,textarea::placeholder{color:var(--c-t4)}
+  :focus-visible{outline:2px solid var(--c-accent);outline-offset:2px;border-radius:4px}
+  ::selection{background:var(--c-tealA2);color:var(--c-t1)}
   ::-webkit-scrollbar{width:4px;height:4px}
   ::-webkit-scrollbar-track{background:transparent}
   ::-webkit-scrollbar-thumb{background:var(--c-line);border-radius:99px}
+  ::-webkit-scrollbar-thumb:hover{background:var(--c-tealA2)}
+  tbody tr{transition:background .1s}
+  tbody tr:hover{background:var(--c-surface)}
   /* ── Força textos hardcoded escuros a ficarem legíveis no tema escuro ── */
   html[data-theme="dark"] [style*="color:#111827"],html[data-theme="dark"] [style*="color: #111827"],
   html[data-theme="dark"] [style*="color:#1f2937"],html[data-theme="dark"] [style*="color:#374151"],
