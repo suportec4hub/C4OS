@@ -116,13 +116,13 @@ export default function ModalPerfil({ user, onClose, onUpdate }) {
             <input ref={fileRef} type="file" accept="image/*" onChange={pickFile} style={{display:"none"}}/>
             <div style={{marginTop:10,display:"flex",gap:8}}>
               <button onClick={()=>fileRef.current?.click()}
-                style={{padding:"4px 12px",borderRadius:7,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:L.tealBg,color:L.teal,border:`1px solid ${L.teal}22`,transition:"all .12s"}}
+                style={{padding:"4px 12px",borderRadius:7,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:L.tealBg,color:L.teal,border:`1px solid ${L.tealA}`,transition:"all .12s"}}
                 onMouseEnter={e=>e.currentTarget.style.filter="brightness(.96)"}
                 onMouseLeave={e=>e.currentTarget.style.filter="none"}
               >{preview ? "Trocar foto" : "Adicionar foto"}</button>
               {preview && (
                 <button onClick={removePhoto}
-                  style={{padding:"4px 12px",borderRadius:7,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:L.redBg,color:L.red,border:`1px solid ${L.red}22`,transition:"all .12s"}}
+                  style={{padding:"4px 12px",borderRadius:7,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:L.redBg,color:L.red,border:`1px solid ${L.redA}`,transition:"all .12s"}}
                   onMouseEnter={e=>e.currentTarget.style.filter="brightness(.96)"}
                   onMouseLeave={e=>e.currentTarget.style.filter="none"}
                 >Remover</button>
@@ -142,8 +142,8 @@ export default function ModalPerfil({ user, onClose, onUpdate }) {
             <LI label="Confirmar senha" value={senha2} onChange={setSenha2} placeholder="Repita a senha" type="password"/>
           </div>
 
-          {err  && <div style={{padding:"8px 12px",background:L.redBg,border:`1px solid ${L.red}22`,borderRadius:8,fontSize:12,color:L.red,margin:"8px 0"}}>{err}</div>}
-          {succ && <div style={{padding:"8px 12px",background:L.greenBg,border:`1px solid ${L.green}22`,borderRadius:8,fontSize:12,color:L.green,margin:"8px 0"}}>✓ {succ}</div>}
+          {err  && <div style={{padding:"8px 12px",background:L.redBg,border:`1px solid ${L.redA}`,borderRadius:8,fontSize:12,color:L.red,margin:"8px 0"}}>{err}</div>}
+          {succ && <div style={{padding:"8px 12px",background:L.greenBg,border:`1px solid ${L.greenA}`,borderRadius:8,fontSize:12,color:L.green,margin:"8px 0"}}>✓ {succ}</div>}
 
           {/* Footer */}
           <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:16,paddingTop:16,borderTop:`1px solid ${L.lineSoft}`}}>
@@ -153,7 +153,7 @@ export default function ModalPerfil({ user, onClose, onUpdate }) {
               onMouseLeave={e=>e.currentTarget.style.borderColor=L.line}
             >Cancelar</button>
             <button onClick={save} disabled={saving}
-              style={{padding:"9px 20px",borderRadius:9,fontSize:12.5,fontWeight:600,cursor:saving?"wait":"pointer",fontFamily:"inherit",background:L.teal,color:"white",border:"none",opacity:saving?.7:1,transition:"all .12s",boxShadow:`0 3px 10px ${L.teal}28`}}
+              style={{padding:"9px 20px",borderRadius:9,fontSize:12.5,fontWeight:600,cursor:saving?"wait":"pointer",fontFamily:"inherit",background:L.teal,color:"white",border:"none",opacity:saving?.7:1,transition:"all .12s",boxShadow:`0 3px 10px ${L.tealA}`}}
             >{saving ? "Salvando..." : "Salvar"}</button>
           </div>
         </div>

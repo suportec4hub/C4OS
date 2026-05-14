@@ -80,7 +80,7 @@ import { hasFullAccess, hasPageAccess } from "../lib/auth";
 
 const ADMIN_ONLY = new Set(["clientes","logs","suporte","users","planos","reports","meta","relatoriosatend"]);
 
-export default function Shell({user,onLogout,onProfileUpdate}) {
+export default function Shell({user,onLogout,onProfileUpdate,theme,toggleTheme}) {
   const [sec,setSec] = useState("dashboard");
   const [col,setCol] = useState(false);
   const [mobOpen,setMobOpen] = useState(false);
@@ -159,7 +159,7 @@ export default function Shell({user,onLogout,onProfileUpdate}) {
 
         {/* Tenant badge */}
         {!showCollapsed && (
-          <div style={{margin:"10px 12px 6px",padding:"8px 11px",borderRadius:8,background:isAdmin?L.tealBg:L.copperBg,border:`1px solid ${isAdmin?L.teal:L.copper}22`}}>
+          <div style={{margin:"10px 12px 6px",padding:"8px 11px",borderRadius:8,background:isAdmin?L.tealBg:L.copperBg,border:`1px solid ${isAdmin?L.tealA:L.copperA}`}}>
             <div style={{fontSize:9,letterSpacing:"1.5px",textTransform:"uppercase",color:isAdmin?L.teal:L.copper,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",display:"flex",alignItems:"center",gap:5,marginBottom:2}}>
               <span style={{width:5,height:5,borderRadius:"50%",background:isAdmin?L.teal:L.copper,display:"inline-block"}}/>
               {isAdmin ? "C4HUB ADMIN" : user.empresa}
@@ -184,7 +184,7 @@ export default function Shell({user,onLogout,onProfileUpdate}) {
                     <span style={{fontSize:13,flexShrink:0,opacity:on?1:.6}}>{item.ico}</span>
                     {!showCollapsed && <span style={{whiteSpace:"nowrap"}}>{item.label}</span>}
                     {!showCollapsed && item.id==="ai" && (
-                      <span style={{marginLeft:"auto",background:L.tealBg,color:L.teal,borderRadius:4,padding:"1px 6px",fontSize:8,fontWeight:700,letterSpacing:"1px",fontFamily:"'JetBrains Mono',monospace",border:`1px solid ${L.teal}22`}}>AI</span>
+                      <span style={{marginLeft:"auto",background:L.tealBg,color:L.teal,borderRadius:4,padding:"1px 6px",fontSize:8,fontWeight:700,letterSpacing:"1px",fontFamily:"'JetBrains Mono',monospace",border:`1px solid ${L.tealA}`}}>AI</span>
                     )}
                   </button>
                 );
@@ -256,6 +256,15 @@ export default function Shell({user,onLogout,onProfileUpdate}) {
               </div>
             )}
             <Chip color={L.green} dot>Online</Chip>
+            <button
+              onClick={toggleTheme}
+              title={theme === "dark" ? "Modo claro" : "Modo escuro"}
+              style={{background:"none",border:`1px solid ${L.line}`,borderRadius:8,padding:"5px 8px",cursor:"pointer",color:L.t3,fontSize:15,lineHeight:1,transition:"all .15s",flexShrink:0}}
+              onMouseEnter={e=>{e.currentTarget.style.borderColor=L.teal;e.currentTarget.style.color=L.teal;}}
+              onMouseLeave={e=>{e.currentTarget.style.borderColor=L.line;e.currentTarget.style.color=L.t3;}}
+            >
+              {theme === "dark" ? "☀" : "☽"}
+            </button>
           </div>
         </header>
 

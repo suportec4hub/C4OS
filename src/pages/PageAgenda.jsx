@@ -322,7 +322,7 @@ export default function PageAgenda({ user }) {
             {edit ? (
               <button
                 onClick={async () => { if (confirm("Excluir este evento?")) { await del(edit); setModal(false); setEdit(null); setForm(VAZIO); } }}
-                style={{ padding: "9px 16px", borderRadius: 9, fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", background: L.redBg, color: L.red, border: `1px solid ${L.red}22`, transition: "all .12s" }}
+                style={{ padding: "9px 16px", borderRadius: 9, fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", background: L.redBg, color: L.red, border: `1px solid ${L.redA}`, transition: "all .12s" }}
                 onMouseEnter={e => { e.currentTarget.style.background = L.red; e.currentTarget.style.color = "white"; }}
                 onMouseLeave={e => { e.currentTarget.style.background = L.redBg; e.currentTarget.style.color = L.red; }}>
                 🗑 Excluir

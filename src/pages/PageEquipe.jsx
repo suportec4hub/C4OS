@@ -327,11 +327,11 @@ export default function PageEquipe({ user }) {
           {isAdmin && (
             <div style={{marginTop:16,display:"flex",gap:8}}>
               <button onClick={()=>{setModal(false);openEditar(selected);}}
-                style={{flex:1,padding:"8px",borderRadius:8,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:L.tealBg,color:L.teal,border:`1px solid ${L.teal}22`}}>
+                style={{flex:1,padding:"8px",borderRadius:8,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:L.tealBg,color:L.teal,border:`1px solid ${L.tealA}`}}>
                 Editar
               </button>
               <button onClick={()=>toggleAtivo(selected).then(()=>setModal(false))}
-                style={{flex:1,padding:"8px",borderRadius:8,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:selected.ativo?L.redBg:L.greenBg,color:selected.ativo?L.red:L.green,border:`1px solid ${(selected.ativo?L.red:L.green)}22`}}>
+                style={{flex:1,padding:"8px",borderRadius:8,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:selected.ativo?L.redBg:L.greenBg,color:selected.ativo?L.red:L.green,border:`1px solid ${selected.ativo?L.redA:L.greenA}`}}>
                 {selected.ativo?"Desativar":"Ativar"}
               </button>
             </div>
@@ -342,7 +342,7 @@ export default function PageEquipe({ user }) {
       {confirmDelete && (
         <Modal title="Excluir usuário permanentemente" onClose={()=>setConfirmDelete(null)} width={420}>
           <div style={{padding:"8px 0 20px"}}>
-            <div style={{display:"flex",alignItems:"center",gap:14,padding:"16px",background:L.redBg,borderRadius:10,border:`1px solid ${L.red}33`,marginBottom:18}}>
+            <div style={{display:"flex",alignItems:"center",gap:14,padding:"16px",background:L.redBg,borderRadius:10,border:`1px solid ${L.redA2}`,marginBottom:18}}>
               <span style={{fontSize:28}}>⚠️</span>
               <div>
                 <div style={{fontSize:13,fontWeight:700,color:L.red,marginBottom:3}}>Esta ação é permanente</div>

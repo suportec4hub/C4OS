@@ -193,12 +193,12 @@ export default function PageDeps({ user }) {
                       {/* Ações */}
                       <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
                         <button onClick={()=>openEdit(d)}
-                          style={{padding:"6px 14px",borderRadius:8,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:L.tealBg,color:L.teal,border:`1px solid ${L.teal}22`}}
+                          style={{padding:"6px 14px",borderRadius:8,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:L.tealBg,color:L.teal,border:`1px solid ${L.tealA}`}}
                           onMouseEnter={e=>e.currentTarget.style.filter="brightness(.96)"}
                           onMouseLeave={e=>e.currentTarget.style.filter="none"}
                         >✎ Editar</button>
                         <button onClick={()=>del(d.id, d.nome)}
-                          style={{padding:"6px 14px",borderRadius:8,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:L.redBg,color:L.red,border:`1px solid ${L.red}22`}}
+                          style={{padding:"6px 14px",borderRadius:8,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:L.redBg,color:L.red,border:`1px solid ${L.redA}`}}
                           onMouseEnter={e=>e.currentTarget.style.filter="brightness(.96)"}
                           onMouseLeave={e=>e.currentTarget.style.filter="none"}
                         >⊗ Excluir</button>
@@ -245,7 +245,7 @@ export default function PageDeps({ user }) {
               ))}
             </div>
           </Field>
-          {err && <div style={{padding:"8px 12px",background:L.redBg,border:`1px solid ${L.red}22`,borderRadius:8,fontSize:12,color:L.red,marginBottom:4}}>{err}</div>}
+          {err && <div style={{padding:"8px 12px",background:L.redBg,border:`1px solid ${L.redA}`,borderRadius:8,fontSize:12,color:L.red,marginBottom:4}}>{err}</div>}
           <ModalFooter onClose={()=>setModal(false)} onSave={save} loading={saving} label={editId?"Salvar Alterações":"Criar Departamento"}/>
         </Modal>
       )}
@@ -269,7 +269,7 @@ export default function PageDeps({ user }) {
                   .map(did => deps.find(x => x.id === did)?.nome)
                   .filter(Boolean);
                 return (
-                  <div key={m.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 10px",borderRadius:8,background:L.greenBg,border:`1px solid ${L.green}22`,marginBottom:5}}>
+                  <div key={m.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 10px",borderRadius:8,background:L.greenBg,border:`1px solid ${L.greenA}`,marginBottom:5}}>
                     <div style={{display:"flex",alignItems:"center",gap:8}}>
                       <Av name={m.nome} color={membrosModal.cor||L.teal} size={26}/>
                       <div>
@@ -281,7 +281,7 @@ export default function PageDeps({ user }) {
                       </div>
                     </div>
                     <button onClick={()=>removerMembro(m.id)} disabled={savingMembro}
-                      style={{padding:"4px 10px",borderRadius:6,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:L.redBg,color:L.red,border:`1px solid ${L.red}22`}}>
+                      style={{padding:"4px 10px",borderRadius:6,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:L.redBg,color:L.red,border:`1px solid ${L.redA}`}}>
                       Remover
                     </button>
                   </div>
@@ -325,7 +325,7 @@ export default function PageDeps({ user }) {
                           </div>
                         </div>
                         <button onClick={()=>adicionarMembro(m.id)} disabled={savingMembro}
-                          style={{padding:"4px 12px",borderRadius:6,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:L.tealBg,color:L.teal,border:`1px solid ${L.teal}22`}}>
+                          style={{padding:"4px 12px",borderRadius:6,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:L.tealBg,color:L.teal,border:`1px solid ${L.tealA}`}}>
                           + Adicionar
                         </button>
                       </div>

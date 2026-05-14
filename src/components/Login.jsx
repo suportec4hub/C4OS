@@ -163,7 +163,7 @@ export default function Login() {
 
           {/* Erro */}
           {err && (
-            <div style={{display:"flex",alignItems:"center",gap:8,padding:"9px 12px",background:L.redBg,border:`1px solid ${L.red}28`,borderRadius:8,marginBottom:16}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,padding:"9px 12px",background:L.redBg,border:`1px solid ${L.redA}`,borderRadius:8,marginBottom:16}}>
               <span style={{color:L.red,fontSize:12,fontWeight:600}}>✕</span>
               <span style={{fontSize:12,color:L.red}}>{err}</span>
             </div>

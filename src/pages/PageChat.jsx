@@ -1998,7 +1998,7 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
             {/* Error */}
             {novaErr && (
               <div style={{ display:"flex", alignItems:"center", gap:7, padding:"8px 12px",
-                background:L.redBg, border:`1px solid ${L.red}28`, borderRadius:8, marginBottom:14 }}>
+                background:L.redBg, border:`1px solid ${L.redA}`, borderRadius:8, marginBottom:14 }}>
                 <span style={{ color:L.red, fontSize:13 }}>✕</span>
                 <span style={{ fontSize:12, color:L.red }}>{novaErr}</span>
               </div>
@@ -2090,7 +2090,7 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
         <div style={{
           position: "fixed", bottom: 24, left: 24, zIndex: 9998,
           background: L.yellowBg, color: L.yellow, padding: "10px 14px",
-          borderRadius: 10, border: `1px solid ${L.yellow}44`, fontSize: 11,
+          borderRadius: 10, border: `1px solid ${L.yellowA2}`, fontSize: 11,
           maxWidth: 280, display: "flex", alignItems: "center", gap: 8,
         }}>
           <span>🔔</span>

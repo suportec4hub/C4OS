@@ -284,7 +284,7 @@ export default function PageDashboard({ user }) {
     <Fade>
       {/* ── empty state ── */}
       {dados.totalLeads === 0 && dados.mrr === 0 && (
-        <div style={{ background:`linear-gradient(135deg,${L.tealBg},${L.copperBg})`, border:`1px solid ${L.teal}22`, borderRadius:12, padding:"14px 18px", marginBottom:16, display:"flex", alignItems:"center", gap:12 }}>
+        <div style={{ background:`linear-gradient(135deg,${L.tealBg},${L.copperBg})`, border:`1px solid ${L.tealA}`, borderRadius:12, padding:"14px 18px", marginBottom:16, display:"flex", alignItems:"center", gap:12 }}>
           <div style={{ fontSize:20 }}>📋</div>
           <div>
             <div style={{ fontSize:13, fontWeight:600, color:L.t1 }}>Dashboard pronto — aguardando seus dados</div>

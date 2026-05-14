@@ -145,7 +145,7 @@ export default function PageFollowUp({ user, onGoToChat }) {
             {overdue && <Tag color={L.red} bg={L.redBg} small>Vencido</Tag>}
             {/* Badge de tempo sem conversa */}
             {tsConversa && !done && (
-              <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 5, background: alertaSemContato ? L.redBg : L.yellowBg, color: alertaSemContato ? L.red : L.yellow, border: `1px solid ${alertaSemContato ? L.red : L.yellow}22` }}>
+              <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 5, background: alertaSemContato ? L.redBg : L.yellowBg, color: alertaSemContato ? L.red : L.yellow, border: `1px solid ${alertaSemContato ? L.redA : L.yellowA}` }}>
                 ⏱ {tsConversa}
               </span>
             )}
@@ -165,13 +165,13 @@ export default function PageFollowUp({ user, onGoToChat }) {
         <Row gap={4}>
           {/* Botão: ir para conversa interna */}
           {!done && lead?.whatsapp && onGoToChat && (
-            <button onClick={() => onGoToChat(item.lead_id)} title="Ver conversa no WhatsApp" style={{ background: L.tealBg, border: `1px solid ${L.teal}22`, cursor: "pointer", color: L.teal, fontSize: 11, padding: "4px 8px", borderRadius: 6, transition: "all .1s", fontWeight: 700, whiteSpace: "nowrap" }}>
+            <button onClick={() => onGoToChat(item.lead_id)} title="Ver conversa no WhatsApp" style={{ background: L.tealBg, border: `1px solid ${L.tealA}`, cursor: "pointer", color: L.teal, fontSize: 11, padding: "4px 8px", borderRadius: 6, transition: "all .1s", fontWeight: 700, whiteSpace: "nowrap" }}>
               💬 Chat
             </button>
           )}
           {/* Botão: abrir WhatsApp externo */}
           {!done && lead?.whatsapp && (
-            <button onClick={() => openWhatsApp(item)} title="Abrir no WhatsApp" style={{ background: L.greenBg, border: `1px solid ${L.green}22`, cursor: "pointer", color: L.green, fontSize: 13, padding: "4px 8px", borderRadius: 6, transition: "all .1s", fontWeight: 700 }}>📱</button>
+            <button onClick={() => openWhatsApp(item)} title="Abrir no WhatsApp" style={{ background: L.greenBg, border: `1px solid ${L.greenA}`, cursor: "pointer", color: L.green, fontSize: 13, padding: "4px 8px", borderRadius: 6, transition: "all .1s", fontWeight: 700 }}>📱</button>
           )}
           {!done && (
             <>
@@ -189,8 +189,8 @@ export default function PageFollowUp({ user, onGoToChat }) {
       {/* Alertas */}
       {(urgentes > 0 || vencidos > 0) && (
         <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
-          {urgentes > 0 && <div style={{ padding: "8px 14px", background: L.redBg, border: `1px solid ${L.red}33`, borderRadius: 8, fontSize: 12, color: L.red, fontWeight: 600 }}>⚡ {urgentes} urgentes</div>}
-          {vencidos > 0 && <div style={{ padding: "8px 14px", background: L.yellowBg, border: `1px solid ${L.yellow}33`, borderRadius: 8, fontSize: 12, color: L.yellow, fontWeight: 600 }}>⏰ {vencidos} vencidos</div>}
+          {urgentes > 0 && <div style={{ padding: "8px 14px", background: L.redBg, border: `1px solid ${L.redA2}`, borderRadius: 8, fontSize: 12, color: L.red, fontWeight: 600 }}>⚡ {urgentes} urgentes</div>}
+          {vencidos > 0 && <div style={{ padding: "8px 14px", background: L.yellowBg, border: `1px solid ${L.yellowA2}`, borderRadius: 8, fontSize: 12, color: L.yellow, fontWeight: 600 }}>⏰ {vencidos} vencidos</div>}
         </div>
       )}
 
@@ -286,7 +286,7 @@ export default function PageFollowUp({ user, onGoToChat }) {
             </Field>
           )}
 
-          {err && <div style={{ padding: "8px 12px", background: L.redBg, border: `1px solid ${L.red}22`, borderRadius: 8, fontSize: 12, color: L.red, marginBottom: 4 }}>{err}</div>}
+          {err && <div style={{ padding: "8px 12px", background: L.redBg, border: `1px solid ${L.redA}`, borderRadius: 8, fontSize: 12, color: L.red, marginBottom: 4 }}>{err}</div>}
           <ModalFooter onClose={() => setModal(false)} onSave={save} loading={saving} label={editId ? "Salvar" : "Criar Follow-up"} />
         </Modal>
       )}
