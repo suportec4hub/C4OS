@@ -5,6 +5,12 @@ import { supabase } from "../lib/supabase";
 import { Fade, Row, PBtn, Tag, ScBar, IBtn } from "../components/ui";
 import Modal, { Field, Input, Select, ModalFooter } from "../components/Modal";
 
+// Aplica opacidade a qualquer cor (CSS var ou hex)
+const ao = (color, pct) =>
+  color?.startsWith?.("var(")
+    ? `color-mix(in srgb, ${color} ${pct}%, transparent)`
+    : `${color}${Math.round(pct * 2.55).toString(16).padStart(2, "0")}`;
+
 const ETAPAS_DEFAULT = [
   {id:"novo",    label:"Novos",       cor:L.teal},
   {id:"qualif",  label:"Qualificação",cor:L.copper},
@@ -197,7 +203,7 @@ export default function PagePipeline({ user, onOpenChat }) {
             onDragOver={e=>{e.preventDefault();setDragOver(stage.id);setColDragOver(stageIdx);}}
             onDrop={()=>{ if(colDrag!==null) onColDrop(stageIdx); else onDrop(stage.id); }}
             onDragLeave={()=>{setDragOver(null);setColDragOver(null);}}
-            style={{minWidth:220,flex:"0 0 220px",background:dragOver===stage.id?L.surface:L.white,borderRadius:12,border:`1.5px solid ${dragOver===stage.id||colDragOver===stageIdx?stage.cor+"55":L.line}`,padding:14,transition:"all .15s",boxShadow:"0 1px 3px rgba(0,0,0,0.04)",opacity:colDrag===stageIdx?.5:1}}
+            style={{minWidth:220,flex:"0 0 220px",background:dragOver===stage.id?L.surface:L.white,borderRadius:12,border:`1.5px solid ${dragOver===stage.id||colDragOver===stageIdx?ao(stage.cor, 33):L.line}`,padding:14,transition:"all .15s",boxShadow:"0 1px 3px rgba(0,0,0,0.04)",opacity:colDrag===stageIdx?.5:1}}
           >
             {/* Cabeçalho coluna */}
             <Row between mb={12}>
@@ -233,9 +239,9 @@ export default function PagePipeline({ user, onOpenChat }) {
                   onDragStart={()=>setDragging(deal)}
                   onDragEnd={()=>setDragging(null)}
                   onClick={()=>openEdit(deal)}
-                  style={{background:L.bg,borderRadius:10,border:`1px solid ${L.line}`,padding:12,marginBottom:8,cursor:"grab",transition:"all .15s",boxShadow:"0 1px 2px rgba(0,0,0,0.03)"}}
-                  onMouseEnter={e=>{e.currentTarget.style.borderColor=stage.cor+"66";e.currentTarget.style.transform="translateY(-1px)";e.currentTarget.style.boxShadow="0 4px 12px rgba(0,0,0,0.08)";}}
-                  onMouseLeave={e=>{e.currentTarget.style.borderColor=L.line;e.currentTarget.style.transform="none";e.currentTarget.style.boxShadow="0 1px 2px rgba(0,0,0,0.03)";}}
+                  style={{background:L.surface,borderRadius:10,border:`1px solid ${L.line}`,padding:12,marginBottom:8,cursor:"grab",transition:"all .15s",boxShadow:"0 1px 2px rgba(0,0,0,0.04)"}}
+                  onMouseEnter={e=>{e.currentTarget.style.borderColor=ao(stage.cor, 40);e.currentTarget.style.transform="translateY(-1px)";e.currentTarget.style.boxShadow="0 4px 12px rgba(0,0,0,0.08)";}}
+                  onMouseLeave={e=>{e.currentTarget.style.borderColor=L.line;e.currentTarget.style.transform="none";e.currentTarget.style.boxShadow="0 1px 2px rgba(0,0,0,0.04)";}}
                 >
                   <div style={{fontSize:12.5,fontWeight:600,color:L.t1,marginBottom:5,lineHeight:1.35}}>{deal.titulo}</div>
                   <div style={{fontSize:16,fontWeight:800,color:stage.cor,fontFamily:"'Outfit',sans-serif",marginBottom:6}}>
@@ -301,8 +307,8 @@ export default function PagePipeline({ user, onOpenChat }) {
             <Field label="Valor (R$)"><Input value={form.valor} onChange={F("valor")} type="number" placeholder="0,00"/></Field>
             <Field label="Probabilidade (%)">
               <div style={{display:"flex",alignItems:"center",gap:10}}>
-                <input type="range" min={0} max={100} value={form.probabilidade} onChange={e=>F("probabilidade")(e.target.value)} style={{flex:1,accentColor:L.teal}}/>
-                <span style={{fontSize:12,color:L.teal,fontWeight:600,minWidth:32}}>{form.probabilidade}%</span>
+                <input type="range" min={0} max={100} value={form.probabilidade} onChange={e=>F("probabilidade")(e.target.value)} style={{flex:1,accentColor:"var(--c-accent)"}}/>
+                <span style={{fontSize:12,color:L.accent,fontWeight:600,minWidth:32}}>{form.probabilidade}%</span>
               </div>
             </Field>
             <Field label="Etapa">
@@ -361,7 +367,7 @@ export default function PagePipeline({ user, onOpenChat }) {
             <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
               {CORES_ETAPA.map(c => (
                 <button key={c} onClick={()=>setColForm(p=>({...p,cor:c}))}
-                  style={{width:28,height:28,borderRadius:"50%",background:c,border:`2.5px solid ${colForm.cor===c?"#333":"transparent"}`,cursor:"pointer",transition:"all .1s"}}/>
+                  style={{width:28,height:28,borderRadius:"50%",background:c,border:`2.5px solid ${colForm.cor===c?"var(--c-t1)":"transparent"}`,cursor:"pointer",transition:"all .1s"}}/>
               ))}
             </div>
           </Field>
