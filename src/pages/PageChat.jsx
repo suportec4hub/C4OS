@@ -193,6 +193,29 @@ function AudioPlayer({ src, out }) {
   );
 }
 
+// ─── Image message with fallback ─────────────────────────────────────────────
+function ImageMsg({ url, caption, out }) {
+  const [err, setErr] = useState(false);
+  if (err) {
+    return (
+      <div style={{ display:"flex", alignItems:"center", gap:8, padding:"4px 0",
+        opacity:.7, cursor:"pointer" }} onClick={() => window.open(url, "_blank")}>
+        <span style={{ fontSize:22 }}>🖼️</span>
+        <span style={{ fontSize:12 }}>{caption || "Imagem"}</span>
+      </div>
+    );
+  }
+  return (
+    <div>
+      <img src={url} alt="imagem" onClick={() => window.open(url, "_blank")}
+        onError={() => setErr(true)}
+        style={{ maxWidth:"100%", borderRadius:8, marginBottom: caption ? 4 : 0,
+          cursor:"pointer", display:"block", maxHeight:300, objectFit:"cover" }} />
+      {caption && <div style={{ fontSize:13 }}>{caption}</div>}
+    </div>
+  );
+}
+
 // ─── Media message renderer ──────────────────────────────────────────────────
 function renderMsgContent(m, out) {
   const t    = msgTexto(m);
@@ -201,13 +224,7 @@ function renderMsgContent(m, out) {
 
   if ((tipo === "imagem" || tipo === "image") && url) {
     return (
-      <div>
-        <img src={url} alt="imagem" onClick={() => window.open(url, "_blank")}
-          style={{ maxWidth:"100%", borderRadius:8, marginBottom: t ? 4 : 0,
-            cursor:"pointer", display:"block" }}
-          onError={e => { e.currentTarget.style.display="none"; }}/>
-        {t && <div style={{ fontSize:12, marginTop:2 }}>{t}</div>}
-      </div>
+      <ImageMsg url={url} caption={t} out={out} />
     );
   }
   if (tipo === "audio" && url) {
@@ -249,6 +266,55 @@ async function logAtendimento(empresa_id, conversa_id, usuario_id, acao, detalhe
   try {
     await supabase.from("logs_atendimento").insert({ empresa_id, conversa_id, usuario_id, acao, detalhe });
   } catch (_) { /* silently ignore */ }
+}
+
+// ─── Preview de mídia antes de enviar ────────────────────────────────────────
+function MediaPreviewModal({ preview, onSend, onClose }) {
+  const [caption, setCaption] = useState("");
+  if (!preview) return null;
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.88)", zIndex: 400,
+      display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()}
+        style={{ background: "#111b21", borderRadius: 14, overflow: "hidden",
+          maxWidth: 500, width: "94%", boxShadow: "0 24px 64px rgba(0,0,0,.6)", display: "flex", flexDirection: "column" }}>
+        <div style={{ padding: "13px 18px", display: "flex", justifyContent: "space-between", alignItems: "center",
+          borderBottom: "1px solid #2a3942" }}>
+          <span style={{ color: "white", fontSize: 14, fontWeight: 600 }}>Enviar mídia</span>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "#8696a0", fontSize: 22, lineHeight: 1 }}>✕</button>
+        </div>
+        <div style={{ minHeight: 180, maxHeight: 420, display: "flex", alignItems: "center", justifyContent: "center",
+          background: "#0b1014", padding: 20, overflowY: "auto" }}>
+          {preview.tipo === "imagem" && (
+            <img src={preview.url} alt="preview" style={{ maxWidth: "100%", maxHeight: 380, borderRadius: 8, objectFit: "contain" }} />
+          )}
+          {preview.tipo === "video" && (
+            <video src={preview.url} controls style={{ maxWidth: "100%", maxHeight: 360, borderRadius: 8 }} />
+          )}
+          {preview.tipo !== "imagem" && preview.tipo !== "video" && (
+            <div style={{ textAlign: "center", color: "#8696a0", padding: 20 }}>
+              <div style={{ fontSize: 52, marginBottom: 10 }}>📎</div>
+              <div style={{ fontSize: 13, color: "white", wordBreak: "break-all" }}>{preview.file.name}</div>
+              <div style={{ fontSize: 11, marginTop: 4 }}>{(preview.file.size / 1024 / 1024).toFixed(2)} MB</div>
+            </div>
+          )}
+        </div>
+        <div style={{ padding: "10px 14px", display: "flex", gap: 10, alignItems: "center", background: "#202c33" }}>
+          <input value={caption} onChange={e => setCaption(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") onSend(preview.file, caption); }}
+            placeholder="Adicionar legenda..."
+            style={{ flex: 1, background: "#2a3942", border: "none", borderRadius: 22, padding: "9px 16px",
+              color: "white", fontSize: 13.5, outline: "none", fontFamily: "inherit" }} />
+          <button onClick={() => onSend(preview.file, caption)}
+            style={{ width: 46, height: 46, borderRadius: "50%", background: "#00a884", border: "none",
+              cursor: "pointer", color: "white", fontSize: 20, display: "flex", alignItems: "center", justifyContent: "center",
+              boxShadow: "0 2px 8px rgba(0,168,132,.4)", flexShrink: 0 }}>
+            ➤
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ─── Componente de Etiqueta ──────────────────────────────────────────────────
@@ -440,6 +506,7 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
 
   // ── media upload ──────────────────────────────────────────────────────────
   const [uploadingMedia, setUploadingMedia] = useState(false);
+  const [mediaPreview,   setMediaPreview]   = useState(null); // { file, url, tipo }
 
   // ── profile photos cache (phone → url) ───────────────────────────────────
   const [profilePhotos, setProfilePhotos] = useState({});
@@ -884,10 +951,28 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
   };
 
   // ── send media file ───────────────────────────────────────────────────────
-  const sendMedia = async (file) => {
+  const sendMedia = async (file, caption = "") => {
     if (!file || !activeConv) return;
+    setMediaPreview(null);
     setUploadingMedia(true);
     setSendErr("");
+
+    // Determine media type up front
+    const ft = file.type || "";
+    const tipo = ft.startsWith("image/") ? "imagem"
+               : ft.startsWith("audio/") ? "audio"
+               : ft.startsWith("video/") ? "video"
+               : "documento";
+
+    // Optimistic message using object URL so user sees it immediately
+    const objectUrl = URL.createObjectURL(file);
+    const tmpId = `tmp-media-${Date.now()}`;
+    setMensagens(p => [...p, {
+      id: tmpId, conversa_id: activeConv.id, de: "me", remetente: "me",
+      tipo, midia_url: objectUrl, nome_arquivo: file.name, texto: caption,
+      hora: new Date().toISOString(), status: "enviando",
+    }]);
+    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
 
     // 1. Upload to Supabase Storage
     const ext  = file.name.split(".").pop().toLowerCase();
@@ -895,17 +980,12 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
     const { error: uploadErr } = await supabase.storage.from("midia").upload(path, file, { upsert: true });
     if (uploadErr) {
       setSendErr("Erro ao enviar arquivo: " + uploadErr.message);
+      setMensagens(p => p.filter(m => m.id !== tmpId));
+      URL.revokeObjectURL(objectUrl);
       setUploadingMedia(false);
       return;
     }
     const { data: { publicUrl } } = supabase.storage.from("midia").getPublicUrl(path);
-
-    // 2. Determine media type
-    const ft = file.type || "";
-    const tipo = ft.startsWith("image/") ? "imagem"
-               : ft.startsWith("audio/") ? "audio"
-               : ft.startsWith("video/") ? "video"
-               : "documento";
 
     // 3. Persist message to DB
     await supabase.from("mensagens").insert({
@@ -913,8 +993,12 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
       empresa_id:  activeConv.empresa_id || user.empresa_id,
       de: "me", remetente: "me",
       tipo, midia_url: publicUrl, nome_arquivo: file.name,
+      texto: caption || null,
       hora: new Date().toISOString(), status: "enviado",
     });
+    // Replace optimistic message with real one from DB
+    URL.revokeObjectURL(objectUrl);
+    setMensagens(p => p.filter(m => m.id !== tmpId));
 
     // 4. Update conversa
     const now = new Date().toISOString();
@@ -928,7 +1012,7 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
     // 5. Send via Evolution (WhatsApp)
     if (activeConv.contato_telefone?.trim()) {
       supabase.functions.invoke("evolution-action", {
-        body: { action: "sendMedia", empresa_id: user.empresa_id, phone: activeConv.contato_telefone, url: publicUrl, tipo, caption: file.name },
+        body: { action: "sendMedia", empresa_id: user.empresa_id, phone: activeConv.contato_telefone, url: publicUrl, tipo, caption: caption || file.name },
       }).then(({ data: fnData, error: fnErr }) => {
         if (fnErr || fnData?.error) {
           const msg = fnErr?.message || fnData?.error || "verifique conexão.";
@@ -1584,7 +1668,14 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
               )}
 
               <input ref={fileRef} type="file" accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.zip"
-                style={{ display:"none" }} onChange={e => { if (e.target.files?.[0]) sendMedia(e.target.files[0]); e.target.value = ""; }}/>
+                style={{ display:"none" }} onChange={e => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const ft = file.type || "";
+                  const tipo = ft.startsWith("image/") ? "imagem" : ft.startsWith("video/") ? "video" : "outro";
+                  setMediaPreview({ file, url: URL.createObjectURL(file), tipo });
+                  e.target.value = "";
+                }}/>
 
               <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
                 {/* Nota toggle */}
@@ -1957,6 +2048,14 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
           empresaId={user.empresa_id}
           userId={user.id}
           onClose={() => { setAgendarModal(false); supabase.from("mensagens_agendadas").select("*").eq("conversa_id", activeConv.id).eq("status", "pendente").order("agendado_para").then(({ data }) => setAgendadas(data || [])); }}
+        />
+      )}
+
+      {mediaPreview && (
+        <MediaPreviewModal
+          preview={mediaPreview}
+          onSend={(file, cap) => sendMedia(file, cap)}
+          onClose={() => { URL.revokeObjectURL(mediaPreview.url); setMediaPreview(null); }}
         />
       )}
 
