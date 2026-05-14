@@ -20,7 +20,7 @@ export function Card({title,sub,children}) {
     <div style={{background:L.white,borderRadius:12,border:`1px solid ${L.line}`,padding:"18px 20px",boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}>
       <div style={{marginBottom:14}}>
         <div style={{fontSize:13,fontWeight:600,color:L.t1}}>{title}</div>
-        {sub && <div style={{fontSize:10.5,color:L.t4,marginTop:1}}>{sub}</div>}
+        {sub && <div style={{fontSize:10.5,color:L.t3,marginTop:1}}>{sub}</div>}
       </div>
       {children}
     </div>
@@ -58,7 +58,7 @@ export function DataTable({heads,children}) {
         <thead>
           <tr style={{background:L.surface,borderBottom:`1px solid ${L.line}`}}>
             {heads.map(h => (
-              <th key={h} style={{padding:"11px 14px",textAlign:"left",fontSize:9.5,fontWeight:700,color:L.t4,letterSpacing:"1.2px",textTransform:"uppercase",whiteSpace:"nowrap",fontFamily:"'JetBrains Mono',monospace"}}>
+              <th key={h} style={{padding:"11px 14px",textAlign:"left",fontSize:9.5,fontWeight:700,color:L.t3,letterSpacing:"1.2px",textTransform:"uppercase",whiteSpace:"nowrap",fontFamily:"'JetBrains Mono',monospace"}}>
                 {h}
               </th>
             ))}

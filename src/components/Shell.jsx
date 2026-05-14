@@ -172,7 +172,7 @@ export default function Shell({user,onLogout,onProfileUpdate,theme,toggleTheme})
         <nav style={{flex:1,overflowY:"auto",padding:"8px 8px"}}>
           {groups.map(g => (
             <div key={g} style={{marginBottom:6}}>
-              {!showCollapsed && <div style={{fontSize:9,fontWeight:700,letterSpacing:"2px",textTransform:"uppercase",color:L.t5,padding:"6px 9px 4px",fontFamily:"'JetBrains Mono',monospace"}}>{g}</div>}
+              {!showCollapsed && <div style={{fontSize:9,fontWeight:700,letterSpacing:"2px",textTransform:"uppercase",color:L.t4,padding:"6px 9px 4px",fontFamily:"'JetBrains Mono',monospace"}}>{g}</div>}
               {navItems.filter(n => n.g === g).map(item => {
                 const on = safe === item.id;
                 return (
@@ -181,7 +181,7 @@ export default function Shell({user,onLogout,onProfileUpdate,theme,toggleTheme})
                     onMouseEnter={e=>{if(!on){e.currentTarget.style.background=L.surface;e.currentTarget.style.color=L.t2;}}}
                     onMouseLeave={e=>{if(!on){e.currentTarget.style.background="transparent";e.currentTarget.style.color=L.t3;}}}
                   >
-                    <span style={{fontSize:13,flexShrink:0,opacity:on?1:.6}}>{item.ico}</span>
+                    <span style={{fontSize:13,flexShrink:0,opacity:on?1:.75}}>{item.ico}</span>
                     {!showCollapsed && <span style={{whiteSpace:"nowrap"}}>{item.label}</span>}
                     {!showCollapsed && item.id==="ai" && (
                       <span style={{marginLeft:"auto",background:L.tealBg,color:L.teal,borderRadius:4,padding:"1px 6px",fontSize:8,fontWeight:700,letterSpacing:"1px",fontFamily:"'JetBrains Mono',monospace",border:`1px solid ${L.tealA}`}}>AI</span>
