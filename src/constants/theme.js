@@ -109,6 +109,19 @@ export const globalCSS = `
   ::-webkit-scrollbar{width:4px;height:4px}
   ::-webkit-scrollbar-track{background:transparent}
   ::-webkit-scrollbar-thumb{background:var(--c-line);border-radius:99px}
+  /* ── Força textos hardcoded escuros a ficarem legíveis no tema escuro ── */
+  html[data-theme="dark"] [style*="color:#111827"],html[data-theme="dark"] [style*="color: #111827"],
+  html[data-theme="dark"] [style*="color:#1f2937"],html[data-theme="dark"] [style*="color:#374151"],
+  html[data-theme="dark"] [style*="color:#4b5563"],html[data-theme="dark"] [style*="color:#6b7280"],
+  html[data-theme="dark"] [style*="color:#9ca3af"],html[data-theme="dark"] [style*="color:#0f172a"],
+  html[data-theme="dark"] [style*="color:#1a1a2e"],html[data-theme="dark"] [style*="color:#000000"],
+  html[data-theme="dark"] [style*="color:#000"] { color:var(--c-t2)!important; }
+  /* ── Força backgrounds claros hardcoded a ficarem escuros no tema escuro ── */
+  html[data-theme="dark"] [style*="background:#fff"],html[data-theme="dark"] [style*="background: #fff"],
+  html[data-theme="dark"] [style*="background:#ffffff"],html[data-theme="dark"] [style*="background:#f9fafb"],
+  html[data-theme="dark"] [style*="background:#f3f4f6"],html[data-theme="dark"] [style*="background:#f0f9ff"],
+  html[data-theme="dark"] [style*="background:#eff6ff"],html[data-theme="dark"] [style*="background:#fffbf0"],
+  html[data-theme="dark"] [style*="background:#fffbeb"],html[data-theme="dark"] [style*="background:#fefce8"] { background:var(--c-surface)!important; }
   @keyframes up{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
   @keyframes in{from{opacity:0}to{opacity:1}}
   @keyframes px{from{transform:translateX(-6px);opacity:0}to{transform:none;opacity:1}}
