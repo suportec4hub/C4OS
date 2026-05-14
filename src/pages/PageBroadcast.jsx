@@ -165,7 +165,7 @@ export default function PageBroadcast({ user }) {
                   const sel = form.segmentacao.includes(s);
                   return (
                     <button key={s} onClick={() => toggleSeg(s)}
-                      style={{ padding:"4px 11px", borderRadius:6, fontSize:11, cursor:"pointer", fontFamily:"inherit", background:sel?L.tealBg:L.surface, color:sel?L.teal:L.t3, border:`1.5px solid ${sel?L.teal+"44":L.line}`, transition:"all .1s", fontWeight:sel?600:400 }}>
+                      style={{ padding:"4px 11px", borderRadius:6, fontSize:11, cursor:"pointer", fontFamily:"inherit", background:sel?L.tealBg:L.surface, color:sel?L.teal:L.t3, border:`1.5px solid ${sel?L.tealA2:L.line}`, transition:"all .1s", fontWeight:sel?600:400 }}>
                       {sel ? "✓ " : ""}{s}
                     </button>
                   );
@@ -205,7 +205,7 @@ export default function PageBroadcast({ user }) {
                 Salvar rascunho
               </button>
               <button onClick={enviarAgora} disabled={saving || sending}
-                style={{ flex:2, padding:"10px", borderRadius:9, background:sending?L.surface:L.teal, border:"none", color:sending?L.t3:"white", cursor:(saving||sending)?"not-allowed":"pointer", fontFamily:"inherit", fontWeight:600, fontSize:12.5, boxShadow:sending?"none":`0 3px 10px ${L.tealA}` }}>
+                style={{ flex:2, padding:"10px", borderRadius:9, background:sending?L.surface:L.accent, border:"none", color:sending?L.t3:"white", cursor:(saving||sending)?"not-allowed":"pointer", fontFamily:"inherit", fontWeight:600, fontSize:12.5, boxShadow:sending?"none":`0 3px 10px ${L.tealA}` }}>
                 {saving ? "Criando..." : sending ? "⟳ Enviando..." : "▶ Enviar Agora"}
               </button>
             </div>
@@ -216,7 +216,7 @@ export default function PageBroadcast({ user }) {
             <div style={{ fontSize:13, fontWeight:700, color:L.t1, marginBottom:16 }}>Preview WhatsApp</div>
             <div style={{ background:"#dfe7dd", borderRadius:10, padding:16, minHeight:180, marginBottom:16 }}>
               {form.mensagem ? (
-                <div style={{ background:"white", borderRadius:"12px 12px 12px 3px", padding:"10px 14px", maxWidth:"82%", fontSize:12.5, color:L.t1, lineHeight:1.55, boxShadow:"0 1px 3px rgba(0,0,0,0.12)", wordBreak:"break-word" }}>
+                <div style={{ background:L.white, borderRadius:"12px 12px 12px 3px", padding:"10px 14px", maxWidth:"82%", fontSize:12.5, color:L.t1, lineHeight:1.55, boxShadow:"0 1px 3px rgba(0,0,0,0.12)", wordBreak:"break-word" }}>
                   <div style={{ whiteSpace:"pre-wrap" }}>{form.mensagem}</div>
                   <div style={{ fontSize:10, color:"#6a8a72", textAlign:"right", marginTop:4 }}>agora ✓✓</div>
                 </div>
@@ -243,7 +243,7 @@ export default function PageBroadcast({ user }) {
             </div>
 
             {/* Aviso de intervalo */}
-            <div style={{ marginTop:12, padding:"8px 12px", background:"#fffbf0", border:`1px solid ${L.yellowA2}`, borderRadius:8, fontSize:11.5, color:"#a37000" }}>
+            <div style={{ marginTop:12, padding:"8px 12px", background:L.yellowBg, border:`1px solid ${L.yellowA2}`, borderRadius:8, fontSize:11.5, color:"#a37000" }}>
               ⚠️ <b>Intervalo de 1,5s</b> entre mensagens para evitar bloqueio do WhatsApp.
             </div>
           </div>
@@ -257,7 +257,7 @@ export default function PageBroadcast({ user }) {
           <div style={{ textAlign:"center", padding:60, color:L.t3 }}>
             <div style={{ fontSize:32, marginBottom:12 }}>◉</div>
             <div style={{ fontSize:14, fontWeight:600, marginBottom:4 }}>Nenhuma campanha ainda</div>
-            <button onClick={() => setTab("nova")} style={{ padding:"9px 18px", borderRadius:9, background:L.teal, color:"white", border:"none", cursor:"pointer", fontFamily:"inherit", fontWeight:600, marginTop:8 }}>
+            <button onClick={() => setTab("nova")} style={{ padding:"9px 18px", borderRadius:9, background:L.accent, color:"white", border:"none", cursor:"pointer", fontFamily:"inherit", fontWeight:600, marginTop:8 }}>
               Criar primeira campanha
             </button>
           </div>
@@ -286,7 +286,7 @@ export default function PageBroadcast({ user }) {
                       <Tag color={ST[c.status]?.c||L.t3} bg={ST[c.status]?.bg||L.surface}>{c.status}</Tag>
                       {c.status === "rascunho" && (
                         <button onClick={() => enviarCampanhaExistente(c)}
-                          style={{ fontSize:11, color:"white", background:L.teal, border:"none", borderRadius:6, padding:"3px 10px", cursor:"pointer", fontFamily:"inherit", fontWeight:600 }}>
+                          style={{ fontSize:11, color:"white", background:L.accent, border:"none", borderRadius:6, padding:"3px 10px", cursor:"pointer", fontFamily:"inherit", fontWeight:600 }}>
                           ▶ Enviar
                         </button>
                       )}
@@ -307,7 +307,7 @@ export default function PageBroadcast({ user }) {
                         <span>{progressPct}%</span>
                       </div>
                       <div style={{ height:5, background:L.surface, borderRadius:3, overflow:"hidden" }}>
-                        <div style={{ height:"100%", width:`${progressPct}%`, background:L.teal, borderRadius:3, transition:"width .5s" }}/>
+                        <div style={{ height:"100%", width:`${progressPct}%`, background:L.accent, borderRadius:3, transition:"width .5s" }}/>
                       </div>
                     </div>
                   )}

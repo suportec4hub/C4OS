@@ -338,7 +338,7 @@ export default function PageDeps({ user }) {
 
           <div style={{display:"flex",justifyContent:"flex-end",marginTop:16}}>
             <button onClick={()=>setMembrosModal(null)}
-              style={{padding:"8px 20px",borderRadius:8,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:L.teal,color:"white",border:"none"}}>
+              style={{padding:"8px 20px",borderRadius:8,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:L.accent,color:"white",border:"none"}}>
               Concluir
             </button>
           </div>

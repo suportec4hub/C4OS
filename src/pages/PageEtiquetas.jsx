@@ -69,7 +69,7 @@ export default function PageEtiquetas({ user }) {
             Categorize conversas com etiquetas coloridas para filtragem rápida
           </div>
         </div>
-        <button onClick={openNew} style={btn(L.t1, "white")}>+ Nova etiqueta</button>
+        <button onClick={openNew} style={btn(L.accent, "white")}>+ Nova etiqueta</button>
       </Row>
 
       {loading ? (
@@ -81,7 +81,7 @@ export default function PageEtiquetas({ user }) {
           <div style={{ fontSize: 12, marginBottom: 20 }}>
             Crie etiquetas como "VIP", "Urgente", "Follow-up" para organizar suas conversas.
           </div>
-          <button onClick={openNew} style={btn(L.t1, "white")}>+ Criar primeira etiqueta</button>
+          <button onClick={openNew} style={btn(L.accent, "white")}>+ Criar primeira etiqueta</button>
         </div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 10 }}>
@@ -167,7 +167,7 @@ export default function PageEtiquetas({ user }) {
 
             <Row gap={8} style={{ justifyContent: "flex-end" }}>
               <button onClick={() => setModal(false)} style={btn()}>Cancelar</button>
-              <button onClick={save} disabled={saving} style={btn(L.t1, "white")}>
+              <button onClick={save} disabled={saving} style={btn(L.accent, "white")}>
                 {saving ? "Salvando..." : editId ? "Salvar" : "Criar etiqueta"}
               </button>
             </Row>

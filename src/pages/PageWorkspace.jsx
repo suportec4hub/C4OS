@@ -281,7 +281,7 @@ function PainelReunioes({ reunioes, user, onNova, onEntrar, onExcluir, reuniaoAt
               <div style={{ display: "flex", gap: 6 }}>
                 <button
                   onClick={() => onEntrar(r)}
-                  style={{ flex: 1, padding: "7px", background: L.teal, border: "none", borderRadius: 7, color: "white", fontSize: 11.5, fontWeight: 600, cursor: "pointer" }}
+                  style={{ flex: 1, padding: "7px", background: L.accent, border: "none", borderRadius: 7, color: "white", fontSize: 11.5, fontWeight: 600, cursor: "pointer" }}
                 >
                   🎥 Entrar
                 </button>
@@ -352,7 +352,7 @@ function PainelMembro({ membro, user, onClose, onDM, onLigar }) {
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <button
               onClick={() => onDM(membro)}
-              style={{ width: "100%", padding: "8px", background: L.teal, border: "none", borderRadius: 8, color: "white", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}
+              style={{ width: "100%", padding: "8px", background: L.accent, border: "none", borderRadius: 8, color: "white", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}
             >
               Mensagem Direta
             </button>
@@ -1134,7 +1134,7 @@ export default function PageWorkspace({ user }) {
                 onClick={enviar}
                 disabled={!texto.trim() || !canalId || sending}
                 style={{
-                  background: L.teal, border: "none", borderRadius: 9,
+                  background: L.accent, border: "none", borderRadius: 9,
                   width: 34, height: 34, color: "white", cursor: "pointer", fontSize: 16,
                   opacity: (!texto.trim() || !canalId) ? 0.35 : 1, flexShrink: 0,
                   display: "flex", alignItems: "center", justifyContent: "center",
@@ -1253,7 +1253,7 @@ export default function PageWorkspace({ user }) {
                         const sel=editMembrosSel.includes(m.id);
                         const isMe=m.id===user.id;
                         return(
-                          <label key={m.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",borderRadius:9,background:sel?L.tealBg:L.surface,border:`1px solid ${sel?L.teal+"44":L.line}`,cursor:isMe?"default":"pointer",transition:"all .1s"}}>
+                          <label key={m.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",borderRadius:9,background:sel?L.tealBg:L.surface,border:`1px solid ${sel?L.tealA2:L.line}`,cursor:isMe?"default":"pointer",transition:"all .1s"}}>
                             <input type="checkbox" checked={sel||isMe} disabled={isMe} onChange={()=>!isMe&&setEditMembrosSel(p=>sel?p.filter(x=>x!==m.id):[...p,m.id])} style={{accentColor:L.teal}}/>
                             <Av name={m.nome} size={24} color={avatarColor(m.id)} src={m.foto_url||m.avatar_url}/>
                             <div style={{flex:1,minWidth:0}}>

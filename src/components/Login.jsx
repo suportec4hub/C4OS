@@ -177,7 +177,7 @@ export default function Login() {
             style={{
               width:"100%",padding:"13px",borderRadius:10,fontSize:13,fontWeight:600,
               cursor: loading ? "wait" : "pointer",fontFamily:"inherit",border:"none",
-              background:L.t1,color:L.white,
+              background:L.accent,color:"white",
               opacity: loading ? 0.7 : 1,transition:"opacity .15s",
               boxShadow:"0 2px 8px rgba(0,0,0,0.12)"
             }}

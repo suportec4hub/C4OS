@@ -356,7 +356,7 @@ function TransferModal({ conversa, atendentes, setores, onTransfer, onClose }) {
         <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
           {["atendente","setor"].map(t => (
             <button key={t} onClick={() => { setDestTipo(t); setDestId(""); }}
-              style={{ ...btnStyle(destTipo === t ? L.t1 : L.surface, destTipo === t ? "white" : L.t2), flex: 1, textTransform: "capitalize" }}>
+              style={{ ...btnStyle(destTipo === t ? L.accent : L.surface, destTipo === t ? "white" : L.t2), flex: 1, textTransform: "capitalize" }}>
               {t === "atendente" ? "👤 Atendente" : "🏢 Setor"}
             </button>
           ))}
@@ -381,7 +381,7 @@ function TransferModal({ conversa, atendentes, setores, onTransfer, onClose }) {
         <Row gap={8} style={{ justifyContent: "flex-end" }}>
           <button onClick={onClose} style={btnStyle()}>Cancelar</button>
           <button onClick={handleTransfer} disabled={!destId}
-            style={{ ...btnStyle(destId ? L.t1 : L.t5, "white"), opacity: destId ? 1 : .5 }}>
+            style={{ ...btnStyle(destId ? L.accent : L.t5, "white"), opacity: destId ? 1 : .5 }}>
             Transferir →
           </button>
         </Row>
@@ -437,7 +437,7 @@ function AgendarModal({ conversa, empresaId, userId, onClose }) {
         <Row gap={8} style={{ justifyContent: "flex-end" }}>
           <button onClick={onClose} style={btnStyle()}>Cancelar</button>
           <button onClick={handleSave} disabled={saving}
-            style={btnStyle(L.t1, "white")}>
+            style={btnStyle(L.accent, "white")}>
             {saving ? "Salvando..." : "Agendar"}
           </button>
         </Row>
@@ -1892,7 +1892,7 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
                 <div>
                   <Row between mb={10}>
                     <div style={{ fontSize: 11, fontWeight: 600, color: L.t1 }}>Mensagens agendadas</div>
-                    <button onClick={() => setAgendarModal(true)} style={btnStyle(L.t1, "white", { fontSize: 10, padding: "3px 8px" })}>
+                    <button onClick={() => setAgendarModal(true)} style={btnStyle(L.accent, "white", { fontSize: 10, padding: "3px 8px" })}>
                       + Nova
                     </button>
                   </Row>
@@ -2063,7 +2063,7 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
       {toast && (
         <div style={{
           position: "fixed", bottom: 24, right: 24, zIndex: 9999,
-          background: L.t1, color: "white", padding: "12px 18px",
+          background: L.accent, color: "white", padding: "12px 18px",
           borderRadius: 12, boxShadow: "0 6px 24px rgba(0,0,0,.28)",
           fontSize: 12.5, maxWidth: 320, animation: "up .2s ease",
           display: "flex", alignItems: "flex-start", gap: 10,

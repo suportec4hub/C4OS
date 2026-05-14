@@ -259,7 +259,7 @@ export default function PagePipeline({ user, onOpenChat }) {
                           onClick={e=>{ e.stopPropagation(); onOpenChat ? onOpenChat({ phone: tel.replace(/\D/g,""), nome: deal.titulo }) : window.open(`https://wa.me/55${tel.replace(/\D/g,"")}`,"_blank"); }}
                           title="Abrir conversa no WhatsApp"
                           style={{background:L.greenBg,border:`1px solid ${L.greenA}`,cursor:"pointer",color:L.green,fontSize:11,padding:"2px 6px",borderRadius:5,transition:"all .1s",fontWeight:700,lineHeight:1}}
-                          onMouseEnter={e=>e.currentTarget.style.background=L.green+"33"}
+                          onMouseEnter={e=>e.currentTarget.style.background=L.greenA2}
                           onMouseLeave={e=>e.currentTarget.style.background=L.greenBg}>
                           💬
                         </button>
@@ -342,7 +342,7 @@ export default function PagePipeline({ user, onOpenChat }) {
             <div style={{marginBottom:16}}>
               <div style={{fontSize:12,color:L.t3,marginBottom:10}}>Gerenciar colunas (arraste no board para reordenar)</div>
               {etapas.map((e, i) => (
-                <div key={e.id} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",background:i===colEditIdx?L.tealBg:L.surface,borderRadius:8,marginBottom:4,border:`1px solid ${i===colEditIdx?L.teal+"44":L.line}`,cursor:"pointer"}} onClick={()=>{setColEditIdx(i);setColForm({label:e.label,cor:e.cor});}}>
+                <div key={e.id} style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",background:i===colEditIdx?L.tealBg:L.surface,borderRadius:8,marginBottom:4,border:`1px solid ${i===colEditIdx?L.tealA2:L.line}`,cursor:"pointer"}} onClick={()=>{setColEditIdx(i);setColForm({label:e.label,cor:e.cor});}}>
                   <div style={{width:10,height:10,borderRadius:"50%",background:e.cor,flexShrink:0}}/>
                   <span style={{flex:1,fontSize:12,color:L.t1,fontWeight:i===colEditIdx?600:400}}>{e.label}</span>
                   {etapas.length > 2 && (

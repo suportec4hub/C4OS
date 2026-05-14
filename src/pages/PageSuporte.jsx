@@ -174,7 +174,7 @@ export default function PageSuporte({ user }) {
 
                     <button onClick={() => abrirAmbiente(emp)}
                       style={{ width: "100%", padding: "9px", borderRadius: 9, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", background: L.tealBg, color: L.teal, border: `1.5px solid ${L.tealA}`, transition: "all .12s" }}
-                      onMouseEnter={e => { e.currentTarget.style.background = L.teal; e.currentTarget.style.color = "white"; }}
+                      onMouseEnter={e => { e.currentTarget.style.background = L.accent; e.currentTarget.style.color = "white"; }}
                       onMouseLeave={e => { e.currentTarget.style.background = L.tealBg; e.currentTarget.style.color = L.teal; }}
                     >
                       Acessar Ambiente

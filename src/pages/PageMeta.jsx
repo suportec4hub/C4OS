@@ -500,7 +500,7 @@ export default function PageMeta({ user }) {
                 </div>
 
                 <button onClick={saveMetas} disabled={savingMeta}
-                  style={{...btnS,background:L.t1,color:L.white,opacity:savingMeta?.7:1,marginBottom:32}}>
+                  style={{...btnS,background:L.accent,color:"white",opacity:savingMeta?.7:1,marginBottom:32}}>
                   {savingMeta?"Salvando...":"💾 Salvar Metas"}
                 </button>
 
@@ -571,7 +571,7 @@ export default function PageMeta({ user }) {
           <div>
             <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
               <button onClick={toggleFull}
-                style={{...btnS,background:L.t1,color:L.white,display:"flex",alignItems:"center",gap:8}}>
+                style={{...btnS,background:L.accent,color:"white",display:"flex",alignItems:"center",gap:8}}>
                 {tvFull?"⊡ Sair Tela Cheia":"⊞ Tela Cheia"}
               </button>
               <span style={{fontSize:12,color:L.t3}}>Auto-atualiza a cada 30 segundos · {mesLabel(mes)}</span>
@@ -709,7 +709,7 @@ export default function PageMeta({ user }) {
         )}
 
         {loading && (
-          <div style={{position:"fixed",bottom:24,right:24,background:L.t1,color:L.white,padding:"8px 16px",borderRadius:8,fontSize:12,fontWeight:500}}>
+          <div style={{position:"fixed",bottom:24,right:24,background:L.accent,color:"white",padding:"8px 16px",borderRadius:8,fontSize:12,fontWeight:500}}>
             Atualizando...
           </div>
         )}

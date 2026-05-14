@@ -162,7 +162,7 @@ export default function PageRelatoriosAtend({ user }) {
             { id: "90d", label: "90 dias" },
           ].map(p => (
             <button key={p.id} onClick={() => setPeriodo(p.id)}
-              style={btn(periodo === p.id ? L.t1 : L.surface, periodo === p.id ? "white" : L.t2, { padding: "5px 12px" })}>
+              style={btn(periodo === p.id ? L.accent : L.surface, periodo === p.id ? "white" : L.t2, { padding: "5px 12px" })}>
               {p.label}
             </button>
           ))}
