@@ -41,21 +41,37 @@ const btnStyle = (bg = L.surface, color = L.t2, extra = {}) => ({
 });
 
 // ─── Notification helpers ────────────────────────────────────────────────────
+let _waAudio = null;
 function playNotificationSound() {
+  // Tenta tocar o arquivo de som real primeiro
+  try {
+    if (!_waAudio) {
+      _waAudio = new Audio("/wa-notify.wav");
+      _waAudio.volume = 0.7;
+    }
+    _waAudio.currentTime = 0;
+    _waAudio.play().catch(() => _playFallbackSound());
+    return;
+  } catch (_) {}
+  _playFallbackSound();
+}
+
+function _playFallbackSound() {
+  // Fallback: síntese de sino via Web Audio API
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.type = "sine";
-    osc.frequency.setValueAtTime(880, ctx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(660, ctx.currentTime + 0.12);
-    gain.gain.setValueAtTime(0.25, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
-    osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + 0.4);
-    setTimeout(() => ctx.close(), 600);
+    const now = ctx.currentTime;
+    [[1319, 0.5], [3634, 0.25], [7128, 0.12]].forEach(([freq, amp]) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.type = "sine"; osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(amp * 0.35, now + 0.005);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+      osc.start(now); osc.stop(now + 0.45);
+    });
+    setTimeout(() => ctx.close(), 800);
   } catch (_) {}
 }
 
@@ -446,7 +462,10 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
 
   // ── notifications ─────────────────────────────────────────────────────────
   const [toast, setToast]         = useState(null); // { msg, tipo }
-  const [notifPerm, setNotifPerm] = useState(false);
+  // Lê permissão sincronamente para evitar flash do banner
+  const [notifPerm, setNotifPerm] = useState(
+    typeof Notification !== "undefined" && Notification.permission === "granted"
+  );
 
   // ── refs ──────────────────────────────────────────────────────────────────
   const bottomRef      = useRef(null);
@@ -495,14 +514,11 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
       .then(({ data }) => setQuickReplies(data || []));
   }, [user?.empresa_id]);
 
-  // ── solicitar permissão de notificação do navegador ──────────────────────
+  // ── permissão de notificação — não auto-solicita (browser bloqueia sem gesto)
+  // O banner com botão "Ativar" é exibido quando não está granted
   useEffect(() => {
     if (typeof Notification === "undefined") return;
-    if (Notification.permission === "default") {
-      Notification.requestPermission().then(p => setNotifPerm(p === "granted"));
-    } else {
-      setNotifPerm(Notification.permission === "granted");
-    }
+    setNotifPerm(Notification.permission === "granted");
   }, []);
 
   // ── badge no título da aba ────────────────────────────────────────────────
@@ -2053,19 +2069,44 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
       )}
 
       {/* Aviso se notificações do browser não foram permitidas */}
-      {notifPerm === false && (
+      {!notifPerm && typeof Notification !== "undefined" && (
         <div style={{
           position: "fixed", bottom: 24, left: 24, zIndex: 9998,
-          background: L.yellowBg, color: L.yellow, padding: "10px 14px",
-          borderRadius: 10, border: `1px solid ${L.yellow}44`, fontSize: 11,
-          maxWidth: 280, display: "flex", alignItems: "center", gap: 8,
+          background: L.white, border: `1px solid ${L.line}`,
+          borderLeft: `3px solid ${L.yellow}`,
+          padding: "10px 14px", borderRadius: 10,
+          boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
+          fontSize: 11, maxWidth: 300,
+          display: "flex", alignItems: "center", gap: 10,
         }}>
-          <span>🔔</span>
-          <span>Ative notificações do navegador para receber alertas de novas mensagens.</span>
-          <button onClick={() => Notification.requestPermission().then(p => setNotifPerm(p === "granted"))}
-            style={{ ...btnStyle(L.yellow, "white"), fontSize: 10, padding: "3px 8px", flexShrink: 0, border: "none" }}>
-            Ativar
-          </button>
+          <span style={{ fontSize: 18, flexShrink: 0 }}>🔔</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 600, color: L.t1, marginBottom: 2 }}>
+              {Notification.permission === "denied"
+                ? "Notificações bloqueadas"
+                : "Ative as notificações"}
+            </div>
+            <div style={{ color: L.t3, lineHeight: 1.4 }}>
+              {Notification.permission === "denied"
+                ? "Desbloqueie nas configurações do navegador."
+                : "Receba alertas de novas mensagens no WhatsApp."}
+            </div>
+          </div>
+          {Notification.permission !== "denied" && (
+            <button onClick={() =>
+              Notification.requestPermission().then(p => {
+                setNotifPerm(p === "granted");
+                if (p === "granted") playNotificationSound();
+              })
+            }
+              style={{ ...btnStyle(L.accent, "white"), fontSize: 10.5, padding: "5px 12px", flexShrink: 0 }}>
+              Ativar
+            </button>
+          )}
+          {Notification.permission === "denied" && (
+            <button onClick={() => setNotifPerm(true) /* esconde banner */}
+              style={{ background: "none", border: "none", cursor: "pointer", color: L.t4, fontSize: 16, padding: 2 }}>×</button>
+          )}
         </div>
       )}
     </div>
