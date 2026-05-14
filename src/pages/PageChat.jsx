@@ -664,11 +664,11 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
       .eq("conversa_id", activeConv.id)
       .order("created_at", { ascending: false }).limit(20)
       .then(({ data }) => setLogsAtend(data || []));
-    // agendadas
+    // agendadas — mostra pendentes + histórico recente (enviado/falhou/cancelado)
     supabase.from("mensagens_agendadas").select("*")
       .eq("conversa_id", activeConv.id)
-      .in("status", ["pendente", "falhou"])
-      .order("agendado_para")
+      .order("agendado_para", { ascending: false })
+      .limit(20)
       .then(({ data }) => setAgendadas(data || []));
   }, [activeConv?.id]);
 
@@ -1869,38 +1869,40 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
                       <div style={{ fontSize: 10.5, color: L.t4, marginTop: 2 }}>Clique em "+ Agendar" para programar um envio</div>
                     </div>
                   ) : agendadas.map(a => {
-                    const isPendente = a.status === "pendente";
-                    const isFalhou   = a.status === "falhou";
-                    const statusColor = isPendente ? L.blue : L.red;
-                    const statusBg    = isPendente ? L.blueBg : L.redBg;
-                    const statusIcon  = isPendente ? "⏰" : "⚠";
-                    const statusLabel = isPendente ? "Agendado" : "Falhou";
+                    const cfg = {
+                      pendente:  { color: L.blue,   bg: L.blueBg,   border: L.blueA,  icon: "⏰", label: "Agendado" },
+                      enviando:  { color: L.yellow,  bg: L.yellowBg, border: L.yellowA,icon: "⟳", label: "Enviando" },
+                      enviado:   { color: L.green,   bg: L.greenBg,  border: L.greenA, icon: "✓", label: "Enviado" },
+                      falhou:    { color: L.red,     bg: L.redBg,    border: L.redA,   icon: "⚠", label: "Falhou" },
+                      cancelado: { color: L.t4,      bg: L.surface,  border: L.line,   icon: "×", label: "Cancelado" },
+                    }[a.status] || { color: L.t3, bg: L.surface, border: L.line, icon: "?", label: a.status };
                     return (
                       <div key={a.id} style={{ padding: "10px 12px", background: L.white, borderRadius: 9,
-                        border: `1px solid ${isPendente ? L.line : L.redA2}`, marginBottom: 7,
-                        boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+                        border: `1px solid ${a.status === "pendente" ? L.line : cfg.border}`,
+                        marginBottom: 7, boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+                        opacity: a.status === "cancelado" ? 0.6 : 1 }}>
                         <div style={{ fontSize: 11.5, color: L.t1, marginBottom: 6, lineHeight: 1.4 }}>{a.mensagem}</div>
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
                             <span style={{ padding: "2px 7px", borderRadius: 5, fontSize: 10, fontWeight: 600,
-                              background: statusBg, color: statusColor, border: `1px solid ${isPendente ? L.blueA : L.redA}` }}>
-                              {statusIcon} {statusLabel}
+                              background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.border}` }}>
+                              {cfg.icon} {cfg.label}
                             </span>
                             <span style={{ fontSize: 10, color: L.t4 }}>
                               {new Date(a.agendado_para).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
                             </span>
                           </div>
-                          {isPendente && (
+                          {a.status === "pendente" && (
                             <button onClick={() => cancelAgendada(a.id)} title="Cancelar agendamento"
                               style={{ background: "none", border: "none", cursor: "pointer", color: L.t4, fontSize: 14, padding: "0 2px", lineHeight: 1 }}
                               onMouseEnter={e => e.currentTarget.style.color = L.red}
                               onMouseLeave={e => e.currentTarget.style.color = L.t4}>×</button>
                           )}
                         </div>
-                        {isFalhou && a.erro && (
+                        {(a.status === "falhou") && a.erro && (
                           <div style={{ fontSize: 10, color: L.red, marginTop: 5, padding: "4px 6px",
                             background: L.redBg, borderRadius: 5, wordBreak: "break-word" }}>
-                            {a.erro.slice(0, 120)}
+                            {a.erro.slice(0, 160)}
                           </div>
                         )}
                       </div>
