@@ -314,17 +314,22 @@ function AgendarModal({ conversa, empresaId, userId, onClose }) {
   const [saving,    setSaving]    = useState(false);
   const [err,       setErr]       = useState("");
 
+  // Data mínima = agora + 2 min (para não agendar no passado)
+  const minDT = new Date(Date.now() + 2 * 60000).toISOString().slice(0, 16);
+
   const handleSave = async () => {
-    if (!mensagem.trim() || !dataHora) { setErr("Preencha mensagem e data/hora."); return; }
+    if (!mensagem.trim()) { setErr("Digite a mensagem."); return; }
+    if (!dataHora)         { setErr("Escolha a data e hora."); return; }
+    if (new Date(dataHora) <= new Date()) { setErr("A data deve ser no futuro."); return; }
     setSaving(true);
     const { error } = await supabase.from("mensagens_agendadas").insert({
-      empresa_id: empresaId,
-      conversa_id: conversa.id,
+      empresa_id:   empresaId,
+      conversa_id:  conversa.id,
       destinatario: conversa.contato_telefone,
-      mensagem: mensagem.trim(),
+      mensagem:     mensagem.trim(),
       agendado_para: new Date(dataHora).toISOString(),
-      status: "pendente",
-      criado_por: userId,
+      status:       "pendente",
+      criado_por:   userId,
     });
     if (error) { setErr(error.message); setSaving(false); return; }
     onClose();
@@ -334,30 +339,42 @@ function AgendarModal({ conversa, empresaId, userId, onClose }) {
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 200,
       display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onClose}>
       <div className="modal-box" onClick={e => e.stopPropagation()}
-        style={{ background: L.white, borderRadius: 12, padding: 24, width: 400, boxShadow: "0 8px 40px rgba(0,0,0,.18)" }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: L.t1, marginBottom: 16 }}>⏰ Agendar mensagem</div>
+        style={{ background: L.white, borderRadius: 14, padding: 24, width: 420, boxShadow: "0 12px 48px rgba(0,0,0,.22)", border: `1px solid ${L.line}` }}>
 
-        <label style={{ fontSize: 11, color: L.t3, display: "block", marginBottom: 4 }}>Data e hora</label>
-        <input type="datetime-local" value={dataHora} onChange={e => setDataHora(e.target.value)}
-          style={{ width: "100%", border: `1px solid ${L.line}`, borderRadius: 8, padding: "8px 12px",
-            fontSize: 12, color: L.t1, background: L.white, outline: "none", fontFamily: "inherit", marginBottom: 12, boxSizing: "border-box" }} />
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 18 }}>
+          <div style={{ width: 32, height: 32, borderRadius: 8, background: L.tealA, border: `1px solid ${L.tealA2}`,
+            display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15 }}>⏰</div>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: L.t1 }}>Agendar mensagem</div>
+            <div style={{ fontSize: 10.5, color: L.t3 }}>Para: {conversa?.contato_nome || conversa?.contato_telefone}</div>
+          </div>
+        </div>
 
-        <label style={{ fontSize: 11, color: L.t3, display: "block", marginBottom: 4 }}>Mensagem</label>
+        <label style={{ fontSize: 11, fontWeight: 600, color: L.t3, display: "block", marginBottom: 5, textTransform: "uppercase", letterSpacing: ".5px" }}>Data e hora do envio</label>
+        <input type="datetime-local" value={dataHora} min={minDT} onChange={e => setDataHora(e.target.value)}
+          style={{ width: "100%", border: `1px solid ${L.line}`, borderRadius: 8, padding: "9px 12px",
+            fontSize: 12.5, color: L.t1, background: L.surface, outline: "none", fontFamily: "inherit", marginBottom: 14, boxSizing: "border-box" }} />
+
+        <label style={{ fontSize: 11, fontWeight: 600, color: L.t3, display: "block", marginBottom: 5, textTransform: "uppercase", letterSpacing: ".5px" }}>Mensagem</label>
         <textarea value={mensagem} onChange={e => setMensagem(e.target.value)}
-          placeholder="Digite a mensagem a ser enviada..."
-          style={{ width: "100%", border: `1px solid ${L.line}`, borderRadius: 8, padding: "8px 12px",
-            fontSize: 12, color: L.t1, background: L.white, outline: "none", fontFamily: "inherit",
-            resize: "vertical", minHeight: 80, marginBottom: 12, boxSizing: "border-box" }} />
+          placeholder="Digite o texto que será enviado automaticamente..."
+          rows={4}
+          style={{ width: "100%", border: `1px solid ${L.line}`, borderRadius: 8, padding: "9px 12px",
+            fontSize: 12.5, color: L.t1, background: L.surface, outline: "none", fontFamily: "inherit",
+            resize: "vertical", marginBottom: 14, boxSizing: "border-box" }} />
 
-        {err && <div style={{ color: L.red, fontSize: 11, marginBottom: 10 }}>{err}</div>}
+        {err && (
+          <div style={{ background: L.redBg, border: `1px solid ${L.redA2}`, borderRadius: 7, padding: "7px 10px",
+            color: L.red, fontSize: 11.5, marginBottom: 12 }}>⚠ {err}</div>
+        )}
 
-        <Row gap={8} style={{ justifyContent: "flex-end" }}>
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
           <button onClick={onClose} style={btnStyle()}>Cancelar</button>
           <button onClick={handleSave} disabled={saving}
-            style={btnStyle(L.t1, "white")}>
-            {saving ? "Salvando..." : "Agendar"}
+            style={btnStyle(L.accent, "white")}>
+            {saving ? "Salvando..." : "⏰ Agendar envio"}
           </button>
-        </Row>
+        </div>
       </div>
     </div>
   );
@@ -633,7 +650,8 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
       .then(({ data }) => setLogsAtend(data || []));
     // agendadas
     supabase.from("mensagens_agendadas").select("*")
-      .eq("conversa_id", activeConv.id).eq("status", "pendente")
+      .eq("conversa_id", activeConv.id)
+      .in("status", ["pendente", "falhou"])
       .order("agendado_para")
       .then(({ data }) => setAgendadas(data || []));
   }, [activeConv?.id]);
@@ -1824,29 +1842,54 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
                 <div>
                   <Row between mb={10}>
                     <div style={{ fontSize: 11, fontWeight: 600, color: L.t1 }}>Mensagens agendadas</div>
-                    <button onClick={() => setAgendarModal(true)} style={btnStyle(L.t1, "white", { fontSize: 10, padding: "3px 8px" })}>
-                      + Nova
+                    <button onClick={() => setAgendarModal(true)} style={btnStyle(L.accent, "white", { fontSize: 10, padding: "3px 10px" })}>
+                      + Agendar
                     </button>
                   </Row>
                   {agendadas.length === 0 ? (
-                    <div style={{ fontSize: 11, color: L.t4, textAlign: "center", padding: "20px 0" }}>
-                      Nenhuma mensagem agendada
+                    <div style={{ textAlign: "center", padding: "24px 0" }}>
+                      <div style={{ fontSize: 22, marginBottom: 6 }}>⏰</div>
+                      <div style={{ fontSize: 11, color: L.t3 }}>Nenhuma mensagem agendada</div>
+                      <div style={{ fontSize: 10.5, color: L.t4, marginTop: 2 }}>Clique em "+ Agendar" para programar um envio</div>
                     </div>
-                  ) : agendadas.map(a => (
-                    <div key={a.id} style={{ padding: "8px 10px", background: L.surface, borderRadius: 8,
-                      border: `1px solid ${L.line}`, marginBottom: 6 }}>
-                      <div style={{ fontSize: 11, color: L.t1, marginBottom: 4 }}>{a.mensagem}</div>
-                      <Row between>
-                        <span style={{ fontSize: 10, color: L.blue }}>
-                          ⏰ {new Date(a.agendado_para).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
-                        </span>
-                        <button onClick={() => cancelAgendada(a.id)}
-                          style={{ background: "none", border: "none", cursor: "pointer", color: L.red, fontSize: 11 }}>
-                          ×
-                        </button>
-                      </Row>
-                    </div>
-                  ))}
+                  ) : agendadas.map(a => {
+                    const isPendente = a.status === "pendente";
+                    const isFalhou   = a.status === "falhou";
+                    const statusColor = isPendente ? L.blue : L.red;
+                    const statusBg    = isPendente ? L.blueBg : L.redBg;
+                    const statusIcon  = isPendente ? "⏰" : "⚠";
+                    const statusLabel = isPendente ? "Agendado" : "Falhou";
+                    return (
+                      <div key={a.id} style={{ padding: "10px 12px", background: L.white, borderRadius: 9,
+                        border: `1px solid ${isPendente ? L.line : L.redA2}`, marginBottom: 7,
+                        boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+                        <div style={{ fontSize: 11.5, color: L.t1, marginBottom: 6, lineHeight: 1.4 }}>{a.mensagem}</div>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                            <span style={{ padding: "2px 7px", borderRadius: 5, fontSize: 10, fontWeight: 600,
+                              background: statusBg, color: statusColor, border: `1px solid ${isPendente ? L.blueA : L.redA}` }}>
+                              {statusIcon} {statusLabel}
+                            </span>
+                            <span style={{ fontSize: 10, color: L.t4 }}>
+                              {new Date(a.agendado_para).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                            </span>
+                          </div>
+                          {isPendente && (
+                            <button onClick={() => cancelAgendada(a.id)} title="Cancelar agendamento"
+                              style={{ background: "none", border: "none", cursor: "pointer", color: L.t4, fontSize: 14, padding: "0 2px", lineHeight: 1 }}
+                              onMouseEnter={e => e.currentTarget.style.color = L.red}
+                              onMouseLeave={e => e.currentTarget.style.color = L.t4}>×</button>
+                          )}
+                        </div>
+                        {isFalhou && a.erro && (
+                          <div style={{ fontSize: 10, color: L.red, marginTop: 5, padding: "4px 6px",
+                            background: L.redBg, borderRadius: 5, wordBreak: "break-word" }}>
+                            {a.erro.slice(0, 120)}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 
