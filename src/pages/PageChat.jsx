@@ -1119,8 +1119,8 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
       {/* Banner status WhatsApp */}
       {evoConnected === false && (
-        <div style={{ padding: "8px 16px", background: "#fffbf0", border: `1px solid ${L.yellow}44`,
-          borderRadius: 10, marginBottom: 10, fontSize: 12 }}>
+        <div style={{ padding: "8px 16px", background: L.yellowBg, border: `1px solid ${L.yellowA2}`,
+          borderRadius: 10, marginBottom: 10, fontSize: 12, color: L.t1 }}>
           ⚠️ <b>WhatsApp desconectado.</b> Conecte em <b>Minha Empresa → Integrações</b>.
         </div>
       )}
@@ -1299,8 +1299,8 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
                 return (
                   <div key={c.id} onClick={() => selectConv(c)}
                     style={{ padding: "10px 14px", cursor: "pointer", borderBottom: `1px solid ${L.lineSoft}`,
-                      background: isActive ? "#f0f0f044" : "transparent",
-                      borderLeft: `3px solid ${isActive ? L.t1 : "transparent"}`, transition: "all .1s" }}
+                      background: isActive ? L.tealA : "transparent",
+                      borderLeft: `3px solid ${isActive ? L.accent : "transparent"}`, transition: "all .1s" }}
                     onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = L.surface; }}
                     onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = "transparent"; }}>
                     <Row gap={9}>
@@ -1390,8 +1390,8 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
                     setSidebarTab("conversas");
                   }}
                     style={{ padding: "10px 14px", cursor: "pointer", borderBottom: `1px solid ${L.lineSoft}`,
-                      background: isActive ? "#f0f0f044" : "transparent",
-                      borderLeft: `3px solid ${isActive ? L.t1 : "transparent"}`, transition: "all .1s" }}
+                      background: isActive ? L.tealA : "transparent",
+                      borderLeft: `3px solid ${isActive ? L.accent : "transparent"}`, transition: "all .1s" }}
                     onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = L.surface; }}
                     onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = "transparent"; }}>
                     <Row gap={9}>
@@ -1523,7 +1523,7 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
 
             {/* Mensagens */}
             <div style={{ flex: 1, overflowY: "auto", padding: "16px 14px",
-              background: "#fafafa", display: "flex", flexDirection: "column", gap: 2 }}>
+              background: L.bgWarm, display: "flex", flexDirection: "column", gap: 2 }}>
               {mensagens.length === 0 && (
                 <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
                   color: L.t4, fontSize: 12, textAlign: "center" }}>
@@ -1560,9 +1560,9 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
                       <div style={{
                         maxWidth: "72%", padding: nota ? "6px 10px" : "8px 12px",
                         borderRadius: out ? "12px 12px 4px 12px" : "12px 12px 12px 4px",
-                        background: nota ? "#fffbeb" : out ? L.t1 : L.white,
-                        color: nota ? "#92400e" : out ? "white" : L.t1,
-                        border: nota ? "1px dashed #f59e0b" : `1px solid ${out ? "transparent" : L.line}`,
+                        background: nota ? L.yellowBg : out ? L.accent : L.white,
+                        color: nota ? L.yellow : out ? "white" : L.t1,
+                        border: nota ? `1px dashed ${L.yellow}` : `1px solid ${out ? "transparent" : L.line}`,
                         boxShadow: "0 1px 2px rgba(0,0,0,0.06)",
                         fontSize: 12.5, lineHeight: 1.5, wordBreak: "break-word",
                         opacity: m.status === "enviando" ? 0.6 : 1,
@@ -1633,7 +1633,7 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
                   else setInput("/nota " + input);
                 }}
                   title="Nota interna (/nota texto)"
-                  style={{ ...btnStyle(input.startsWith("/nota") ? "#fffbeb" : L.surface, input.startsWith("/nota") ? "#92400e" : L.t3), flexShrink: 0, padding: "7px 10px" }}>
+                  style={{ ...btnStyle(input.startsWith("/nota") ? L.yellowBg : L.surface, input.startsWith("/nota") ? L.yellow : L.t3), flexShrink: 0, padding: "7px 10px" }}>
                   📝
                 </button>
 
@@ -1652,9 +1652,9 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
                     onKeyDown={handleKeyDown}
                     placeholder={input.startsWith("/nota") ? "Nota interna (não enviada ao contato)..." : "Digite / para respostas rápidas · Enter para enviar · Shift+Enter nova linha"}
                     rows={1}
-                    style={{ width: "100%", border: `1px solid ${input.startsWith("/nota") ? "#f59e0b" : L.line}`,
+                    style={{ width: "100%", border: `1px solid ${input.startsWith("/nota") ? L.yellow : L.line}`,
                       borderRadius: 9, padding: "8px 12px", fontSize: 12.5, color: L.t1,
-                      background: input.startsWith("/nota") ? "#fffbeb" : L.white,
+                      background: input.startsWith("/nota") ? L.yellowBg : L.white,
                       outline: "none", fontFamily: "inherit", resize: "none",
                       maxHeight: 100, overflowY: "auto", boxSizing: "border-box", lineHeight: 1.5 }}
                   />
@@ -1668,7 +1668,7 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
                     send();
                   }
                 }} disabled={!input.trim() || sending}
-                  style={{ ...btnStyle(L.t1, "white"), flexShrink: 0, padding: "8px 14px",
+                  style={{ ...btnStyle(L.accent, "white"), flexShrink: 0, padding: "8px 14px",
                     opacity: (!input.trim() || sending) ? .4 : 1 }}>
                   {sending ? "⟳" : "↑"}
                 </button>
