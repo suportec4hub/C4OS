@@ -1437,7 +1437,7 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
 
             {/* Header da conversa */}
             <div style={{ padding: "9px 14px", borderBottom: `1px solid ${L.line}`, display: "flex",
-              justifyContent: "space-between", alignItems: "center", flexShrink: 0, background: L.white, gap: 8 }}>
+              justifyContent: "space-between", alignItems: "center", flexShrink: 0, background: L.waHeaderBg, gap: 8 }}>
               <Row gap={9} style={{ minWidth: 0, flex: 1 }}>
                 {isMobile && (
                   <button onClick={() => setActiveConv(null)} style={btnStyle()}>←</button>
@@ -1486,7 +1486,7 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
                 {setores.length > 0 && (
                   <select value={activeConv.setor_id || ""} onChange={e => assignSetor(e.target.value)}
                     style={{ fontSize: 10, border: `1px solid ${L.line}`, borderRadius: 6, padding: "4px 7px",
-                      background: L.white, color: L.t2, cursor: "pointer", fontFamily: "inherit", outline: "none", maxWidth: 100 }}>
+                      background: L.waHeaderBg, color: L.t2, cursor: "pointer", fontFamily: "inherit", outline: "none", maxWidth: 100 }}>
                     <option value="">🏢 Setor</option>
                     {setores.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
                   </select>
@@ -1495,7 +1495,7 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
                 {/* Atribuir atendente */}
                 <select value={activeConv.atendente_id || ""} onChange={e => assignAtendente(e.target.value)}
                   style={{ fontSize: 10, border: `1px solid ${L.line}`, borderRadius: 6, padding: "4px 7px",
-                    background: L.white, color: L.t2, cursor: "pointer", fontFamily: "inherit", outline: "none", maxWidth: 110 }}>
+                    background: L.waHeaderBg, color: L.t2, cursor: "pointer", fontFamily: "inherit", outline: "none", maxWidth: 110 }}>
                   <option value="">👤 Atribuir</option>
                   {atendentes.map(a => <option key={a.id} value={a.id}>{a.nome}</option>)}
                 </select>
@@ -1530,7 +1530,7 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
             {/* Etiquetas da conversa */}
             {convEtiquetas.length > 0 && (
               <div style={{ padding: "6px 14px", borderBottom: `1px solid ${L.lineSoft}`,
-                display: "flex", gap: 5, flexWrap: "wrap", background: L.bgWarm }}>
+                display: "flex", gap: 5, flexWrap: "wrap", background: L.waHeaderBg }}>
                 {convEtiquetas.map(e => (
                   <EtiquetaChip key={e.id} etiqueta={e} onRemove={() => removeEtiqueta(e.id)} />
                 ))}
@@ -1539,7 +1539,7 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
 
             {/* Mensagens */}
             <div style={{ flex: 1, overflowY: "auto", padding: "16px 14px",
-              background: L.bgWarm, display: "flex", flexDirection: "column", gap: 2 }}>
+              background: L.waChatBg, display: "flex", flexDirection: "column", gap: 2 }}>
               {mensagens.length === 0 && (
                 <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
                   color: L.t4, fontSize: 12, textAlign: "center" }}>
@@ -1561,8 +1561,9 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
                   <div key={m.id}>
                     {showDate && h && (
                       <div style={{ textAlign: "center", margin: "10px 0 6px" }}>
-                        <span style={{ fontSize: 10, color: L.t4, background: L.surface,
-                          padding: "2px 10px", borderRadius: 10, border: `1px solid ${L.line}` }}>
+                        <span style={{ fontSize: 10.5, color: L.waDateText, background: L.waDateBg,
+                          padding: "4px 12px", borderRadius: 8, boxShadow: "0 1px 2px rgba(0,0,0,0.13)",
+                          fontWeight: 500 }}>
                           {new Date(h).toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" })}
                         </span>
                       </div>
@@ -1574,26 +1575,26 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
                           style={{ marginRight: 6, marginTop: 2, flexShrink: 0 }} />
                       )}
                       <div style={{
-                        maxWidth: "72%", padding: nota ? "6px 10px" : "8px 12px",
-                        borderRadius: out ? "12px 12px 4px 12px" : "12px 12px 12px 4px",
-                        background: nota ? L.yellowBg : out ? L.accent : L.white,
-                        color: nota ? L.yellow : out ? "white" : L.t1,
-                        border: nota ? `1px dashed ${L.yellow}` : `1px solid ${out ? "transparent" : L.line}`,
-                        boxShadow: "0 1px 2px rgba(0,0,0,0.06)",
-                        fontSize: 12.5, lineHeight: 1.5, wordBreak: "break-word",
+                        maxWidth: "72%", padding: nota ? "6px 10px" : "7px 9px 6px 9px",
+                        borderRadius: out ? "8px 8px 2px 8px" : "8px 8px 8px 2px",
+                        background: nota ? L.yellowBg : out ? L.waBubbleOut : L.waBubbleIn,
+                        color: nota ? L.yellow : out ? L.waBubbleOutText : L.t1,
+                        border: nota ? `1px dashed ${L.yellow}` : "none",
+                        boxShadow: "0 1px 2px rgba(0,0,0,0.13)",
+                        fontSize: 13, lineHeight: 1.5, wordBreak: "break-word",
                         opacity: m.status === "enviando" ? 0.6 : 1,
                         transition: "opacity .2s",
                       }}>
                         {nota && <div style={{ fontSize: 9, fontWeight: 700, marginBottom: 3, opacity: .7 }}>📝 NOTA INTERNA</div>}
                         {m.remetente === "bot" && !nota && (
-                          <div style={{ fontSize: 9, marginBottom: 2, opacity: .7 }}>🤖 Bot</div>
+                          <div style={{ fontSize: 9, marginBottom: 2, color: L.waTimestamp }}>🤖 Bot</div>
                         )}
                         {renderMsgContent(m, out)}
-                        <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 3,
+                        <div style={{ display: "flex", alignItems: "center", gap: 3, marginTop: 2,
                           justifyContent: "flex-end" }}>
-                          <span style={{ fontSize: 9, opacity: .5 }}>{fmtHora(h)}</span>
+                          <span style={{ fontSize: 10, color: L.waTimestamp }}>{fmtHora(h)}</span>
                           {out && !nota && (
-                            <span style={{ fontSize: 9, opacity: .6 }}>
+                            <span style={{ fontSize: 10, color: m.lido ? L.waTick : L.waTimestamp }}>
                               {m.status === "enviando" ? "⟳" : m.lido ? "✓✓" : m.entregue ? "✓✓" : "✓"}
                             </span>
                           )}
@@ -1607,8 +1608,8 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
             </div>
 
             {/* Input */}
-            <div style={{ padding: "10px 14px", borderTop: `1px solid ${L.line}`,
-              background: L.white, flexShrink: 0 }}>
+            <div style={{ padding: "8px 10px", borderTop: `1px solid ${L.line}`,
+              background: L.waInputBg, flexShrink: 0 }}>
 
               {/* Quick replies popup */}
               {showQuick && filteredQuick.length > 0 && (
@@ -1668,8 +1669,8 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
                     onKeyDown={handleKeyDown}
                     placeholder={input.startsWith("/nota") ? "Nota interna (não enviada ao contato)..." : "Digite / para respostas rápidas · Enter para enviar · Shift+Enter nova linha"}
                     rows={1}
-                    style={{ width: "100%", border: `1px solid ${input.startsWith("/nota") ? L.yellow : L.line}`,
-                      borderRadius: 9, padding: "8px 12px", fontSize: 12.5, color: L.t1,
+                    style={{ width: "100%", border: `1px solid ${input.startsWith("/nota") ? L.yellow : "transparent"}`,
+                      borderRadius: 9, padding: "8px 12px", fontSize: 13, color: L.t1,
                       background: input.startsWith("/nota") ? L.yellowBg : L.white,
                       outline: "none", fontFamily: "inherit", resize: "none",
                       maxHeight: 100, overflowY: "auto", boxSizing: "border-box", lineHeight: 1.5 }}
@@ -1684,9 +1685,13 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
                     send();
                   }
                 }} disabled={!input.trim() || sending}
-                  style={{ ...btnStyle(L.accent, "white"), flexShrink: 0, padding: "8px 14px",
-                    opacity: (!input.trim() || sending) ? .4 : 1 }}>
-                  {sending ? "⟳" : "↑"}
+                  style={{ background: L.accent, color: "white", border: "none",
+                    borderRadius: "50%", width: 40, height: 40, flexShrink: 0, cursor: "pointer",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 16, transition: "all .15s",
+                    opacity: (!input.trim() || sending) ? .4 : 1,
+                    boxShadow: "0 2px 6px rgba(0,0,0,0.2)" }}>
+                  {sending ? "⟳" : "➤"}
                 </button>
               </Row>
               <div style={{ fontSize: 10, color: L.t4, marginTop: 4, paddingLeft: 2 }}>
@@ -1696,8 +1701,8 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
           </div>
         ) : (
           <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
-            color: L.t4, flexDirection: "column", gap: 8 }}>
-            <div style={{ fontSize: 40 }}>◈</div>
+            color: L.waTimestamp, flexDirection: "column", gap: 8, background: L.waChatBg }}>
+            <div style={{ fontSize: 40, opacity: .5 }}>◈</div>
             <div style={{ fontSize: 13, fontWeight: 500 }}>Selecione uma conversa</div>
             <div style={{ fontSize: 11 }}>ou aguarde novas mensagens via WhatsApp</div>
           </div>

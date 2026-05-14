@@ -6,6 +6,18 @@ export const L = {
   surface:"var(--c-surface)", hover:"var(--c-hover)",
   line:"var(--c-line)", lineSoft:"var(--c-lineSoft)",
 
+  // WhatsApp-specific colors (chat area only)
+  waChatBg:       "var(--wa-chat-bg)",
+  waBubbleIn:     "var(--wa-bubble-in)",
+  waBubbleOut:    "var(--wa-bubble-out)",
+  waBubbleOutText:"var(--wa-bubble-out-text)",
+  waHeaderBg:     "var(--wa-header-bg)",
+  waInputBg:      "var(--wa-input-bg)",
+  waTimestamp:    "var(--wa-timestamp)",
+  waDateBg:       "var(--wa-date-bg)",
+  waDateText:     "var(--wa-date-text)",
+  waTick:         "var(--wa-tick)",
+
   // Primary
   teal:"var(--c-teal)", tealDk:"var(--c-tealDk)", tealBg:"var(--c-tealBg)",
   tealA:"var(--c-tealA)",   // ~13% opacity  (substitui ${L.tealA})
@@ -51,6 +63,18 @@ export const globalCSS = `
     --c-surface:#f9fafb; --c-hover:#f3f4f6;
     --c-line:#e5e7eb; --c-lineSoft:#f3f4f6;
 
+    /* WhatsApp light */
+    --wa-chat-bg:#efeae2;
+    --wa-bubble-in:#ffffff;
+    --wa-bubble-out:#d9fdd3;
+    --wa-bubble-out-text:#111b21;
+    --wa-header-bg:#f0f2f5;
+    --wa-input-bg:#f0f2f5;
+    --wa-timestamp:#667781;
+    --wa-date-bg:rgba(255,255,255,0.90);
+    --wa-date-text:#54656f;
+    --wa-tick:#53bdeb;
+
     --c-teal:#111827; --c-tealDk:#000000; --c-tealBg:#f3f4f6;
     --c-tealA:rgba(17,24,39,0.13); --c-tealA2:rgba(17,24,39,0.20);
     --c-accent:#111827;
@@ -79,6 +103,18 @@ export const globalCSS = `
     --c-bg:#0d1117; --c-bgWarm:#161b22; --c-white:#161b22;
     --c-surface:#21262d; --c-hover:#30363d;
     --c-line:#30363d; --c-lineSoft:#21262d;
+
+    /* WhatsApp dark */
+    --wa-chat-bg:#0b141a;
+    --wa-bubble-in:#202c33;
+    --wa-bubble-out:#005c4b;
+    --wa-bubble-out-text:#e9edef;
+    --wa-header-bg:#202c33;
+    --wa-input-bg:#202c33;
+    --wa-timestamp:#8696a0;
+    --wa-date-bg:#182229;
+    --wa-date-text:#8696a0;
+    --wa-tick:#53bdeb;
 
     --c-teal:#c9d1d9; --c-tealDk:#ffffff; --c-tealBg:#21262d;
     --c-tealA:rgba(201,209,217,0.13); --c-tealA2:rgba(201,209,217,0.20);
