@@ -520,9 +520,29 @@ async function processMessages(
       .select("id").eq("conversa_id", conv.id).eq("hora", hora).eq("texto", texto).maybeSingle();
     if (existing) { console.log("[webhook] dedup: msg já existe"); continue; }
 
+    // ── Re-hospedar mídia recebida no Supabase Storage ───────────────────────
+    let storedMediaUrl = mediaUrl;
+    if (mediaUrl && ["imagem","video","audio","documento"].includes(tipoMsg)) {
+      try {
+        const mediaRes = await fetch(mediaUrl, { signal: AbortSignal.timeout(8000) });
+        if (mediaRes.ok) {
+          const bytes = await mediaRes.arrayBuffer();
+          const ct = mediaRes.headers.get("content-type") || "image/jpeg";
+          const extMap: Record<string,string> = { "image/jpeg":"jpg","image/png":"png","image/webp":"webp","video/mp4":"mp4","audio/ogg":"ogg","audio/mpeg":"mp3","audio/webm":"webm" };
+          const ext = extMap[ct] ?? ct.split("/")[1] ?? "bin";
+          const storagePath = `whatsapp/${empresa_id}/${conv.id}/${Date.now()}.${ext}`;
+          const { error: upErr } = await supabase.storage.from("midia").upload(storagePath, bytes, { contentType: ct, upsert: true });
+          if (!upErr) {
+            const { data: pub } = supabase.storage.from("midia").getPublicUrl(storagePath);
+            storedMediaUrl = pub.publicUrl;
+          }
+        }
+      } catch (e) { console.log("[webhook] media re-host err:", (e as Error).message); }
+    }
+
     await supabase.from("mensagens").insert({
       conversa_id: conv.id, empresa_id, de: fromMe ? "me" : "contato",
-      texto, tipo: tipoMsg, media_url: mediaUrl, nome_arquivo: nomeArquivo,
+      texto, tipo: tipoMsg, media_url: storedMediaUrl, nome_arquivo: nomeArquivo,
       wamid: wamid || null, hora, status: fromMe ? "enviado" : "recebido",
       remetente: fromMe ? "me" : "contato",
     });
