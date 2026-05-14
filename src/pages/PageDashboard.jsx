@@ -69,9 +69,9 @@ function RangeSelector({ range, setRange, customStart, setCustomStart, customEnd
         <button key={o.v} onClick={() => setRange(o.v)}
           style={{
             padding:"4px 12px", borderRadius:20, fontSize:11, fontWeight:600, cursor:"pointer",
-            border:`1.5px solid ${range === o.v ? L.teal : L.line}`,
-            background: range === o.v ? L.teal : L.white,
-            color:      range === o.v ? "#fff"  : L.t3,
+            border:`1.5px solid ${range === o.v ? L.accent : L.line}`,
+            background: range === o.v ? L.accent : L.white,
+            color:      range === o.v ? "white" : L.t3,
             transition:"all .12s",
           }}
         >{o.l}</button>

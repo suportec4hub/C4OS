@@ -12,6 +12,8 @@ export const L = {
   tealA2:"var(--c-tealA2)", // ~20% opacity  (substitui ${L.tealA2})
   // Accent — botão primário: dark em light mode, teal em dark mode
   accent:"var(--c-accent)",
+  // Card destaque — gradient para cartão premium (Enterprise/Popular)
+  cardFeature:"var(--c-card-feature)",
 
   // Secondary
   copper:"var(--c-copper)", copperBg:"var(--c-copperBg)",
@@ -52,6 +54,7 @@ export const globalCSS = `
     --c-teal:#111827; --c-tealDk:#000000; --c-tealBg:#f3f4f6;
     --c-tealA:rgba(17,24,39,0.13); --c-tealA2:rgba(17,24,39,0.20);
     --c-accent:#111827;
+    --c-card-feature:linear-gradient(135deg,#111827 0%,#1c2537 100%);
 
     --c-copper:#6b7280; --c-copperBg:#f9fafb;
     --c-copperA:rgba(107,114,128,0.13);
@@ -80,6 +83,7 @@ export const globalCSS = `
     --c-teal:#c9d1d9; --c-tealDk:#ffffff; --c-tealBg:#21262d;
     --c-tealA:rgba(201,209,217,0.13); --c-tealA2:rgba(201,209,217,0.20);
     --c-accent:#1aaa96;
+    --c-card-feature:linear-gradient(135deg,#0a5c53 0%,#0d7a6e 40%,#1aaa96 100%);
 
     --c-copper:#8b949e; --c-copperBg:#161b22;
     --c-copperA:rgba(139,148,158,0.13);
