@@ -257,10 +257,16 @@ async function executarFluxo(
   }
 
   // ── Inicia fluxo do zero ──────────────────────────────────────────────────
+  const primeiraDia = gatilhoTipo === "primeira_mensagem_dia" && deveDisparar;
   const novoEstado: FluxoEstado = {
     fluxo_id: fluxoId,
     no_atual_id: noInicioRaw.id,
-    variaveis: { nome: senderName, telefone: senderPhone },
+    variaveis: {
+      nome: senderName,
+      telefone: senderPhone,
+      _ultima_msg: texto,
+      ...(primeiraDia ? { _primeira_do_dia: "true" } : {}),
+    },
   };
 
   // Mensagem de abertura do nó início (se configurada)
@@ -315,6 +321,7 @@ async function executarNosSequencialmente(
       if (proximoNo.mensagem?.trim()) {
         await sendBot(interpolarVariaveis(proximoNo.mensagem, estado.variaveis));
       }
+      await supabase.from("conversas").update({ fluxo_estado: estado }).eq("id", convId);
       await executarNosSequencialmente(proximoNo.id, nos, conexoes, estado, convId, empresa_id, senderPhone, senderName, isNew, supabase, sendBot, profundidade + 1);
       break;
     }
@@ -357,7 +364,7 @@ async function executarNosSequencialmente(
         || conexoes.find(c => c.de === proximoNo.id); // fallback: primeira disponível
 
       if (conexaoEscolhida) {
-        await executarNosSequencialmente(proximoNo.id, nos, conexoes, estado, convId, empresa_id, senderPhone, senderName, isNew, supabase, sendBot, profundidade + 1);
+        await executarNosSequencialmente(conexaoEscolhida.para, nos, conexoes, estado, convId, empresa_id, senderPhone, senderName, isNew, supabase, sendBot, profundidade + 1);
       } else {
         await supabase.from("conversas").update({ fluxo_estado: null }).eq("id", convId);
       }
@@ -410,6 +417,7 @@ async function executarNosSequencialmente(
           { url: proximoNo.media_url },
         );
       }
+      await supabase.from("conversas").update({ fluxo_estado: estado }).eq("id", convId);
       await executarNosSequencialmente(proximoNo.id, nos, conexoes, estado, convId, empresa_id, senderPhone, senderName, isNew, supabase, sendBot, profundidade + 1);
       break;
     }
@@ -669,8 +677,7 @@ async function processMessages(
         const dentroHorario = diasOk && hAtu >= (hI*60+mI) && hAtu < (hF*60+mF);
 
         if (!dentroHorario) {
-          const primeiraInteracao = isNew || (conv.nao_lidas || 0) === 0;
-          if (primeiraInteracao && cfg.mensagem_fora_horario) await sendBot(cfg.mensagem_fora_horario);
+          if (isNew && cfg.mensagem_fora_horario) await sendBot(cfg.mensagem_fora_horario);
           continue;
         }
 
@@ -713,8 +720,7 @@ async function processMessages(
 
           // ── Fallback: mensagem de boas-vindas ──────────────────────────────
           if (!fluxoExecutado) {
-            const primeiraInteracao = isNew || (conv.nao_lidas || 0) === 0;
-            if (primeiraInteracao && cfg.mensagem_boas_vindas) await sendBot(cfg.mensagem_boas_vindas);
+            if (isNew && cfg.mensagem_boas_vindas) await sendBot(cfg.mensagem_boas_vindas);
           }
         }
 
