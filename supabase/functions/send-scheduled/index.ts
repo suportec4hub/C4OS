@@ -15,7 +15,7 @@ Deno.serve(async (_req) => {
   // 1. Busca mensagens pendentes com hora já vencida
   const { data: pending, error: fetchErr } = await db
     .from("mensagens_agendadas")
-    .select("id, empresa_id, destinatario, mensagem")
+    .select("id, empresa_id, conversa_id, destinatario, mensagem")
     .eq("status", "pendente")
     .lte("agendado_para", new Date().toISOString())
     .limit(20);
@@ -92,9 +92,29 @@ Deno.serve(async (_req) => {
 
     // 5. Atualiza status final — SEMPRE executa, mesmo se envio falhar
     if (ok) {
+      const sentAt = new Date().toISOString();
+
+      // Insere a mensagem no chat para aparecer como mensagem normal
+      if (msg.conversa_id) {
+        await db.from("mensagens").insert({
+          conversa_id: msg.conversa_id,
+          empresa_id:  msg.empresa_id,
+          de:          "me",
+          remetente:   "agendado",
+          texto:       msg.mensagem,
+          tipo:        "texto",
+          hora:        sentAt,
+          status:      "enviado",
+        });
+        await db.from("conversas").update({
+          ultima_mensagem: msg.mensagem,
+          ultima_hora:     sentAt,
+        }).eq("id", msg.conversa_id);
+      }
+
       await db.from("mensagens_agendadas").update({
         status:     "enviado",
-        enviado_em: new Date().toISOString(),
+        enviado_em: sentAt,
       }).eq("id", msg.id);
       sent++;
     } else {

@@ -672,6 +672,29 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
       .then(({ data }) => setAgendadas(data || []));
   }, [activeConv?.id]);
 
+  // ── realtime mensagens_agendadas (auto-atualiza aba Agendadas) ────────────
+  useEffect(() => {
+    if (!activeConv?.id) return;
+    const convId = activeConv.id;
+    const reloadAgendadas = () =>
+      supabase.from("mensagens_agendadas").select("*")
+        .eq("conversa_id", convId)
+        .order("agendado_para", { ascending: false })
+        .limit(20)
+        .then(({ data }) => setAgendadas(data || []));
+
+    const ch = supabase.channel(`agend:${convId}:${Date.now()}`)
+      .on("postgres_changes", {
+        event: "*", schema: "public", table: "mensagens_agendadas",
+        filter: `conversa_id=eq.${convId}`,
+      }, () => reloadAgendadas())
+      .subscribe();
+
+    // Polling a cada 30s como fallback (realtime pode falhar em edge cases)
+    const timer = setInterval(reloadAgendadas, 30000);
+    return () => { supabase.removeChannel(ch); clearInterval(timer); };
+  }, [activeConv?.id]);
+
   // ── actions ───────────────────────────────────────────────────────────────
   const selectConv = (c) => {
     setActiveConv(c);
