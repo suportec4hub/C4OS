@@ -14,7 +14,7 @@ const STATUS_MAP = {
   novo:"Novo", qualificado:"Qualificado", proposta:"Proposta",
   negociacao:"Negociação", negociação:"Negociação", fechado:"Fechado", ganho:"Fechado", perdido:"Perdido",
 };
-const CORES_ORIGEM = { whatsapp:L.teal, email:L.copper, indicação:L.green, indicacao:L.green, site:L.blue, outro:L.t4 };
+const CORES_ORIGEM = { whatsapp:"#25D366", email:L.copper, indicação:L.green, indicacao:L.green, site:L.blue, outro:"#8b949e" };
 const RANGE_OPTS   = [{ v:7,l:"7d" },{ v:15,l:"15d" },{ v:30,l:"30d" },{ v:90,l:"90d" },{ v:"custom",l:"Período" }];
 
 function fmt(v) {
@@ -310,8 +310,8 @@ export default function PageDashboard({ user }) {
             <div style={{ fontSize:10, color:L.t3, textTransform:"uppercase", letterSpacing:"1.5px", fontFamily:"'JetBrains Mono',monospace", marginBottom:8, fontWeight:600 }}>{k.l}</div>
             <div style={{ fontSize:22, fontWeight:700, fontFamily:"'Outfit',sans-serif", color:L.t1, marginBottom:8, letterSpacing:"-.5px" }}>{k.v}</div>
             <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-              <span style={{ fontSize:11, fontWeight:600, color:k.up ? L.green : L.t4, background:k.up ? L.greenBg : L.line, padding:"2px 8px", borderRadius:5 }}>{k.d}</span>
-              <span style={{ fontSize:10, color:L.t4 }}>{k.s}</span>
+              <span style={{ fontSize:11, fontWeight:600, color:k.up ? L.green : L.t3, background:k.up ? L.greenBg : L.surface, padding:"2px 8px", borderRadius:5 }}>{k.d}</span>
+              <span style={{ fontSize:10, color:L.t3 }}>{k.s}</span>
             </div>
             <div style={{ position:"absolute", top:16, right:16, width:36, height:36, borderRadius:9, background:k.bg, display:"flex", alignItems:"center", justifyContent:"center" }}>
               <div style={{ width:14, height:14, borderRadius:"50%", background:k.c, opacity:.7 }}/>
@@ -327,14 +327,14 @@ export default function PageDashboard({ user }) {
             <ResponsiveContainer width="100%" height={190}>
               <AreaChart data={dados.receitaData}>
                 <defs>
-                  <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={L.teal} stopOpacity={.12}/><stop offset="95%" stopColor={L.teal} stopOpacity={0}/></linearGradient>
+                  <linearGradient id="g1" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={L.accent} stopOpacity={.18}/><stop offset="95%" stopColor={L.accent} stopOpacity={0}/></linearGradient>
                   <linearGradient id="g2" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor={L.copper} stopOpacity={.1}/><stop offset="95%" stopColor={L.copper} stopOpacity={0}/></linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="4 4" stroke={L.lineSoft} vertical={false}/>
-                <XAxis dataKey="m" tick={{ fill:L.t4, fontSize:10 }} axisLine={false} tickLine={false}/>
-                <YAxis tick={{ fill:L.t4, fontSize:10 }} axisLine={false} tickLine={false} tickFormatter={v => `${(v / 1000).toFixed(0)}k`}/>
+                <XAxis dataKey="m" tick={{ fill:L.t3, fontSize:10 }} axisLine={false} tickLine={false}/>
+                <YAxis tick={{ fill:L.t3, fontSize:10 }} axisLine={false} tickLine={false} tickFormatter={v => `${(v / 1000).toFixed(0)}k`}/>
                 <Tooltip contentStyle={TT} formatter={v => [`R$ ${v.toLocaleString("pt-BR")}`]}/>
-                <Area type="monotone" dataKey="r"    stroke={L.teal}   strokeWidth={2}   fill="url(#g1)" name="Receita"/>
+                <Area type="monotone" dataKey="r"    stroke={L.accent} strokeWidth={2}   fill="url(#g1)" name="Receita"/>
                 <Area type="monotone" dataKey="meta" stroke={L.copper} strokeWidth={1.5} fill="url(#g2)" strokeDasharray="5 4" name="Meta (MRR)"/>
               </AreaChart>
             </ResponsiveContainer>
@@ -372,10 +372,10 @@ export default function PageDashboard({ user }) {
             <ResponsiveContainer width="100%" height={170}>
               <BarChart data={dados.funilData} layout="vertical">
                 <CartesianGrid strokeDasharray="4 4" stroke={L.lineSoft} horizontal={false}/>
-                <XAxis type="number" tick={{ fill:L.t4, fontSize:10 }} axisLine={false} tickLine={false}/>
+                <XAxis type="number" tick={{ fill:L.t3, fontSize:10 }} axisLine={false} tickLine={false}/>
                 <YAxis dataKey="s" type="category" tick={{ fill:L.t3, fontSize:10 }} axisLine={false} tickLine={false} width={68}/>
                 <Tooltip contentStyle={TT} formatter={v => [v, "leads"]}/>
-                <Bar dataKey="v" fill={L.teal} radius={[0, 5, 5, 0]} opacity={.85}/>
+                <Bar dataKey="v" fill={L.accent} radius={[0, 5, 5, 0]} opacity={.85}/>
               </BarChart>
             </ResponsiveContainer>
           ) : <EmptyChart/>}
@@ -386,7 +386,7 @@ export default function PageDashboard({ user }) {
             <ResponsiveContainer width="100%" height={200}>
               <RadarChart data={dados.radarData}>
                 <PolarGrid stroke={L.line}/>
-                <PolarAngleAxis dataKey="s" tick={{ fill:L.t4, fontSize:9 }}/>
+                <PolarAngleAxis dataKey="s" tick={{ fill:L.t3, fontSize:9 }}/>
                 <Radar dataKey="A" stroke={L.copper} fill={L.copper} fillOpacity={.12} strokeWidth={1.8}/>
                 <Tooltip contentStyle={TT} formatter={v => [`${v}%`]}/>
               </RadarChart>
@@ -399,8 +399,8 @@ export default function PageDashboard({ user }) {
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={dados.leadsData}>
                 <CartesianGrid strokeDasharray="4 4" stroke={L.lineSoft} vertical={false}/>
-                <XAxis dataKey="m" tick={{ fill:L.t4, fontSize:10 }} axisLine={false} tickLine={false}/>
-                <YAxis tick={{ fill:L.t4, fontSize:10 }} axisLine={false} tickLine={false}/>
+                <XAxis dataKey="m" tick={{ fill:L.t3, fontSize:10 }} axisLine={false} tickLine={false}/>
+                <YAxis tick={{ fill:L.t3, fontSize:10 }} axisLine={false} tickLine={false}/>
                 <Tooltip contentStyle={TT} formatter={v => [v, "leads"]}/>
                 <Bar dataKey="leads" fill={L.copper} radius={[5, 5, 0, 0]} opacity={.85}/>
               </BarChart>
