@@ -75,16 +75,23 @@ function EmpresaDetail({ emp, onBack }) {
         .eq("empresa_id", emp.id).order("created_at", { ascending:false });
       setUsuarios(data || []);
     } else if (t === "logs") {
-      // Tenta logs_auditoria primeiro, depois logs_atendimento
-      const { data: la } = await supabase.from("logs_atendimento").select("*, conversas(contato_nome)")
-        .eq("empresa_id", emp.id).order("created_at", { ascending:false }).limit(50);
-      const { data: laud } = await supabase.from("logs_auditoria").select("*")
-        .eq("empresa_id", emp.id).order("created_at", { ascending:false }).limit(50);
-      // Combina e ordena por data
+      const [
+        { data: la },
+        { data: laud },
+        { data: lwa },
+      ] = await Promise.all([
+        supabase.from("logs_atendimento").select("*, conversas(contato_nome)")
+          .eq("empresa_id", emp.id).order("created_at", { ascending:false }).limit(50),
+        supabase.from("logs_auditoria").select("*")
+          .eq("empresa_id", emp.id).order("created_at", { ascending:false }).limit(50),
+        supabase.from("logs_whatsapp").select("*")
+          .eq("empresa_id", emp.id).order("created_at", { ascending:false }).limit(150),
+      ]);
       const combined = [
-        ...(la||[]).map(l => ({ ...l, _src:"atendimento" })),
-        ...(laud||[]).map(l => ({ ...l, _src:"auditoria" })),
-      ].sort((a,b) => new Date(b.created_at) - new Date(a.created_at)).slice(0,80);
+        ...(la  ||[]).map(l => ({ ...l, _src:"atendimento" })),
+        ...(laud ||[]).map(l => ({ ...l, _src:"auditoria"  })),
+        ...(lwa  ||[]).map(l => ({ ...l, _src:"whatsapp"   })),
+      ].sort((a,b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 200);
       setLogs(combined);
     }
     setLoading(p => ({ ...p, [t]:false }));
@@ -282,19 +289,32 @@ function EmpresaDetail({ emp, onBack }) {
           </Card>
 
           {/* Últimos logs */}
-          <Card title="Últimas Atividades" sub="logs de atendimento">
+          <Card title="Últimas Atividades" sub="API WhatsApp + atendimento">
             <button onClick={()=>load("logs")} style={{ ...btn(), fontSize:10, padding:"3px 8px", marginBottom:10 }}>↺ Atualizar</button>
             {loading.logs ? (
               <div style={{ color:L.t4, fontSize:12 }}>Carregando...</div>
-            ) : logs.slice(0,6).length === 0 ? (
+            ) : logs.slice(0,8).length === 0 ? (
               <div style={{ color:L.t4, fontSize:12 }}>Nenhum log registrado.</div>
-            ) : logs.slice(0,6).map((log,i) => (
-              <div key={log.id||i} style={{ display:"flex", gap:8, padding:"7px 0", borderBottom:`1px solid ${L.lineSoft}` }}>
-                <div style={{ width:6, height:6, borderRadius:"50%", background: log.nivel==="error"?L.red:log.nivel==="warn"?L.yellow:L.teal, marginTop:5, flexShrink:0 }} />
-                <div style={{ flex:1, fontSize:11.5, color:L.t2 }}>{log.acao || log.tipo || "—"}</div>
-                <div style={{ fontSize:10, color:L.t4, flexShrink:0 }}>{fmtDt(log.created_at)}</div>
-              </div>
-            ))}
+            ) : logs.slice(0,8).map((log,i) => {
+              const isErr = log.nivel==="error";
+              const isWarn= log.nivel==="warn";
+              const dot = isErr?L.red:isWarn?L.yellow:log._src==="whatsapp"?L.blue:log._src==="atendimento"?L.green:L.copper;
+              const titulo = log._src==="whatsapp" ? (log.resumo||log.tipo) : (log.acao||log.tipo||"—");
+              return (
+                <div key={log.id||i} style={{ display:"flex", gap:8, padding:"7px 0", borderBottom:`1px solid ${L.lineSoft}`,
+                  borderLeft: isErr?`2px solid ${L.red}`:isWarn?`2px solid ${L.yellow}`:"2px solid transparent",
+                  paddingLeft: isErr||isWarn ? 6 : 0 }}>
+                  <div style={{ width:6, height:6, borderRadius:"50%", background:dot, marginTop:5, flexShrink:0 }} />
+                  <div style={{ flex:1, fontSize:11, color:L.t2, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{titulo}</div>
+                  <div style={{ fontSize:10, color:L.t4, flexShrink:0 }}>{fmtDt(log.created_at)}</div>
+                </div>
+              );
+            })}
+            {logs.length > 0 && (
+              <button onClick={()=>setTab("logs")} style={{ ...btn(), fontSize:10, padding:"3px 8px", marginTop:8, width:"100%" }}>
+                Ver todos os logs →
+              </button>
+            )}
           </Card>
         </Grid>
       )}
@@ -448,45 +468,94 @@ function EmpresaDetail({ emp, onBack }) {
       )}
 
       {/* ── LOGS ── */}
-      {!isLoading && tab==="logs" && (
-        <div>
-          <div style={{ marginBottom:10, display:"flex", alignItems:"center", gap:10 }}>
-            <span style={{ fontSize:12, color:L.t3 }}>{logs.length} evento{logs.length!==1?"s":""}</span>
-            <button onClick={()=>load("logs")} style={{ ...btn(), fontSize:10, padding:"4px 10px" }}>↺ Atualizar</button>
-          </div>
-          {filtrar(logs, ["acao","tipo","usuario_email","detalhe"]).length === 0 ? (
-            <div style={{ padding:40, textAlign:"center", color:L.t4 }}>Nenhum log encontrado.</div>
-          ) : (
-            <div style={{ background:L.white, borderRadius:10, border:`1px solid ${L.line}`, overflow:"hidden" }}>
-              {filtrar(logs, ["acao","tipo","usuario_email","detalhe"]).map((log,i) => (
-                <div key={log.id||i} style={{ padding:"11px 16px", borderBottom:`1px solid ${L.lineSoft}`,
-                  display:"flex", gap:12, alignItems:"flex-start", transition:"background .1s" }}
-                  onMouseEnter={e=>e.currentTarget.style.background=L.surface}
-                  onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-                  <div style={{ width:7, height:7, borderRadius:"50%", marginTop:6, flexShrink:0,
-                    background: log.nivel==="error"?L.red:log.nivel==="warn"?L.yellow:log._src==="atendimento"?L.green:L.teal }} />
-                  <div style={{ flex:1, minWidth:0 }}>
-                    <div style={{ fontSize:12.5, fontWeight:500, color:L.t1 }}>{log.acao || log.tipo || "Evento"}</div>
-                    {(log.detalhe||log.observacao) && (
-                      <div style={{ fontSize:11, color:L.t3, marginTop:2 }}>{log.detalhe||log.observacao}</div>
-                    )}
-                    <Row gap={8} style={{ marginTop:4 }}>
-                      <Tag color={log._src==="atendimento"?L.green:L.teal} bg={log._src==="atendimento"?L.greenBg:L.tealBg} small>
-                        {log._src==="atendimento"?"atendimento":"auditoria"}
-                      </Tag>
-                      {log.usuario_email && <span style={{ fontSize:10, color:L.t4 }}>{log.usuario_email}</span>}
-                      {log.conversas?.contato_nome && <span style={{ fontSize:10, color:L.t4 }}>👤 {log.conversas.contato_nome}</span>}
-                    </Row>
-                  </div>
-                  <div style={{ fontSize:10.5, color:L.t4, flexShrink:0, fontFamily:"'JetBrains Mono',monospace" }}>
-                    {fmtDt(log.created_at)}
-                  </div>
-                </div>
-              ))}
+      {!isLoading && tab==="logs" && (() => {
+        // Config de badge por tipo de log WhatsApp
+        const WA_TIPO = {
+          webhook_recebido:  { l:"Webhook",    c:L.blue,   bg:L.blueBg   },
+          mensagem_bot:      { l:"Bot",        c:L.teal,   bg:L.tealBg   },
+          mensagem_agendada: { l:"Agendada",   c:L.copper, bg:L.copperBg },
+          erro_api:          { l:"Erro API",   c:L.red,    bg:L.redBg    },
+          conexao:           { l:"Conexão",    c:L.green,  bg:L.greenBg  },
+          fluxo:             { l:"Fluxo",      c:L.yellow, bg:L.yellowBg },
+          conversa_criada:   { l:"Nova conv.", c:L.green,  bg:L.greenBg  },
+        };
+        const SRC_BADGE = {
+          atendimento: { l:"atendimento", c:L.green,  bg:L.greenBg  },
+          auditoria:   { l:"auditoria",   c:L.copper, bg:L.copperBg },
+          whatsapp:    { l:"whatsapp",    c:L.blue,   bg:L.blueBg   },
+        };
+        const logsFiltered = filtrar(logs, ["acao","tipo","evento","usuario_email","detalhe","resumo","telefone"]);
+        return (
+          <div>
+            <div style={{ marginBottom:10, display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
+              <span style={{ fontSize:12, color:L.t3 }}>{logs.length} evento{logs.length!==1?"s":""}</span>
+              <button onClick={()=>load("logs")} style={{ ...btn(), fontSize:10, padding:"4px 10px" }}>↺ Atualizar</button>
+              <div style={{ marginLeft:"auto", display:"flex", gap:6, flexWrap:"wrap" }}>
+                {["whatsapp","atendimento","auditoria"].map(src => {
+                  const b = SRC_BADGE[src];
+                  return <Tag key={src} color={b.c} bg={b.bg} small>{b.l} {logs.filter(l=>l._src===src).length}</Tag>;
+                })}
+              </div>
             </div>
-          )}
-        </div>
-      )}
+            {logsFiltered.length === 0 ? (
+              <div style={{ padding:40, textAlign:"center", color:L.t4 }}>Nenhum log encontrado.</div>
+            ) : (
+              <div style={{ background:L.white, borderRadius:10, border:`1px solid ${L.line}`, overflow:"hidden" }}>
+                {logsFiltered.map((log,i) => {
+                  const isWA   = log._src === "whatsapp";
+                  const waConf = WA_TIPO[log.tipo] || { l:log.tipo||"log", c:L.t3, bg:L.surface };
+                  const srcConf= SRC_BADGE[log._src] || SRC_BADGE.auditoria;
+                  const dotColor = log.nivel==="error"?L.red : log.nivel==="warn"?L.yellow
+                    : isWA && log.tipo==="mensagem_bot"?L.teal
+                    : isWA && log.tipo==="conexao"?L.green
+                    : isWA?L.blue : log._src==="atendimento"?L.green : L.copper;
+                  const titulo = isWA
+                    ? (log.resumo || log.tipo || "—")
+                    : (log.acao || log.tipo || "Evento");
+                  const sub = isWA
+                    ? null
+                    : (log.detalhe || log.observacao || null);
+                  return (
+                    <div key={log.id||i} style={{ padding:"11px 16px", borderBottom:`1px solid ${L.lineSoft}`,
+                      display:"flex", gap:12, alignItems:"flex-start", transition:"background .1s",
+                      borderLeft: log.nivel==="error" ? `3px solid ${L.red}` : log.nivel==="warn" ? `3px solid ${L.yellow}` : "3px solid transparent" }}
+                      onMouseEnter={e=>e.currentTarget.style.background=L.surface}
+                      onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                      <div style={{ width:7, height:7, borderRadius:"50%", marginTop:6, flexShrink:0, background:dotColor }} />
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontSize:12, fontWeight:500, color:L.t1, wordBreak:"break-word" }}>{titulo}</div>
+                        {sub && <div style={{ fontSize:11, color:L.t3, marginTop:2 }}>{sub}</div>}
+                        <Row gap={6} style={{ marginTop:5, flexWrap:"wrap" }}>
+                          <Tag color={srcConf.c} bg={srcConf.bg} small>{srcConf.l}</Tag>
+                          {isWA && <Tag color={waConf.c} bg={waConf.bg} small>{waConf.l}</Tag>}
+                          {isWA && log.origem && log.origem !== "evolution-webhook" && (
+                            <Tag color={L.t3} bg={L.surface} small>{log.origem}</Tag>
+                          )}
+                          {isWA && log.evento && (
+                            <span style={{ fontSize:10, color:L.t4, fontFamily:"'JetBrains Mono',monospace" }}>{log.evento}</span>
+                          )}
+                          {isWA && log.telefone && (
+                            <span style={{ fontSize:10, color:L.t4 }}>📱 {log.telefone}</span>
+                          )}
+                          {!isWA && log.usuario_email && (
+                            <span style={{ fontSize:10, color:L.t4 }}>👤 {log.usuario_email}</span>
+                          )}
+                          {!isWA && log.conversas?.contato_nome && (
+                            <span style={{ fontSize:10, color:L.t4 }}>💬 {log.conversas.contato_nome}</span>
+                          )}
+                        </Row>
+                      </div>
+                      <div style={{ fontSize:10.5, color:L.t4, flexShrink:0, fontFamily:"'JetBrains Mono',monospace", minWidth:70, textAlign:"right" }}>
+                        {fmtDt(log.created_at)}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ── Modal Chamado ── */}
       {chamado.open && (

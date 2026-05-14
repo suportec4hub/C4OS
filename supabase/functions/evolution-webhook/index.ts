@@ -1,5 +1,37 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper: grava log em logs_whatsapp sem nunca lançar exceção
+// ─────────────────────────────────────────────────────────────────────────────
+async function logWA(
+  db: ReturnType<typeof createClient>,
+  opts: {
+    empresa_id?:  string | null;
+    conversa_id?: string | null;
+    tipo:   string;   // webhook_recebido | mensagem_bot | mensagem_agendada | erro_api | conexao | fluxo | conversa_criada
+    nivel?: string;   // info | warn | error
+    origem?: string;
+    evento?: string;
+    telefone?: string;
+    resumo?: string;
+    payload?: unknown;
+  },
+) {
+  try {
+    await db.from("logs_whatsapp").insert({
+      empresa_id:  opts.empresa_id  ?? null,
+      conversa_id: opts.conversa_id ?? null,
+      tipo:        opts.tipo,
+      nivel:       opts.nivel   ?? "info",
+      origem:      opts.origem  ?? null,
+      evento:      opts.evento  ?? null,
+      telefone:    opts.telefone ?? null,
+      resumo:      opts.resumo  ?? null,
+      payload:     opts.payload  ?? null,
+    });
+  } catch (_) { /* nunca propaga */ }
+}
+
 Deno.serve(async (req) => {
   if (req.method === "GET") return new Response("OK", { status: 200 });
   if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
@@ -60,8 +92,18 @@ Deno.serve(async (req) => {
         const jid   = data?.jid || data?.instance?.jid || "";
         const phone = jid.replace(/@s\.whatsapp\.net$/, "").replace(/:.*$/, "");
         await supabase.from("empresas").update({ evolution_connected: true, evolution_phone: phone || "", evolution_qr_temp: null }).eq("id", empresa_id);
+        await logWA(supabase, {
+          empresa_id, tipo: "conexao", nivel: "info", origem: "evolution-webhook", evento: event,
+          resumo: `WhatsApp conectado${phone ? ` — ${phone}` : ""}`,
+          payload: { state, phone },
+        });
       } else if (state === "close" || state === "connecting" || event === "Disconnected") {
         await supabase.from("empresas").update({ evolution_connected: false }).eq("id", empresa_id);
+        await logWA(supabase, {
+          empresa_id, tipo: "conexao", nivel: "warn", origem: "evolution-webhook", evento: event,
+          resumo: `WhatsApp desconectado (${state || event})`,
+          payload: { state },
+        });
       }
       return new Response("OK");
     }
@@ -99,6 +141,10 @@ Deno.serve(async (req) => {
 
     // ── MENSAGEM ─────────────────────────────────────────────────────────────
     if (["MESSAGE","MESSAGES_UPSERT","Message","messages.upsert"].includes(event)) {
+      await logWA(supabase, {
+        empresa_id, tipo: "webhook_recebido", nivel: "info", origem: "evolution-webhook", evento: event,
+        resumo: `Webhook de mensagem recebido (${event})`,
+      });
       const msgs = Array.isArray(data) ? data : [data];
       await processMessages(msgs, empresa_id, supabase, GLOBAL_URL, now, false);
       return new Response("OK");
@@ -181,7 +227,6 @@ async function executarFluxo(
   supabase: ReturnType<typeof createClient>,
   sendBot: (msg: string, tipo?: string, extra?: Record<string, unknown>) => Promise<void>,
 ): Promise<boolean> {
-  // Carrega fluxo ativo
   const fluxoId = cfg.fluxo_ativo_id as string | null;
   if (!fluxoId) return false;
 
@@ -194,32 +239,26 @@ async function executarFluxo(
   const noInicioRaw = nos.find(n => n.tipo === "inicio");
   if (!noInicioRaw) return false;
 
-  // Estado atual da conversa dentro do fluxo
   let estado: FluxoEstado | null = (conv.fluxo_estado as FluxoEstado) || null;
   const convId = conv.id as string;
 
-  // ── Se conversa está no meio do fluxo (aguardando resposta) ─────────────
   if (estado && estado.fluxo_id === fluxoId) {
     const noAtual = nos.find(n => n.id === estado!.no_atual_id);
     if (noAtual) {
-      // Processando resposta a aguardar (salvar variável)
       if (noAtual.tipo === "aguardar" && noAtual.variavel) {
         estado.variaveis[noAtual.variavel] = texto;
       }
-      // Processando resposta a opcoes (o usuário digitou um número)
       if (noAtual.tipo === "opcoes") {
         const num = parseInt(texto.trim(), 10);
         if (!isNaN(num) && num > 0) {
           estado.variaveis["_opcao"] = String(num);
         }
       }
-      // Avança para o próximo nó
       await executarNosSequencialmente(noAtual.id, nos, conexoes, estado, convId, empresa_id, senderPhone, senderName, isNew, supabase, sendBot);
       return true;
     }
   }
 
-  // ── Verifica gatilho do nó início ───────────────────────────────────────
   const gatilhoTipo = noInicioRaw.gatilho_tipo || "mensagem_recebida";
   const tl = texto.toLowerCase().trim();
   let deveDisparar = false;
@@ -232,7 +271,6 @@ async function executarFluxo(
   } else if (gatilhoTipo === "primeira_mensagem") {
     deveDisparar = isNew;
   } else if (gatilhoTipo === "primeira_mensagem_dia") {
-    // Verifica se a última mensagem do contato foi em outro dia
     const ultimaHora = conv.ultima_hora as string | null;
     if (ultimaHora) {
       const ultimaData = new Date(ultimaHora).toDateString();
@@ -245,18 +283,16 @@ async function executarFluxo(
 
   if (!deveDisparar) return false;
 
-  // ── Intervalo de reativação ───────────────────────────────────────────────
   if (noInicioRaw.intervalo_reativacao && noInicioRaw.intervalo_reativacao > 0) {
     const ultimaHora = conv.ultima_hora as string | null;
     if (ultimaHora && !estado) {
       const diffMinutes = (Date.now() - new Date(ultimaHora).getTime()) / 60000;
       if (diffMinutes < noInicioRaw.intervalo_reativacao) {
-        return false; // Too soon to reactivate
+        return false;
       }
     }
   }
 
-  // ── Inicia fluxo do zero ──────────────────────────────────────────────────
   const primeiraDia = gatilhoTipo === "primeira_mensagem_dia" && deveDisparar;
   const novoEstado: FluxoEstado = {
     fluxo_id: fluxoId,
@@ -269,12 +305,10 @@ async function executarFluxo(
     },
   };
 
-  // Mensagem de abertura do nó início (se configurada)
   if (noInicioRaw.mensagem?.trim()) {
     await sendBot(interpolarVariaveis(noInicioRaw.mensagem, novoEstado.variaveis));
   }
 
-  // Avança a partir do início
   await executarNosSequencialmente(noInicioRaw.id, nos, conexoes, novoEstado, convId, empresa_id, senderPhone, senderName, isNew, supabase, sendBot);
   return true;
 }
@@ -296,18 +330,14 @@ async function executarNosSequencialmente(
   sendBot: (msg: string, tipo?: string, extra?: Record<string, unknown>) => Promise<void>,
   profundidade = 0,
 ): Promise<void> {
-  if (profundidade > 20) return; // proteção anti-loop
+  if (profundidade > 20) return;
 
-  // Pega conexões saindo de deId
   const proxConexoes = conexoes.filter(c => c.de === deId);
   if (proxConexoes.length === 0) {
-    // Fim do fluxo — limpa estado
     await supabase.from("conversas").update({ fluxo_estado: null }).eq("id", convId);
     return;
   }
 
-  // Para nós com múltiplas saídas (condicao), pega a correta
-  // Caso contrário pega a primeira conexão disponível
   const conexaoPadrao = proxConexoes[0];
   const proximoNoId = conexaoPadrao.para;
   const proximoNo = nos.find(n => n.id === proximoNoId);
@@ -316,7 +346,6 @@ async function executarNosSequencialmente(
   estado.no_atual_id = proximoNo.id;
 
   switch (proximoNo.tipo) {
-    // ── Mensagem simples ────────────────────────────────────────────────────
     case "mensagem": {
       if (proximoNo.mensagem?.trim()) {
         await sendBot(interpolarVariaveis(proximoNo.mensagem, estado.variaveis));
@@ -326,7 +355,6 @@ async function executarNosSequencialmente(
       break;
     }
 
-    // ── Menu de opções (aguarda resposta do usuário) ─────────────────────────
     case "opcoes": {
       const opcoesFiltradas = (proximoNo.opcoes || []).filter(Boolean);
       if (opcoesFiltradas.length > 0) {
@@ -334,12 +362,10 @@ async function executarNosSequencialmente(
         const listaOpcoes = opcoesFiltradas.map((op, i) => `${i + 1}. ${op}`).join("\n");
         await sendBot(interpolarVariaveis(`${intro}\n\n${listaOpcoes}`, estado.variaveis));
       }
-      // Salva estado: aguardando resposta do usuário
       await supabase.from("conversas").update({ fluxo_estado: estado }).eq("id", convId);
       break;
     }
 
-    // ── Condição (bifurcação) ────────────────────────────────────────────────
     case "condicao": {
       const condicaoTipo = proximoNo.condicao_tipo || "contem_palavra";
       const tl = (estado.variaveis["_ultima_msg"] || "").toLowerCase().trim();
@@ -358,10 +384,17 @@ async function executarNosSequencialmente(
         condicaoVerdadeira = !!estado.variaveis["_primeira_do_dia"];
       }
 
-      // Escolhe a conexão correta: "Sim" ou "Não"
       const labelAlvo = condicaoVerdadeira ? "Sim" : "Não";
       const conexaoEscolhida = conexoes.find(c => c.de === proximoNo.id && c.label === labelAlvo)
-        || conexoes.find(c => c.de === proximoNo.id); // fallback: primeira disponível
+        || conexoes.find(c => c.de === proximoNo.id);
+
+      await logWA(supabase, {
+        empresa_id, conversa_id: convId, tipo: "fluxo", nivel: "info",
+        origem: "evolution-webhook", evento: `condicao:${condicaoTipo}`,
+        telefone: senderPhone,
+        resumo: `Condição "${condicaoTipo}" → ${condicaoVerdadeira ? "Sim" : "Não"}`,
+        payload: { no: proximoNo.id, resultado: condicaoVerdadeira, label: labelAlvo },
+      });
 
       if (conexaoEscolhida) {
         await executarNosSequencialmente(conexaoEscolhida.para, nos, conexoes, estado, convId, empresa_id, senderPhone, senderName, isNew, supabase, sendBot, profundidade + 1);
@@ -371,17 +404,14 @@ async function executarNosSequencialmente(
       break;
     }
 
-    // ── Aguardar input do usuário ────────────────────────────────────────────
     case "aguardar": {
       if (proximoNo.mensagem?.trim()) {
         await sendBot(interpolarVariaveis(proximoNo.mensagem, estado.variaveis));
       }
-      // Salva estado aguardando
       await supabase.from("conversas").update({ fluxo_estado: estado }).eq("id", convId);
       break;
     }
 
-    // ── Transferir para humano ───────────────────────────────────────────────
     case "transferir": {
       if (proximoNo.mensagem?.trim()) {
         await sendBot(interpolarVariaveis(proximoNo.mensagem, estado.variaveis));
@@ -393,10 +423,14 @@ async function executarNosSequencialmente(
         status: "aguardando",
         fluxo_estado: null,
       }).eq("id", convId);
+      await logWA(supabase, {
+        empresa_id, conversa_id: convId, tipo: "fluxo", nivel: "info",
+        origem: "evolution-webhook", evento: "transferir",
+        telefone: senderPhone, resumo: "Conversa transferida para atendente humano",
+      });
       break;
     }
 
-    // ── Encerrar fluxo ───────────────────────────────────────────────────────
     case "encerrar": {
       if (proximoNo.mensagem?.trim()) {
         await sendBot(interpolarVariaveis(proximoNo.mensagem, estado.variaveis));
@@ -405,7 +439,6 @@ async function executarNosSequencialmente(
       break;
     }
 
-    // ── Enviar mídia (imagem / vídeo / áudio / documento) ───────────────────
     case "imagem":
     case "video":
     case "audio":
@@ -422,18 +455,16 @@ async function executarNosSequencialmente(
       break;
     }
 
-    // ── Respostas rápidas (botões) ───────────────────────────────────────────
     case "respostas": {
       const botoes = [proximoNo.botao_1, proximoNo.botao_2, proximoNo.botao_3].filter(Boolean);
       if (proximoNo.mensagem?.trim()) {
-        const texto = proximoNo.mensagem + (botoes.length > 0 ? "\n\n" + botoes.map((b, i) => `${i + 1}. ${b}`).join("\n") : "");
-        await sendBot(interpolarVariaveis(texto, estado.variaveis));
+        const textoBtn = proximoNo.mensagem + (botoes.length > 0 ? "\n\n" + botoes.map((b, i) => `${i + 1}. ${b}`).join("\n") : "");
+        await sendBot(interpolarVariaveis(textoBtn, estado.variaveis));
       }
       await supabase.from("conversas").update({ fluxo_estado: estado }).eq("id", convId);
       break;
     }
 
-    // ── Lista interativa ─────────────────────────────────────────────────────
     case "lista": {
       const itens = (proximoNo.lista_itens || "").split("\n").filter(Boolean);
       const textoLista = (proximoNo.mensagem || "") +
@@ -446,12 +477,10 @@ async function executarNosSequencialmente(
       break;
     }
 
-    // ── Controle de fluxo (reiniciar / encerrar) ────────────────────────────
     case "controle_fluxo": {
       if (proximoNo.mensagem?.trim()) {
         await sendBot(interpolarVariaveis(proximoNo.mensagem, estado.variaveis));
       }
-      // Reiniciar ou encerrar: ambos limpam o estado do fluxo
       await supabase.from("conversas").update({ fluxo_estado: null }).eq("id", convId);
       break;
     }
@@ -461,8 +490,6 @@ async function executarNosSequencialmente(
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Substitui {variavel} no texto pelas variáveis do estado
 // ─────────────────────────────────────────────────────────────────────────────
 function interpolarVariaveis(texto: string, variaveis: Record<string, string>): string {
   return texto.replace(/\{(\w+)\}/g, (_, k) => variaveis[k] ?? `{${k}}`);
@@ -555,6 +582,13 @@ async function processMessages(
       }).select("id, nao_lidas, contato_nome, status, bot_ativo, ultima_hora, fluxo_estado").single();
       conv = nova;
 
+      await logWA(supabase, {
+        empresa_id, conversa_id: nova?.id, tipo: "conversa_criada", nivel: "info",
+        origem: "evolution-webhook", telefone: senderPhone,
+        resumo: `Nova conversa criada: ${senderName} (${senderPhone})`,
+        payload: { nome: senderName, isGroup },
+      });
+
       const { data: leadExist } = await supabase.from("leads")
         .select("id").eq("empresa_id", empresa_id).eq("whatsapp", senderPhone).maybeSingle();
       if (!leadExist) {
@@ -605,16 +639,24 @@ async function processMessages(
       remetente: fromMe ? "me" : "contato",
     });
 
+    // ── Log mensagem recebida do contato ─────────────────────────────────────
+    if (!fromMe && !isHistory) {
+      await logWA(supabase, {
+        empresa_id, conversa_id: conv.id, tipo: "webhook_recebido", nivel: "info",
+        origem: "evolution-webhook", evento: tipoMsg,
+        telefone: senderPhone,
+        resumo: `${senderName}: ${texto.slice(0, 100)}${texto.length > 100 ? "…" : ""}`,
+        payload: { tipoMsg, wamid: wamid || null },
+      });
+    }
+
     // ── Chatbot ──────────────────────────────────────────────────────────────
     if (!fromMe && !isHistory && conv.status !== "em_atendimento") {
       try {
         const { data: cfg } = await supabase.from("chatbot_config").select("*").eq("empresa_id", empresa_id).maybeSingle();
         if (!cfg?.ativo) continue;
 
-        // Regra: não responder grupos (se desativado)
         if (isGroup && !cfg.responder_grupos) continue;
-
-        // Regra: não responder se conversa estiver aberta
         if (cfg.nao_responder_aberta && conv.status === "aberta") continue;
 
         const { data: empData } = await supabase.from("empresas")
@@ -627,9 +669,12 @@ async function processMessages(
         const sendBot = async (msgText: string, tipo = "texto", extra?: Record<string, unknown>) => {
           if (!instId || !instToken || !evoUrl) return;
 
+          let apiOk = false;
+          let apiErr = "";
+
           if (["imagem","video","audio","documento"].includes(tipo)) {
             const mediaType = tipo === "imagem" ? "image" : tipo === "video" ? "video" : tipo === "audio" ? "audio" : "document";
-            await fetch(`${evoUrl}/send/media`, {
+            const r = await fetch(`${evoUrl}/send/media`, {
               method: "POST",
               headers: { "Content-Type": "application/json", "apikey": instToken },
               body: JSON.stringify({
@@ -639,11 +684,33 @@ async function processMessages(
                 ...(extra?.fileName ? { fileName: extra.fileName } : {}),
               }),
             });
+            apiOk = r.ok;
+            if (!r.ok) apiErr = await r.text().catch(() => String(r.status));
           } else {
-            await fetch(`${evoUrl}/send/text`, {
+            const r = await fetch(`${evoUrl}/send/text`, {
               method: "POST",
               headers: { "Content-Type": "application/json", "apikey": instToken },
               body: JSON.stringify({ instanceName: instId, id: instId, number: senderPhone, text: msgText }),
+            });
+            apiOk = r.ok;
+            if (!r.ok) apiErr = await r.text().catch(() => String(r.status));
+          }
+
+          if (!apiOk) {
+            await logWA(supabase, {
+              empresa_id, conversa_id: conv?.id, tipo: "erro_api", nivel: "error",
+              origem: "evolution-webhook", evento: `send/${tipo}`,
+              telefone: senderPhone,
+              resumo: `Falha ao enviar mensagem bot: ${apiErr.slice(0, 150)}`,
+              payload: { tipo, instId, evoUrl: evoUrl.slice(0, 60) },
+            });
+          } else {
+            await logWA(supabase, {
+              empresa_id, conversa_id: conv?.id, tipo: "mensagem_bot", nivel: "info",
+              origem: "evolution-webhook", evento: `send/${tipo}`,
+              telefone: senderPhone,
+              resumo: msgText.slice(0, 120) || `[${tipo}]`,
+              payload: { tipo },
             });
           }
 
@@ -659,7 +726,6 @@ async function processMessages(
           }
         };
 
-        // Palavra de transferência manual (sempre tem prioridade)
         const transferWord = (cfg.transferir_palavra || "atendente").toLowerCase().trim();
         if (texto.toLowerCase().includes(transferWord)) {
           await supabase.from("conversas").update({ bot_ativo: false, status: "aguardando", fluxo_estado: null }).eq("id", conv!.id);
@@ -667,7 +733,6 @@ async function processMessages(
           continue;
         }
 
-        // Verifica horário
         const agora = new Date();
         const dia   = agora.getDay();
         const hAtu  = agora.getHours() * 60 + agora.getMinutes();
@@ -681,14 +746,13 @@ async function processMessages(
           continue;
         }
 
-        // ── Gatilhos de palavra-chave (sempre verificam, com prioridade) ──────
         const { data: regras } = await supabase.from("chatbot_regras")
           .select("*").eq("empresa_id", empresa_id).eq("ativo", true).order("ordem");
         let gatilhoAtivado = false;
         if (regras?.length) {
-          const tl = texto.toLowerCase();
+          const tl2 = texto.toLowerCase();
           for (const r of regras) {
-            if (tl.includes(r.gatilho.toLowerCase())) {
+            if (tl2.includes(r.gatilho.toLowerCase())) {
               await sendBot(r.resposta);
               gatilhoAtivado = true;
               break;
@@ -697,7 +761,6 @@ async function processMessages(
         }
 
         if (!gatilhoAtivado) {
-          // ── Tenta executar fluxo visual ────────────────────────────────────
           const convComMsg = {
             ...conv,
             fluxo_estado: conv.fluxo_estado
@@ -718,7 +781,6 @@ async function processMessages(
             empresa_id, isNew, supabase, sendBot,
           );
 
-          // ── Fallback: mensagem de boas-vindas ──────────────────────────────
           if (!fluxoExecutado) {
             if (isNew && cfg.mensagem_boas_vindas) await sendBot(cfg.mensagem_boas_vindas);
           }
@@ -726,6 +788,12 @@ async function processMessages(
 
       } catch (botErr) {
         console.error("[webhook] chatbot error:", botErr);
+        await logWA(supabase, {
+          empresa_id, conversa_id: conv?.id, tipo: "erro_api", nivel: "error",
+          origem: "evolution-webhook", evento: "chatbot",
+          telefone: senderPhone,
+          resumo: `Erro no chatbot: ${((botErr as Error).message || String(botErr)).slice(0, 200)}`,
+        });
       }
     }
   }

@@ -9,6 +9,35 @@ const json = (data: unknown, status = 200) =>
     status, headers: { "Content-Type": "application/json" },
   });
 
+async function logWA(
+  db: ReturnType<typeof createClient>,
+  opts: {
+    empresa_id?:  string | null;
+    conversa_id?: string | null;
+    tipo:   string;
+    nivel?: string;
+    origem?: string;
+    evento?: string;
+    telefone?: string;
+    resumo?: string;
+    payload?: unknown;
+  },
+) {
+  try {
+    await db.from("logs_whatsapp").insert({
+      empresa_id:  opts.empresa_id  ?? null,
+      conversa_id: opts.conversa_id ?? null,
+      tipo:        opts.tipo,
+      nivel:       opts.nivel   ?? "info",
+      origem:      opts.origem  ?? null,
+      evento:      opts.evento  ?? null,
+      telefone:    opts.telefone ?? null,
+      resumo:      opts.resumo  ?? null,
+      payload:     opts.payload  ?? null,
+    });
+  } catch (_) { /* nunca propaga */ }
+}
+
 Deno.serve(async (_req) => {
   const db = createClient(SUPA_URL, SUPA_KEY);
 
@@ -27,18 +56,16 @@ Deno.serve(async (_req) => {
 
   for (const msg of pending) {
     // 2. Lock atômico: muda para 'enviando' ANTES de enviar.
-    //    Se outra execução concurrent já pegou esta mensagem, o update
-    //    retorna 0 linhas e pulamos para a próxima.
     const { data: locked } = await db
       .from("mensagens_agendadas")
       .update({ status: "enviando" })
       .eq("id", msg.id)
-      .eq("status", "pendente")   // só atualiza se AINDA estiver pendente
+      .eq("status", "pendente")
       .select("id");
 
-    if (!locked?.length) continue; // outro processo já está tratando esta mensagem
+    if (!locked?.length) continue;
 
-    // 3. Busca credenciais da empresa separadamente (mais confiável que join)
+    // 3. Busca credenciais da empresa
     const { data: emp } = await db
       .from("empresas")
       .select("evolution_instance_id, evolution_instance_token, evolution_api_url")
@@ -46,10 +73,19 @@ Deno.serve(async (_req) => {
       .single();
 
     if (!emp?.evolution_instance_id || !emp?.evolution_instance_token) {
+      const errMsg = "Instância Evolution não configurada";
       await db.from("mensagens_agendadas").update({
         status: "falhou",
-        erro:   "Instância Evolution não configurada",
+        erro:   errMsg,
       }).eq("id", msg.id);
+      await logWA(db, {
+        empresa_id:  msg.empresa_id,
+        conversa_id: msg.conversa_id ?? null,
+        tipo:   "erro_api", nivel: "error",
+        origem: "send-scheduled", evento: "config",
+        telefone: String(msg.destinatario),
+        resumo:  errMsg,
+      });
       failed++;
       continue;
     }
@@ -90,11 +126,10 @@ Deno.serve(async (_req) => {
       } catch (e) { lastErr = (e as Error).message; }
     }
 
-    // 5. Atualiza status final — SEMPRE executa, mesmo se envio falhar
+    // 5. Atualiza status final
     if (ok) {
       const sentAt = new Date().toISOString();
 
-      // Insere a mensagem no chat para aparecer como mensagem normal
       if (msg.conversa_id) {
         await db.from("mensagens").insert({
           conversa_id: msg.conversa_id,
@@ -116,12 +151,34 @@ Deno.serve(async (_req) => {
         status:     "enviado",
         enviado_em: sentAt,
       }).eq("id", msg.id);
+
+      await logWA(db, {
+        empresa_id:  msg.empresa_id,
+        conversa_id: msg.conversa_id ?? null,
+        tipo:   "mensagem_agendada", nivel: "info",
+        origem: "send-scheduled", evento: "sendText",
+        telefone: phone,
+        resumo:  `Mensagem agendada enviada: ${(msg.mensagem as string).slice(0, 100)}`,
+        payload: { agendada_id: msg.id },
+      });
+
       sent++;
     } else {
       await db.from("mensagens_agendadas").update({
         status: "falhou",
         erro:   lastErr.slice(0, 500),
       }).eq("id", msg.id);
+
+      await logWA(db, {
+        empresa_id:  msg.empresa_id,
+        conversa_id: msg.conversa_id ?? null,
+        tipo:   "erro_api", nivel: "error",
+        origem: "send-scheduled", evento: "sendText",
+        telefone: phone,
+        resumo:  `Falha ao enviar mensagem agendada: ${lastErr.slice(0, 150)}`,
+        payload: { agendada_id: msg.id, erro: lastErr.slice(0, 300) },
+      });
+
       failed++;
     }
   }
