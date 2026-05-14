@@ -11,6 +11,10 @@ const ao = (color, pct) =>
     ? `color-mix(in srgb, ${color} ${pct}%, transparent)`
     : `${color}${Math.round(pct * 2.55).toString(16).padStart(2, "0")}`;
 
+// Normaliza cores do banco (hexes antigos → CSS vars atuais)
+const LEGACY = {"#111827":L.teal,"#1f2937":L.teal,"#374151":L.teal,"#6b7280":L.copper,"#4b5563":L.copper,"#16a34a":L.green,"#dc2626":L.red,"#ca8a04":L.yellow,"#2563eb":L.blue,"#7c3aed":L.blue,"#0891b2":L.blue};
+const nc = (cor) => LEGACY[cor?.toLowerCase()] || cor || L.teal;
+
 const ETAPAS_DEFAULT = [
   {id:"novo",    label:"Novos",       cor:L.teal},
   {id:"qualif",  label:"Qualificação",cor:L.copper},
@@ -51,7 +55,7 @@ export default function PagePipeline({ user, onOpenChat }) {
     if (!user?.empresa_id) return;
     supabase.from("pipeline_etapas").select("*").eq("empresa_id", user.empresa_id).order("ordem").then(({ data }) => {
       if (data && data.length > 0) {
-        setEtapas(data.map(e => ({ id: e.slug, label: e.label, cor: e.cor || L.teal, dbId: e.id, ordem: e.ordem })));
+        setEtapas(data.map(e => ({ id: e.slug, label: e.label, cor: nc(e.cor) || L.teal, dbId: e.id, ordem: e.ordem })));
       }
     });
   }, [user?.empresa_id]);
@@ -244,7 +248,7 @@ export default function PagePipeline({ user, onOpenChat }) {
                   onMouseLeave={e=>{e.currentTarget.style.borderColor=L.line;e.currentTarget.style.transform="none";e.currentTarget.style.boxShadow="0 1px 2px rgba(0,0,0,0.04)";}}
                 >
                   <div style={{fontSize:12.5,fontWeight:600,color:L.t1,marginBottom:5,lineHeight:1.35}}>{deal.titulo}</div>
-                  <div style={{fontSize:16,fontWeight:800,color:stage.cor,fontFamily:"'Outfit',sans-serif",marginBottom:6}}>
+                  <div style={{fontSize:15,fontWeight:800,color:L.t2,fontFamily:"'Outfit',sans-serif",marginBottom:5}}>
                     R$ {parseFloat(deal.valor||0).toLocaleString("pt-BR",{minimumFractionDigits:2})}
                   </div>
                   {/* Canal de aquisição */}
