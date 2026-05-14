@@ -239,7 +239,7 @@ export default function PagePipeline({ user, onOpenChat }) {
                   onDragStart={()=>setDragging(deal)}
                   onDragEnd={()=>setDragging(null)}
                   onClick={()=>openEdit(deal)}
-                  style={{background:L.surface,borderRadius:10,border:`1px solid ${L.line}`,padding:12,marginBottom:8,cursor:"grab",transition:"all .15s",boxShadow:"0 1px 2px rgba(0,0,0,0.04)"}}
+                  style={{background:L.surface,borderRadius:10,border:`1px solid ${L.line}`,borderLeft:`3px solid ${ao(stage.cor,60)}`,padding:"11px 12px 11px 10px",marginBottom:8,cursor:"grab",transition:"all .15s",boxShadow:"0 1px 2px rgba(0,0,0,0.04)"}}
                   onMouseEnter={e=>{e.currentTarget.style.borderColor=ao(stage.cor, 40);e.currentTarget.style.transform="translateY(-1px)";e.currentTarget.style.boxShadow="0 4px 12px rgba(0,0,0,0.08)";}}
                   onMouseLeave={e=>{e.currentTarget.style.borderColor=L.line;e.currentTarget.style.transform="none";e.currentTarget.style.boxShadow="0 1px 2px rgba(0,0,0,0.04)";}}
                 >

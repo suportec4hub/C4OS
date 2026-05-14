@@ -225,7 +225,7 @@ export default function Shell({user,onLogout,onProfileUpdate,theme,toggleTheme})
         {!isMobile && (
           <button onClick={()=>setCol(p=>!p)}
             style={{position:"absolute",top:"50%",right:-16,transform:"translateY(-50%)",width:16,height:48,borderRadius:"0 8px 8px 0",background:L.white,border:`1.5px solid ${L.line}`,borderLeft:"none",color:L.t3,fontSize:11,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",transition:"all .15s",zIndex:30,boxShadow:"3px 0 8px rgba(0,0,0,0.08)",padding:0}}
-            onMouseEnter={e=>{e.currentTarget.style.background=L.teal;e.currentTarget.style.borderColor=L.teal;e.currentTarget.style.color="#fff";e.currentTarget.style.width="20px";}}
+            onMouseEnter={e=>{e.currentTarget.style.background=L.accent;e.currentTarget.style.borderColor=L.accent;e.currentTarget.style.color="white";e.currentTarget.style.width="20px";}}
             onMouseLeave={e=>{e.currentTarget.style.background=L.white;e.currentTarget.style.borderColor=L.line;e.currentTarget.style.color=L.t3;e.currentTarget.style.width="16px";}}
           >
             {col?"›":"‹"}
