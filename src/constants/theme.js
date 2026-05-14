@@ -100,7 +100,7 @@ export const globalCSS = `
     --c-blue:#58a6ff; --c-blueBg:#0c1a2e;
     --c-blueA:rgba(88,166,255,0.20);
 
-    --c-t1:#e6edf3; --c-t2:#c9d1d9; --c-t3:#8b949e; --c-t4:#6e7681; --c-t5:#484f58;
+    --c-t1:#f0f6fc; --c-t2:#e6edf3; --c-t3:#c9d1d9; --c-t4:#8b949e; --c-t5:#6e7681;
   }
 
   body{background:var(--c-bg);color:var(--c-t1);font-family:'Instrument Sans',sans-serif;font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased;transition:background .2s,color .2s}
