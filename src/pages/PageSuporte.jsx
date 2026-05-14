@@ -104,7 +104,7 @@ export default function PageSuporte({ user }) {
   return (
     <Fade>
       {/* Banner de suporte */}
-      <div style={{ background: L.greenBg, border: `1.5px solid ${L.green}22`, borderRadius: 11, padding: "12px 18px", marginBottom: 14, display: "flex", alignItems: "center", gap: 10 }}>
+      <div style={{ background: L.greenBg, border: `1.5px solid ${L.greenA}`, borderRadius: 11, padding: "12px 18px", marginBottom: 14, display: "flex", alignItems: "center", gap: 10 }}>
         <div style={{ width: 8, height: 8, borderRadius: "50%", background: L.green, flexShrink: 0 }} />
         <div>
           <div style={{ fontSize: 12, fontWeight: 600, color: L.green }}>Modo Suporte C4HUB — Sessão Auditada</div>
@@ -173,7 +173,7 @@ export default function PageSuporte({ user }) {
                     </Grid>
 
                     <button onClick={() => abrirAmbiente(emp)}
-                      style={{ width: "100%", padding: "9px", borderRadius: 9, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", background: L.tealBg, color: L.teal, border: `1.5px solid ${L.teal}22`, transition: "all .12s" }}
+                      style={{ width: "100%", padding: "9px", borderRadius: 9, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", background: L.tealBg, color: L.teal, border: `1.5px solid ${L.tealA}`, transition: "all .12s" }}
                       onMouseEnter={e => { e.currentTarget.style.background = L.teal; e.currentTarget.style.color = "white"; }}
                       onMouseLeave={e => { e.currentTarget.style.background = L.tealBg; e.currentTarget.style.color = L.teal; }}
                     >

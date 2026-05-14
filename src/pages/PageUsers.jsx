@@ -219,7 +219,7 @@ export default function PageUsers({ user }) {
       {confirmDelete && (
         <Modal title="Excluir usuário permanentemente" onClose={()=>setConfirmDelete(null)} width={420}>
           <div style={{padding:"8px 0 20px"}}>
-            <div style={{display:"flex",alignItems:"center",gap:14,padding:"16px",background:L.redBg,borderRadius:10,border:`1px solid ${L.red}33`,marginBottom:18}}>
+            <div style={{display:"flex",alignItems:"center",gap:14,padding:"16px",background:L.redBg,borderRadius:10,border:`1px solid ${L.redA2}`,marginBottom:18}}>
               <span style={{fontSize:28}}>⚠️</span>
               <div>
                 <div style={{fontSize:13,fontWeight:700,color:L.red,marginBottom:3}}>Esta ação é permanente</div>

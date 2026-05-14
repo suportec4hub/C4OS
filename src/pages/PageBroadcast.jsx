@@ -205,7 +205,7 @@ export default function PageBroadcast({ user }) {
                 Salvar rascunho
               </button>
               <button onClick={enviarAgora} disabled={saving || sending}
-                style={{ flex:2, padding:"10px", borderRadius:9, background:sending?L.surface:L.teal, border:"none", color:sending?L.t3:"white", cursor:(saving||sending)?"not-allowed":"pointer", fontFamily:"inherit", fontWeight:600, fontSize:12.5, boxShadow:sending?"none":`0 3px 10px ${L.teal}28` }}>
+                style={{ flex:2, padding:"10px", borderRadius:9, background:sending?L.surface:L.teal, border:"none", color:sending?L.t3:"white", cursor:(saving||sending)?"not-allowed":"pointer", fontFamily:"inherit", fontWeight:600, fontSize:12.5, boxShadow:sending?"none":`0 3px 10px ${L.tealA}` }}>
                 {saving ? "Criando..." : sending ? "⟳ Enviando..." : "▶ Enviar Agora"}
               </button>
             </div>
@@ -243,7 +243,7 @@ export default function PageBroadcast({ user }) {
             </div>
 
             {/* Aviso de intervalo */}
-            <div style={{ marginTop:12, padding:"8px 12px", background:"#fffbf0", border:`1px solid ${L.yellow}44`, borderRadius:8, fontSize:11.5, color:"#a37000" }}>
+            <div style={{ marginTop:12, padding:"8px 12px", background:"#fffbf0", border:`1px solid ${L.yellowA2}`, borderRadius:8, fontSize:11.5, color:"#a37000" }}>
               ⚠️ <b>Intervalo de 1,5s</b> entre mensagens para evitar bloqueio do WhatsApp.
             </div>
           </div>
@@ -292,7 +292,7 @@ export default function PageBroadcast({ user }) {
                       )}
                       {(c.status === "agendado" || c.status === "rascunho") && (
                         <button onClick={() => { if(confirm("Cancelar campanha?")) cancelar(c.id); }}
-                          style={{ fontSize:11, color:L.red, background:"none", border:`1px solid ${L.red}22`, borderRadius:6, padding:"3px 8px", cursor:"pointer", fontFamily:"inherit" }}>
+                          style={{ fontSize:11, color:L.red, background:"none", border:`1px solid ${L.redA}`, borderRadius:6, padding:"3px 8px", cursor:"pointer", fontFamily:"inherit" }}>
                           Cancelar
                         </button>
                       )}

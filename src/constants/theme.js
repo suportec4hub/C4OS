@@ -1,32 +1,106 @@
+// Todas as cores apontam para CSS custom properties.
+// O toggle de tema aplica data-theme="dark" em <html> e o CSS cuida do resto.
 export const L = {
-  // Backgrounds — brancos puros
-  bg:"#ffffff", bgWarm:"#fafafa", white:"#ffffff", surface:"#f9fafb", hover:"#f3f4f6",
-  line:"#e5e7eb", lineSoft:"#f3f4f6",
+  // Backgrounds
+  bg:"var(--c-bg)", bgWarm:"var(--c-bgWarm)", white:"var(--c-white)",
+  surface:"var(--c-surface)", hover:"var(--c-hover)",
+  line:"var(--c-line)", lineSoft:"var(--c-lineSoft)",
 
-  // Primary — preto
-  teal:"#111827", tealDk:"#000000", tealBg:"#f3f4f6",
+  // Primary
+  teal:"var(--c-teal)", tealDk:"var(--c-tealDk)", tealBg:"var(--c-tealBg)",
+  tealA:"var(--c-tealA)",   // ~13% opacity  (substitui ${L.tealA})
+  tealA2:"var(--c-tealA2)", // ~20% opacity  (substitui ${L.tealA2})
 
-  // Secundário — cinza médio
-  copper:"#6b7280", copperBg:"#f9fafb",
+  // Secondary
+  copper:"var(--c-copper)", copperBg:"var(--c-copperBg)",
+  copperA:"var(--c-copperA)", // ~13% opacity
 
-  // Status (mantidos para semântica)
-  green:"#16a34a",  greenBg:"#f0fdf4",
-  red:"#dc2626",    redBg:"#fef2f2",
-  yellow:"#ca8a04", yellowBg:"#fefce8",
-  blue:"#2563eb",   blueBg:"#eff6ff",
+  // Status
+  green:"var(--c-green)", greenBg:"var(--c-greenBg)",
+  greenA:"var(--c-greenA)",   // ~13%
+  greenA2:"var(--c-greenA2)", // ~25%  (substitui 44)
+
+  red:"var(--c-red)", redBg:"var(--c-redBg)",
+  redA:"var(--c-redA)",   // ~13%
+  redA2:"var(--c-redA2)", // ~20%  (substitui 33)
+  redA3:"var(--c-redA3)", // ~27%  (substitui 44)
+
+  yellow:"var(--c-yellow)", yellowBg:"var(--c-yellowBg)",
+  yellowA:"var(--c-yellowA)",   // ~13%
+  yellowA2:"var(--c-yellowA2)", // ~25%  (substitui 33/44)
+
+  blue:"var(--c-blue)", blueBg:"var(--c-blueBg)",
+  blueA:"var(--c-blueA)", // ~20%
 
   // Texto
-  t1:"#111827", t2:"#374151", t3:"#6b7280", t4:"#9ca3af", t5:"#d1d8e0",
+  t1:"var(--c-t1)", t2:"var(--c-t2)", t3:"var(--c-t3)", t4:"var(--c-t4)", t5:"var(--c-t5)",
 };
 
 export const globalCSS = `
   @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap');
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
   html,body{height:100%}
-  body{background:#ffffff;color:#111827;font-family:'Instrument Sans',sans-serif;font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased}
+
+  /* ── Tema claro (padrão) ─────────────────────────────────────────────── */
+  :root {
+    --c-bg:#ffffff; --c-bgWarm:#fafafa; --c-white:#ffffff;
+    --c-surface:#f9fafb; --c-hover:#f3f4f6;
+    --c-line:#e5e7eb; --c-lineSoft:#f3f4f6;
+
+    --c-teal:#111827; --c-tealDk:#000000; --c-tealBg:#f3f4f6;
+    --c-tealA:rgba(17,24,39,0.13); --c-tealA2:rgba(17,24,39,0.20);
+
+    --c-copper:#6b7280; --c-copperBg:#f9fafb;
+    --c-copperA:rgba(107,114,128,0.13);
+
+    --c-green:#16a34a; --c-greenBg:#f0fdf4;
+    --c-greenA:rgba(22,163,74,0.13); --c-greenA2:rgba(22,163,74,0.25);
+
+    --c-red:#dc2626; --c-redBg:#fef2f2;
+    --c-redA:rgba(220,38,38,0.13); --c-redA2:rgba(220,38,38,0.20); --c-redA3:rgba(220,38,38,0.27);
+
+    --c-yellow:#ca8a04; --c-yellowBg:#fefce8;
+    --c-yellowA:rgba(202,138,4,0.13); --c-yellowA2:rgba(202,138,4,0.25);
+
+    --c-blue:#2563eb; --c-blueBg:#eff6ff;
+    --c-blueA:rgba(37,99,235,0.20);
+
+    --c-t1:#111827; --c-t2:#374151; --c-t3:#6b7280; --c-t4:#9ca3af; --c-t5:#d1d8e0;
+  }
+
+  /* ── Tema escuro ─────────────────────────────────────────────────────── */
+  html[data-theme="dark"] {
+    --c-bg:#0d1117; --c-bgWarm:#161b22; --c-white:#161b22;
+    --c-surface:#21262d; --c-hover:#30363d;
+    --c-line:#30363d; --c-lineSoft:#21262d;
+
+    --c-teal:#c9d1d9; --c-tealDk:#ffffff; --c-tealBg:#21262d;
+    --c-tealA:rgba(201,209,217,0.13); --c-tealA2:rgba(201,209,217,0.20);
+
+    --c-copper:#8b949e; --c-copperBg:#161b22;
+    --c-copperA:rgba(139,148,158,0.13);
+
+    --c-green:#3fb950; --c-greenBg:#0d1f0f;
+    --c-greenA:rgba(63,185,80,0.13); --c-greenA2:rgba(63,185,80,0.25);
+
+    --c-red:#f85149; --c-redBg:#1c0a0a;
+    --c-redA:rgba(248,81,73,0.13); --c-redA2:rgba(248,81,73,0.20); --c-redA3:rgba(248,81,73,0.27);
+
+    --c-yellow:#d29922; --c-yellowBg:#1d1711;
+    --c-yellowA:rgba(210,153,34,0.13); --c-yellowA2:rgba(210,153,34,0.25);
+
+    --c-blue:#58a6ff; --c-blueBg:#0c1a2e;
+    --c-blueA:rgba(88,166,255,0.20);
+
+    --c-t1:#e6edf3; --c-t2:#c9d1d9; --c-t3:#8b949e; --c-t4:#484f58; --c-t5:#30363d;
+  }
+
+  body{background:var(--c-bg);color:var(--c-t1);font-family:'Instrument Sans',sans-serif;font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased;transition:background .2s,color .2s}
+  input,textarea,select{color:var(--c-t1);background:var(--c-bg)}
+  input::placeholder,textarea::placeholder{color:var(--c-t4)}
   ::-webkit-scrollbar{width:4px;height:4px}
   ::-webkit-scrollbar-track{background:transparent}
-  ::-webkit-scrollbar-thumb{background:#e5e7eb;border-radius:99px}
+  ::-webkit-scrollbar-thumb{background:var(--c-line);border-radius:99px}
   @keyframes up{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
   @keyframes in{from{opacity:0}to{opacity:1}}
   @keyframes px{from{transform:translateX(-6px);opacity:0}to{transform:none;opacity:1}}
@@ -49,11 +123,8 @@ export const globalCSS = `
     .table-scroll table{min-width:580px}
     .stack-mobile{flex-direction:column!important;align-items:stretch!important;gap:8px!important}
     .wrap-mobile{flex-wrap:wrap!important}
-    /* Modais full-width no mobile */
     .modal-box{width:calc(100vw - 32px)!important;max-width:100%!important;margin:16px!important;max-height:90dvh;overflow-y:auto}
-    /* Kanban / colunas horizontais: scroll */
     .kanban-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:12px}
-    /* Botões de ação que ficam apertados */
     .action-row{flex-wrap:wrap!important;gap:6px!important}
   }
   /* Tablet 640–1023px */

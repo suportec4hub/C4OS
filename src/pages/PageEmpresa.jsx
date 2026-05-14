@@ -18,7 +18,7 @@ function CopyBtn({ value }) {
     <button onClick={copy} style={{
       padding:"4px 10px",borderRadius:7,fontSize:11,fontWeight:600,cursor:"pointer",
       fontFamily:"inherit",background:copied?L.greenBg:L.tealBg,color:copied?L.green:L.teal,
-      border:`1.5px solid ${copied?L.green:L.teal}22`,transition:"all .15s",flexShrink:0
+      border:`1.5px solid ${copied?L.greenA:L.tealA}`,transition:"all .15s",flexShrink:0
     }}>
       {copied ? "Copiado!" : "Copiar"}
     </button>
@@ -371,11 +371,11 @@ function EvolutionCard({ user, empData, onRefresh }) {
               🔄 Reconectar
             </button>
             <button onClick={() => callEvo("resetWebhook").then(() => { setSuccMsg("✓ Webhook reconfigurado!"); setTimeout(() => setSuccMsg(""), 4000); }).catch(e => setErrMsg(e.message))}
-              style={{ padding: "9px 16px", borderRadius: 9, background: L.tealBg, border: `1px solid ${L.teal}33`, color: L.teal, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 500 }}>
+              style={{ padding: "9px 16px", borderRadius: 9, background: L.tealBg, border: `1px solid ${L.tealA2}`, color: L.teal, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 500 }}>
               ⚙️ Config. Webhook
             </button>
             <button onClick={desconectar}
-              style={{ padding: "9px 16px", borderRadius: 9, background: L.redBg, border: `1px solid ${L.red}22`, color: L.red, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 600 }}>
+              style={{ padding: "9px 16px", borderRadius: 9, background: L.redBg, border: `1px solid ${L.redA}`, color: L.red, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 600 }}>
               Desconectar
             </button>
           </>
@@ -501,7 +501,7 @@ export default function PageEmpresa({ empresa, user }) {
     <Fade>
       {/* Header card */}
       <div style={{background:L.white,borderRadius:12,border:`1px solid ${L.line}`,padding:22,marginBottom:14,display:"flex",alignItems:"center",gap:20,boxShadow:"0 1px 4px rgba(0,0,0,0.04)"}}>
-        <div style={{width:56,height:56,borderRadius:14,background:L.tealBg,border:`1.5px solid ${L.teal}22`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+        <div style={{width:56,height:56,borderRadius:14,background:L.tealBg,border:`1.5px solid ${L.tealA}`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
           <Logo size={40}/>
         </div>
         <div style={{flex:1}}>
@@ -586,7 +586,7 @@ export default function PageEmpresa({ empresa, user }) {
               <Tag color={empData.meta_pixel_id?L.green:L.red} bg={empData.meta_pixel_id?L.greenBg:L.redBg}>{metaStatus}</Tag>
             </Row>
 
-            <div style={{background:"#fffbf0",border:`1px solid ${L.yellow}44`,borderRadius:10,padding:12,marginBottom:16,fontSize:11,color:L.t2,lineHeight:1.7}}>
+            <div style={{background:"#fffbf0",border:`1px solid ${L.yellowA2}`,borderRadius:10,padding:12,marginBottom:16,fontSize:11,color:L.t2,lineHeight:1.7}}>
               <div style={{fontWeight:700,color:L.yellow,marginBottom:6}}>⚡ Como configurar</div>
               <ol style={{paddingLeft:18,margin:0}}>
                 <li>Acesse <b>Meta Business Suite → Events Manager → Pixels</b></li>
@@ -622,7 +622,7 @@ export default function PageEmpresa({ empresa, user }) {
               <Tag color={empData.ga4_measurement_id?L.green:L.red} bg={empData.ga4_measurement_id?L.greenBg:L.redBg}>{ga4Status}</Tag>
             </Row>
 
-            <div style={{background:"#fffbf0",border:`1px solid ${L.yellow}44`,borderRadius:10,padding:12,marginBottom:16,fontSize:11,color:L.t2,lineHeight:1.7}}>
+            <div style={{background:"#fffbf0",border:`1px solid ${L.yellowA2}`,borderRadius:10,padding:12,marginBottom:16,fontSize:11,color:L.t2,lineHeight:1.7}}>
               <div style={{fontWeight:700,color:L.yellow,marginBottom:6}}>⚡ Como configurar</div>
               <ol style={{paddingLeft:18,margin:0}}>
                 <li>Acesse <b>Google Analytics → Admin → Fluxos de dados</b></li>

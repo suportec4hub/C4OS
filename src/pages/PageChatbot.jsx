@@ -218,7 +218,7 @@ function TabConfig({ user }) {
         {succ && <div style={{padding:"8px 12px",background:L.greenBg,borderRadius:8,fontSize:12,color:L.green}}>{succ}</div>}
 
         <button onClick={save} disabled={saving}
-          style={{padding:"11px",borderRadius:9,background:L.teal,border:"none",color:"white",cursor:"pointer",fontFamily:"inherit",fontWeight:600,fontSize:13,boxShadow:`0 3px 10px ${L.teal}28`}}>
+          style={{padding:"11px",borderRadius:9,background:L.teal,border:"none",color:"white",cursor:"pointer",fontFamily:"inherit",fontWeight:600,fontSize:13,boxShadow:`0 3px 10px ${L.tealA}`}}>
           {saving?"Salvando...":"Salvar Configurações"}
         </button>
       </div>

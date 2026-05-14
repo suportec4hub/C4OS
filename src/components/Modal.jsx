@@ -72,7 +72,7 @@ export function ModalFooter({ onClose, onSave, loading, label = "Salvar", inline
         onMouseLeave={e=>e.currentTarget.style.borderColor=L.line}
       >Cancelar</button>
       <button onClick={onSave} disabled={loading}
-        style={{padding:"9px 20px",borderRadius:9,fontSize:12.5,fontWeight:600,cursor:loading?"wait":"pointer",fontFamily:"inherit",background:L.teal,color:"white",border:"none",opacity:loading?.7:1,transition:"all .12s",boxShadow:`0 3px 10px ${L.teal}28`}}
+        style={{padding:"9px 20px",borderRadius:9,fontSize:12.5,fontWeight:600,cursor:loading?"wait":"pointer",fontFamily:"inherit",background:L.teal,color:"white",border:"none",opacity:loading?.7:1,transition:"all .12s",boxShadow:`0 3px 10px ${L.tealA}`}}
       >
         {loading ? "Salvando..." : label}
       </button>

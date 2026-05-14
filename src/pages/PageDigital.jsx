@@ -328,7 +328,7 @@ export default function PageDigital({ user, isAdmin }) {
 
       {/* Aviso para usuários com acesso restrito */}
       {!podeVerTudo && (
-        <div style={{background:L.tealBg,border:`1px solid ${L.teal}22`,borderRadius:10,padding:"10px 16px",marginBottom:14,display:"flex",alignItems:"center",gap:10}}>
+        <div style={{background:L.tealBg,border:`1px solid ${L.tealA}`,borderRadius:10,padding:"10px 16px",marginBottom:14,display:"flex",alignItems:"center",gap:10}}>
           <span style={{fontSize:14}}>🔒</span>
           <div>
             <div style={{fontSize:12,fontWeight:600,color:L.teal}}>Acesso Restrito — Digital - TI</div>
@@ -497,7 +497,7 @@ export default function PageDigital({ user, isAdmin }) {
                 ) : comentarios.map(cm=>(
                   <div key={cm.id} style={{display:"flex",gap:9,alignItems:"flex-start"}}>
                     <Av name={cm.usuario_nome} size={24} color={COMENT_C[cm.tipo]||L.t3}/>
-                    <div style={{flex:1,background:COMENT_BG[cm.tipo]||L.surface,borderRadius:"3px 10px 10px 10px",padding:"8px 12px",border:`1px solid ${COMENT_C[cm.tipo]||L.line}22`}}>
+                    <div style={{flex:1,background:COMENT_BG[cm.tipo]||L.surface,borderRadius:"3px 10px 10px 10px",padding:"8px 12px",border:`1px solid ${COMENT_C[cm.tipo]?COMENT_C[cm.tipo]+"22":L.tealA}`}}>
                       <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
                         <span style={{fontSize:11,fontWeight:600,color:L.t2}}>{cm.usuario_nome}</span>
                         <span style={{fontSize:9.5,color:L.t5,fontFamily:"'JetBrains Mono',monospace"}}>{tempoDecorrido(cm.created_at)}</span>
@@ -758,7 +758,7 @@ export default function PageDigital({ user, isAdmin }) {
             </Field>
           </div>
           {CATEGORIAS_CRM.includes(form.categoria) && (
-            <div style={{padding:"10px 14px",background:L.tealBg,borderRadius:8,fontSize:11,color:L.teal,marginTop:4,border:`1px solid ${L.teal}33`,display:"flex",alignItems:"center",gap:8}}>
+            <div style={{padding:"10px 14px",background:L.tealBg,borderRadius:8,fontSize:11,color:L.teal,marginTop:4,border:`1px solid ${L.tealA2}`,display:"flex",alignItems:"center",gap:8}}>
               <span style={{fontSize:16}}>🔀</span>
               <span><strong>Chamado CRM:</strong> será encaminhado automaticamente para a fila da equipe <strong>C4HUB</strong>, que irá tratar e responder.</span>
             </div>

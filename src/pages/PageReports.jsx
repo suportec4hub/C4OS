@@ -92,10 +92,10 @@ function ReportModal({ title, headers, rows, chart, chartKey, chartLabel, color,
             <div style={{fontSize:11,color:L.t4,marginTop:2}}>Gerado em {new Date().toLocaleString("pt-BR")}</div>
           </div>
           <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
-            <button onClick={exportPDF}   style={{padding:"6px 12px",borderRadius:8,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:L.redBg,   color:L.red,  border:`1px solid ${L.red}22`}}>↓ PDF</button>
-            <button onClick={exportExcel} style={{padding:"6px 12px",borderRadius:8,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:L.greenBg, color:L.green,border:`1px solid ${L.green}22`}}>↓ Excel</button>
-            <button onClick={exportCSV}   style={{padding:"6px 12px",borderRadius:8,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:L.yellowBg,color:L.yellow,border:`1px solid ${L.yellow}22`}}>↓ CSV</button>
-            <button onClick={exportJSON}  style={{padding:"6px 12px",borderRadius:8,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:L.tealBg,  color:L.teal, border:`1px solid ${L.teal}22`}}>↓ JSON</button>
+            <button onClick={exportPDF}   style={{padding:"6px 12px",borderRadius:8,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:L.redBg,   color:L.red,  border:`1px solid ${L.redA}`}}>↓ PDF</button>
+            <button onClick={exportExcel} style={{padding:"6px 12px",borderRadius:8,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:L.greenBg, color:L.green,border:`1px solid ${L.greenA}`}}>↓ Excel</button>
+            <button onClick={exportCSV}   style={{padding:"6px 12px",borderRadius:8,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:L.yellowBg,color:L.yellow,border:`1px solid ${L.yellowA}`}}>↓ CSV</button>
+            <button onClick={exportJSON}  style={{padding:"6px 12px",borderRadius:8,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:L.tealBg,  color:L.teal, border:`1px solid ${L.tealA}`}}>↓ JSON</button>
             <button onClick={onClose} style={{padding:"6px 10px",borderRadius:8,fontSize:14,cursor:"pointer",background:"none",border:`1px solid ${L.line}`,color:L.t3,lineHeight:1}}>✕</button>
           </div>
         </div>

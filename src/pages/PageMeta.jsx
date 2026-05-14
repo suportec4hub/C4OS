@@ -84,7 +84,7 @@ function CardVendedor({ v, mesesVermelhos, tv=false }) {
       {alertaRed && (
         <div style={{
           position:"absolute",top:tv?12:8,right:tv?12:8,
-          background:L.redBg,border:`1px solid ${L.red}44`,
+          background:L.redBg,border:`1px solid ${L.redA3}`,
           borderRadius:6,padding:"2px 7px",
           fontSize:tv?11:9,fontWeight:700,color:L.red,
           fontFamily:"'JetBrains Mono',monospace",letterSpacing:"0.5px"

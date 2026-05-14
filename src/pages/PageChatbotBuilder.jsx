@@ -1021,7 +1021,7 @@ export default function PageChatbotBuilder({ user }) {
           )}
           {connecting && (
             <span style={{ fontSize: 11, background: "#eff6ff", color: L.blue,
-              padding: "4px 10px", borderRadius: 8, border: `1px solid ${L.blue}33`, fontWeight: 400 }}>
+              padding: "4px 10px", borderRadius: 8, border: `1px solid ${L.blueA}`, fontWeight: 400 }}>
               Clique no nó de destino para conectar
             </span>
           )}

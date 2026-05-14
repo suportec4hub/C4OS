@@ -464,7 +464,7 @@ export default function PageAI({ user }) {
         </div>
         <div style={{ display: "flex", gap: 5, flexWrap: "wrap", alignItems: "center" }}>
           {ctxLoaded && (
-            <div style={{ fontSize: 10, color: L.green, background: L.greenBg, border: `1px solid ${L.green}33`, borderRadius: 6, padding: "3px 8px", fontFamily: "'JetBrains Mono',monospace", whiteSpace: "nowrap" }}>
+            <div style={{ fontSize: 10, color: L.green, background: L.greenBg, border: `1px solid ${L.greenA2}`, borderRadius: 6, padding: "3px 8px", fontFamily: "'JetBrains Mono',monospace", whiteSpace: "nowrap" }}>
               ● dados do sistema
             </div>
           )}
@@ -513,7 +513,7 @@ export default function PageAI({ user }) {
         {loading && (
           <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
             <div style={{ width: 28, height: 28, borderRadius: 8, background: L.teal, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, color: "white", flexShrink: 0 }}>✦</div>
-            <div style={{ padding: "12px 16px", background: L.white, border: `1px solid ${L.teal}22`, borderRadius: "3px 12px 12px 12px", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
+            <div style={{ padding: "12px 16px", background: L.white, border: `1px solid ${L.tealA}`, borderRadius: "3px 12px 12px 12px", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
               <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
                 {[0, 1, 2].map(j => (
                   <div key={j} style={{ width: 6, height: 6, borderRadius: "50%", background: L.teal, animation: `blink 1.2s ease ${j * .22}s infinite` }}/>

@@ -1097,7 +1097,7 @@ export default function PageWorkspace({ user }) {
           {/* Input de envio */}
           <div style={{ padding: "10px 16px 14px", borderTop: `1px solid ${L.line}`, flexShrink: 0, background: L.white }}>
             {replyTo && (
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: L.tealBg, border: `1px solid ${L.teal}22`, borderRadius: 8, padding: "6px 12px", marginBottom: 8, fontSize: 11 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: L.tealBg, border: `1px solid ${L.tealA}`, borderRadius: 8, padding: "6px 12px", marginBottom: 8, fontSize: 11 }}>
                 <div style={{ color: L.teal }}>
                   Respondendo: <em style={{ color: L.t2 }}>"{replyTo.content?.slice(0, 80)}{replyTo.content?.length > 80 ? "…" : ""}"</em>
                 </div>
@@ -1271,7 +1271,7 @@ export default function PageWorkspace({ user }) {
 
                 {tab==="perigo" && (
                   <div style={{padding:"8px 0"}}>
-                    <div style={{padding:"16px",background:L.redBg,borderRadius:10,border:`1px solid ${L.red}22`,marginBottom:12}}>
+                    <div style={{padding:"16px",background:L.redBg,borderRadius:10,border:`1px solid ${L.redA}`,marginBottom:12}}>
                       <div style={{fontSize:13,fontWeight:700,color:L.red,marginBottom:6}}>⚠️ Excluir canal</div>
                       <div style={{fontSize:12,color:L.t3,marginBottom:14,lineHeight:1.5}}>
                         Isso vai excluir permanentemente o canal <strong>#{canalEditando.nome}</strong> e <strong>todas as mensagens</strong>. Esta ação não pode ser desfeita.

@@ -175,7 +175,7 @@ export default function PageLeads({ user, onOpenChat }) {
           {unreadCount > 0 && (
             <button
               onClick={() => setF("Todos")}
-              style={{ display:"flex", alignItems:"center", gap:5, fontSize:11, fontWeight:600, color:L.green, background:L.greenBg, border:`1px solid ${L.green}44`, borderRadius:20, padding:"3px 10px", cursor:"pointer" }}
+              style={{ display:"flex", alignItems:"center", gap:5, fontSize:11, fontWeight:600, color:L.green, background:L.greenBg, border:`1px solid ${L.greenA2}`, borderRadius:20, padding:"3px 10px", cursor:"pointer" }}
             >
               💬 {unreadCount} {unreadCount === 1 ? "lead com" : "leads com"} msg nova
             </button>
@@ -213,7 +213,7 @@ export default function PageLeads({ user, onOpenChat }) {
                     <div>
                       <span style={{ color:L.t1, fontWeight:500, fontSize:12.5 }}>{lead.nome}</span>
                       {conv && (
-                        <span style={{ marginLeft:6, fontSize:10, fontWeight:700, color:L.green, background:L.greenBg, border:`1px solid ${L.green}44`, borderRadius:10, padding:"1px 6px" }}>
+                        <span style={{ marginLeft:6, fontSize:10, fontWeight:700, color:L.green, background:L.greenBg, border:`1px solid ${L.greenA2}`, borderRadius:10, padding:"1px 6px" }}>
                           💬 {conv.nao_lidas} nova{conv.nao_lidas > 1 ? "s" : ""}
                         </span>
                       )}
@@ -298,7 +298,7 @@ export default function PageLeads({ user, onOpenChat }) {
               style={{ width:"100%", background:L.surface, border:`1.5px solid ${L.line}`, borderRadius:9, padding:"9px 12px", color:L.t1, fontSize:12.5, fontFamily:"'Instrument Sans',sans-serif", resize:"vertical", outline:"none" }}/>
           </Field>
           {err && (
-            <div style={{ padding:"8px 12px", background:L.redBg, border:`1px solid ${L.red}22`, borderRadius:8, fontSize:12, color:L.red, marginBottom:4 }}>{err}</div>
+            <div style={{ padding:"8px 12px", background:L.redBg, border:`1px solid ${L.redA}`, borderRadius:8, fontSize:12, color:L.red, marginBottom:4 }}>{err}</div>
           )}
           <ModalFooter onClose={() => setModal(false)} onSave={save} loading={saving} label={edit ? "Salvar Alterações" : "Criar Lead"}/>
         </Modal>
@@ -308,7 +308,7 @@ export default function PageLeads({ user, onOpenChat }) {
       {pipeModal && (
         <Modal title="Enviar para Pipeline" onClose={() => setPipeModal(false)} width={440}>
           {/* info banner */}
-          <div style={{ padding:"10px 14px", background:L.tealBg, border:`1px solid ${L.teal}22`, borderRadius:8, fontSize:12, color:L.t2, marginBottom:16, lineHeight:1.5 }}>
+          <div style={{ padding:"10px 14px", background:L.tealBg, border:`1px solid ${L.tealA}`, borderRadius:8, fontSize:12, color:L.t2, marginBottom:16, lineHeight:1.5 }}>
             <b style={{ color:L.teal }}>⬡ Pipeline</b> — Criando oportunidade com os dados deste lead. Você pode ajustar os campos antes de confirmar.
           </div>
 
@@ -339,7 +339,7 @@ export default function PageLeads({ user, onOpenChat }) {
           </Field>
 
           {pipeErr && (
-            <div style={{ padding:"8px 12px", background:L.redBg, border:`1px solid ${L.red}22`, borderRadius:8, fontSize:12, color:L.red, marginBottom:4 }}>{pipeErr}</div>
+            <div style={{ padding:"8px 12px", background:L.redBg, border:`1px solid ${L.redA}`, borderRadius:8, fontSize:12, color:L.red, marginBottom:4 }}>{pipeErr}</div>
           )}
           <ModalFooter onClose={() => setPipeModal(false)} onSave={salvarPipeline} loading={pipeSaving} label="Enviar para Pipeline"/>
         </Modal>

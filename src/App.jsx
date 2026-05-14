@@ -2,9 +2,11 @@ import { useState, useEffect } from "react";
 import Login from "./components/Login";
 import Shell from "./components/Shell";
 import { globalCSS, L } from "./constants/theme";
+import { ThemeProvider, useTheme } from "./context/ThemeContext";
 import { supabase } from "./lib/supabase";
 
-export default function App() {
+function AppInner() {
+  const { theme, toggleTheme } = useTheme();
   const [user,setUser]       = useState(null);
   const [profile,setProfile] = useState(null);
   const [ready,setReady]     = useState(false);
@@ -44,7 +46,6 @@ export default function App() {
 
       if (error) {
         console.error("[fetchProfile] erro RLS/DB:", error.message);
-        // Desloga para evitar loop
         await supabase.auth.signOut();
         setReady(true);
         return;
@@ -60,7 +61,8 @@ export default function App() {
           empresa:    data.empresas?.nome ?? "—",
           empresa_id: data.empresa_id,
           is_c4hub:   data.empresas?.is_c4hub ?? false,
-          cor:        data.role === "c4hub_admin" ? L.teal : L.copper,
+          // Mantido como hex para compatibilidade com Av/Chip que usam ${color}xx
+          cor:        data.role === "c4hub_admin" ? "#111827" : "#6b7280",
           avatar:     data.nome.split(" ").map(n => n[0]).slice(0,2).join(""),
           foto_url:   data.foto_url ?? null,
         });
@@ -82,12 +84,28 @@ export default function App() {
 
   if (!ready) {
     return (
-      <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#f5f7fa"}}>
-        <div style={{width:18,height:18,borderRadius:"50%",border:"2px solid #e2e8f0",borderTopColor:"#1aaa96",animation:"spin .7s linear infinite"}}/>
+      <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"var(--c-bg)"}}>
+        <div style={{width:18,height:18,borderRadius:"50%",border:"2px solid var(--c-line)",borderTopColor:"#1aaa96",animation:"spin .7s linear infinite"}}/>
       </div>
     );
   }
 
   if (!user || !profile) return <Login />;
-  return <Shell user={profile} onLogout={handleLogout} onProfileUpdate={handleProfileUpdate} />;
+  return (
+    <Shell
+      user={profile}
+      onLogout={handleLogout}
+      onProfileUpdate={handleProfileUpdate}
+      theme={theme}
+      toggleTheme={toggleTheme}
+    />
+  );
+}
+
+export default function App() {
+  return (
+    <ThemeProvider>
+      <AppInner />
+    </ThemeProvider>
+  );
 }
