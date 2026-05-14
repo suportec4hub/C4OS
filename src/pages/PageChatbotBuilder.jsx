@@ -93,7 +93,7 @@ function FieldInput({ label, value, onChange, placeholder, type = "text" }) {
           padding: "7px 10px", fontSize: 12, outline: "none", fontFamily: "inherit",
           boxSizing: "border-box", background: L.surface, color: L.t1,
           transition: "border-color .12s" }}
-        onFocus={e => e.target.style.borderColor = "var(--c-accent)"}
+        onFocus={e => e.target.style.borderColor = "#111827"}
         onBlur={e => e.target.style.borderColor = L.line}
       />
     </div>
@@ -110,7 +110,7 @@ function FieldTextarea({ label, value, onChange, placeholder, rows = 3 }) {
           padding: "7px 10px", fontSize: 12, outline: "none", fontFamily: "inherit",
           resize: "vertical", boxSizing: "border-box", background: L.surface, color: L.t1,
           display: "block", transition: "border-color .12s" }}
-        onFocus={e => e.target.style.borderColor = "var(--c-accent)"}
+        onFocus={e => e.target.style.borderColor = "#111827"}
         onBlur={e => e.target.style.borderColor = L.line}
       />
     </div>
@@ -266,7 +266,7 @@ function TriggerSelectorModal({ no, onSave, onClose }) {
           )}
 
           {/* Intervalo de reativação */}
-          <div style={{ marginTop: 4, padding: "12px 14px", background: L.blueBg, border: `1.5px solid ${L.blueA}`, borderRadius: 9 }}>
+          <div style={{ marginTop: 4, padding: "12px 14px", background: "#f0f9ff", border: "1.5px solid #bae6fd", borderRadius: 9 }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: "#0284c7", textTransform: "uppercase", letterSpacing: "1px", marginBottom: 7, fontFamily: "'JetBrains Mono',monospace" }}>
               ⏱ Intervalo de Reativação
             </div>
@@ -280,7 +280,7 @@ function TriggerSelectorModal({ no, onSave, onClose }) {
                 onChange={e => setIntervalo(e.target.value)}
                 min="0"
                 placeholder="0"
-                style={{ width: 80, border: `1.5px solid ${L.blueA}`, borderRadius: 8, padding: "7px 10px", fontSize: 12, outline: "none", fontFamily: "inherit", background: L.white, color: L.t1 }}
+                style={{ width: 80, border: "1.5px solid #bae6fd", borderRadius: 8, padding: "7px 10px", fontSize: 12, outline: "none", fontFamily: "inherit", background: "white", color: L.t1 }}
               />
               <span style={{ fontSize: 12, color: L.t3 }}>minutos (0 = sempre reativar)</span>
             </div>
@@ -297,7 +297,7 @@ function TriggerSelectorModal({ no, onSave, onClose }) {
           <button
             onClick={handleSave}
             style={{
-              padding: "9px 22px", borderRadius: 9, background: L.accent, color: "white",
+              padding: "9px 22px", borderRadius: 9, background: L.t1, color: "white",
               border: "none", fontSize: 13, fontWeight: 600, cursor: "pointer",
               fontFamily: "inherit", transition: "opacity .12s",
             }}
@@ -538,7 +538,7 @@ function NodeEditPanel({ no, onSave, onClose }) {
                 style={{ width: "100%", border: `1.5px solid ${L.line}`, borderRadius: 8,
                   padding: "7px 10px", fontSize: 12, outline: "none", fontFamily: "inherit",
                   resize: "vertical", boxSizing: "border-box", background: L.surface, color: L.t1 }}
-                onFocus={e => e.target.style.borderColor = "var(--c-accent)"}
+                onFocus={e => e.target.style.borderColor = "#111827"}
                 onBlur={e => e.target.style.borderColor = L.line}
               />
               <div style={{ fontSize: 10, color: L.t4, marginTop: 4 }}>
@@ -690,7 +690,7 @@ function NodeEditPanel({ no, onSave, onClose }) {
 
       <div style={{ padding: "12px 16px", borderTop: `1px solid ${L.line}` }}>
         <button onClick={() => onSave(form)}
-          style={{ width: "100%", background: L.accent, color: "white", border: "none", borderRadius: 8,
+          style={{ width: "100%", background: L.t1, color: "white", border: "none", borderRadius: 8,
             padding: "10px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
             transition: "opacity .12s" }}
           onMouseEnter={e => e.currentTarget.style.opacity = ".85"}
@@ -715,7 +715,7 @@ function FluxoList({ fluxos, fluxoAtivoId, onOpen, onUsar, onToggleAtivo, onDele
             Crie fluxos de atendimento automático com arrastar e soltar
           </div>
         </div>
-        <button onClick={onNovo} style={btn(L.accent, "white", { fontWeight: 600 })}>+ Novo fluxo</button>
+        <button onClick={onNovo} style={btn(L.t1, "white", { fontWeight: 600 })}>+ Novo fluxo</button>
       </Row>
 
       {fluxos.length === 0 ? (
@@ -726,7 +726,7 @@ function FluxoList({ fluxos, fluxoAtivoId, onOpen, onUsar, onToggleAtivo, onDele
           <div style={{ fontSize: 12, marginBottom: 22, color: L.t3 }}>
             Crie fluxos visuais: menus, mensagens automáticas, transferências e muito mais.
           </div>
-          <button onClick={onNovo} style={btn(L.accent, "white", { fontWeight: 600 })}>+ Criar primeiro fluxo</button>
+          <button onClick={onNovo} style={btn(L.t1, "white", { fontWeight: 600 })}>+ Criar primeiro fluxo</button>
         </div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))", gap: 12 }}>
@@ -734,21 +734,21 @@ function FluxoList({ fluxos, fluxoAtivoId, onOpen, onUsar, onToggleAtivo, onDele
             const emUso = fluxoAtivoId === f.id;
             return (
               <div key={f.id} style={{ background: L.white, borderRadius: 12,
-                border: `2px solid ${emUso ? L.accent : L.line}`,
+                border: `2px solid ${emUso ? "#111827" : L.line}`,
                 padding: 18, transition: "all .15s",
                 boxShadow: emUso ? "0 4px 20px rgba(0,0,0,.08)" : "0 1px 4px rgba(0,0,0,.04)" }}>
                 <Row between mb={8}>
                   <span style={{ fontSize: 13.5, fontWeight: 600, color: L.t1 }}>{f.nome}</span>
                   <Row gap={5}>
                     {emUso && (
-                      <span style={{ fontSize: 10, background: L.accent, color: "white",
+                      <span style={{ fontSize: 10, background: L.t1, color: "white",
                         padding: "2px 8px", borderRadius: 10, fontWeight: 700 }}>🤖 Em uso</span>
                     )}
                     <span style={{ fontSize: 10,
                       background: f.ativo ? L.greenBg : L.surface,
                       color: f.ativo ? L.green : L.t4,
                       padding: "2px 8px", borderRadius: 10, fontWeight: 600,
-                      border: `1px solid ${f.ativo ? L.greenA2 : L.line}` }}>
+                      border: `1px solid ${f.ativo ? L.green+"33" : L.line}` }}>
                       {f.ativo ? "● Ativo" : "Rascunho"}
                     </span>
                   </Row>
@@ -762,12 +762,12 @@ function FluxoList({ fluxos, fluxoAtivoId, onOpen, onUsar, onToggleAtivo, onDele
                 </div>
                 <Row gap={6}>
                   <button onClick={() => onOpen(f)}
-                    style={btn(L.accent, "white", { flex: 1, fontSize: 11.5, fontWeight: 600 })}>
+                    style={btn(L.t1, "white", { flex: 1, fontSize: 11.5, fontWeight: 600 })}>
                     ✎ Editar
                   </button>
                   <button onClick={() => onUsar(f)} title={emUso ? "Remover do chatbot" : "Usar no chatbot"}
-                    style={btn(emUso ? L.greenBg : L.surface, emUso ? L.green : L.t3,
-                      { fontSize: 11, padding: "7px 11px", border: `1px solid ${emUso ? L.greenA2 : L.line}` })}>
+                    style={btn(emUso ? "#f0fdf4" : L.surface, emUso ? L.green : L.t3,
+                      { fontSize: 11, padding: "7px 11px", border: `1px solid ${emUso ? L.green+"55" : L.line}` })}>
                     {emUso ? "🤖 ✓" : "🤖"}
                   </button>
                   <button onClick={() => onToggleAtivo(f)}
@@ -1016,12 +1016,12 @@ export default function PageChatbotBuilder({ user }) {
         <div style={{ fontSize: 13, fontWeight: 700, color: L.t1, display: "flex", alignItems: "center", gap: 8, flex: 1 }}>
           {activeFluxo.nome}
           {emUso && (
-            <span style={{ fontSize: 10, background: L.accent, color: "white",
+            <span style={{ fontSize: 10, background: L.t1, color: "white",
               padding: "2px 8px", borderRadius: 10, fontWeight: 700 }}>🤖 Em uso no chatbot</span>
           )}
           {connecting && (
-            <span style={{ fontSize: 11, background: L.blueBg, color: L.blue,
-              padding: "4px 10px", borderRadius: 8, border: `1px solid ${L.blueA}`, fontWeight: 400 }}>
+            <span style={{ fontSize: 11, background: "#eff6ff", color: L.blue,
+              padding: "4px 10px", borderRadius: 8, border: `1px solid ${L.blue}33`, fontWeight: 400 }}>
               Clique no nó de destino para conectar
             </span>
           )}
@@ -1062,7 +1062,7 @@ export default function PageChatbotBuilder({ user }) {
           onMouseUp={handleMouseUp}
           onClick={() => { setSelectedNo(null); if (connecting) setConnecting(null); }}
           style={{ flex: 1, position: "relative", overflow: "auto",
-            background: L.surface,
+            background: "#f9fafb",
             backgroundImage: "radial-gradient(circle, #d1d5db 1px, transparent 1px)",
             backgroundSize: "22px 22px",
             cursor: draggingRef.current ? "grabbing" : connecting ? "crosshair" : "default",
@@ -1235,7 +1235,7 @@ function NovaFluxoModal({ form, setForm, onSave, onClose }) {
         ))}
         <Row gap={8} style={{ justifyContent: "flex-end", marginTop: 6 }}>
           <button onClick={onClose} style={btn()}>Cancelar</button>
-          <button onClick={onSave} style={btn(L.accent, "white", { fontWeight: 600 })}>Criar fluxo</button>
+          <button onClick={onSave} style={btn(L.t1, "white", { fontWeight: 600 })}>Criar fluxo</button>
         </Row>
       </div>
     </div>
