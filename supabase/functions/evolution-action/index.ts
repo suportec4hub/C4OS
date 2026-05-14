@@ -650,40 +650,32 @@ Deno.serve(async (req) => {
       };
 
       const sendMedia = async (num: string, mediatype: string, mediaUrl: string, caption: string): Promise<boolean> => {
-        const basePayload = { number: num, mediatype, media: mediaUrl, mediaUrl, caption, fileName: caption || undefined };
-
         // Tentativa 1: POST /message/sendMedia/{instanceName} — Evolution API v2
         const r1 = await iFetch(`/message/sendMedia/${instName}`, {
-          method: "POST", body: JSON.stringify(basePayload),
+          method: "POST",
+          body: JSON.stringify({ number: num, mediatype, media: mediaUrl, caption, fileName: caption }),
         }).catch(() => null);
-        if (r1?.ok) { console.log("[broadcast] sendMedia v2 ok"); return true; }
+        if (r1?.ok) return true;
 
         // Tentativa 2: endpoint específico por tipo (sendImage / sendVideo / sendAudio / sendDocument)
         const typeEndpointMap: Record<string, string> = { image: "sendImage", video: "sendVideo", audio: "sendAudio", document: "sendDocument" };
         const specificEndpoint = typeEndpointMap[mediatype];
         if (specificEndpoint) {
           const r2 = await iFetch(`/message/${specificEndpoint}/${instName}`, {
-            method: "POST", body: JSON.stringify(basePayload),
+            method: "POST",
+            body: JSON.stringify({ number: num, mediatype, media: mediaUrl, caption }),
           }).catch(() => null);
-          if (r2?.ok) { console.log("[broadcast] sendMedia specific ok:", specificEndpoint); return true; }
+          if (r2?.ok) return true;
         }
 
         // Tentativa 3: formato Evolution GO /send/media
         const r3 = await iFetch("/send/media", {
           method: "POST",
-          body: JSON.stringify({ instanceName: instName, id: instName, ...basePayload }),
+          body: JSON.stringify({ instanceName: instName, id: instName, number: num, mediatype, media: mediaUrl, caption }),
         }).catch(() => null);
-        if (r3?.ok) { console.log("[broadcast] sendMedia go ok"); return true; }
-
-        // Tentativa 4: formato mediaMessage aninhado (algumas versões v2)
-        const r4 = await iFetch(`/message/sendMedia/${instName}`, {
-          method: "POST",
-          body: JSON.stringify({ number: num, options: { delay: 1200 }, mediaMessage: { mediatype, media: mediaUrl, caption } }),
-        }).catch(() => null);
-        if (r4?.ok) { console.log("[broadcast] sendMedia nested ok"); return true; }
+        if (r3?.ok) return true;
 
         // Fallback: envia URL como texto com legenda
-        console.log("[broadcast] sendMedia all failed, fallback to text");
         const textoFallback = caption ? `${caption}\n${mediaUrl}` : mediaUrl;
         return sendMsg(num, textoFallback);
       };
@@ -1006,65 +998,31 @@ Deno.serve(async (req) => {
       if (!phone) return json({ error: "phone obrigatório" }, 400);
 
       const rawPhone = String(phone).trim();
-      const extractUrl = (d: Record<string, unknown>): string | null =>
-        (d?.profilePictureUrl || d?.url || d?.data?.url || d?.picture ||
-         d?.profilePicture || d?.imgUrl || null) as string | null;
-
-      let cdnUrl: string | null = null;
 
       // Tentativa 1: GET /chat/fetchProfilePicture/{instanceName}?number={phone}
       try {
         const r1 = await iFetch(`/chat/fetchProfilePicture/${instName}?number=${rawPhone}`);
-        if (r1.ok) { const d = await r1.json(); cdnUrl = extractUrl(d); }
-      } catch (_) {}
-
-      // Tentativa 2: POST /chat/fetchProfilePicture/{instanceName}
-      if (!cdnUrl) try {
-        const r2 = await iFetch(`/chat/fetchProfilePicture/${instName}`, {
-          method: "POST", body: JSON.stringify({ number: rawPhone }),
-        });
-        if (r2.ok) { const d = await r2.json(); cdnUrl = extractUrl(d); }
-      } catch (_) {}
-
-      // Tentativa 3: GET /contact/getProfilePicture/{instanceName}?number={phone}
-      if (!cdnUrl) try {
-        const r3 = await iFetch(`/contact/getProfilePicture/${instName}?number=${rawPhone}`);
-        if (r3.ok) { const d = await r3.json(); cdnUrl = extractUrl(d); }
-      } catch (_) {}
-
-      // Tentativa 4: POST /contact/getProfilePicture
-      if (!cdnUrl) try {
-        const r4 = await iFetch(`/contact/getProfilePicture/${instName}`, {
-          method: "POST", body: JSON.stringify({ number: rawPhone }),
-        });
-        if (r4.ok) { const d = await r4.json(); cdnUrl = extractUrl(d); }
-      } catch (_) {}
-
-      if (!cdnUrl) return json({ success: true, photoUrl: null });
-
-      // Download and re-host in fotos-perfil bucket so URL doesn't expire
-      try {
-        const imgRes = await fetch(cdnUrl);
-        if (!imgRes.ok) return json({ success: true, photoUrl: null });
-        const imgBytes = await imgRes.arrayBuffer();
-        const contentType = imgRes.headers.get("content-type") || "image/jpeg";
-        const ext = contentType.includes("png") ? "png" : "jpg";
-        const storagePath = `${empresa_id}/${rawPhone}.${ext}`;
-        const { error: upErr } = await supabase.storage
-          .from("fotos-perfil")
-          .upload(storagePath, imgBytes, { contentType, upsert: true });
-        if (!upErr) {
-          const { data: pub } = supabase.storage.from("fotos-perfil").getPublicUrl(storagePath);
-          const publicUrl = pub.publicUrl;
-          await supabase.from("conversas")
-            .update({ foto_perfil: publicUrl })
-            .eq("empresa_id", empresa_id)
-            .eq("contato_telefone", rawPhone);
-          return json({ success: true, photoUrl: publicUrl });
+        if (r1.ok) {
+          const d1 = await r1.json();
+          const photoUrl = d1?.profilePictureUrl || d1?.url || d1?.data?.url || d1?.picture || null;
+          if (photoUrl) return json({ success: true, photoUrl });
         }
-      } catch (e) { console.log("[fetchProfilePhoto] upload err:", (e as Error).message); }
+      } catch (_) {}
 
-      return json({ success: true, photoUrl: cdnUrl });
+      // Tentativa 2: POST format
+      try {
+        const r2 = await iFetch(`/chat/fetchProfilePicture/${instName}`, {
+          method: "POST",
+          body: JSON.stringify({ number: rawPhone }),
+        });
+        if (r2.ok) {
+          const d2 = await r2.json();
+          const photoUrl = d2?.profilePictureUrl || d2?.url || d2?.data?.url || null;
+          if (photoUrl) return json({ success: true, photoUrl });
+        }
+      } catch (_) {}
+
+      return json({ success: true, photoUrl: null });
     }
 
     return json({ error: `Ação desconhecida: ${action}` }, 400);
