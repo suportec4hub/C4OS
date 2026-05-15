@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { L } from "../constants/theme";
 import { supabase } from "../lib/supabase";
 import { Fade, Row, Grid, Card, Tag, Av } from "../components/ui";
@@ -97,7 +97,11 @@ function EmpresaDetail({ emp, onBack }) {
     setLoading(p => ({ ...p, [t]:false }));
   }, [emp.id]);
 
-  useEffect(() => { load(tab); }, [tab, load]);
+  useEffect(() => {
+    load(tab);
+    // Pré-carrega logs para o mini-card da visão geral
+    if (tab === "overview") load("logs");
+  }, [tab, load]);
 
   // Chamados ficam em sessionStorage por enquanto (sem tabela específica)
   useEffect(() => {
@@ -615,7 +619,7 @@ export default function PageSuporte({ user }) {
   const [busca,    setBusca]    = useState("");
   const [ordenar,  setOrdenar]  = useState("saude"); // saude | nome | plano | data
 
-  const SID = Math.random().toString(36).slice(2,9).toUpperCase();
+  const SID = useRef(Math.random().toString(36).slice(2,9).toUpperCase()).current;
 
   const load = useCallback(async () => {
     setLoading(true);
