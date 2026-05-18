@@ -119,6 +119,15 @@ function AppInner() {
     );
   }
 
+  // Páginas públicas com prioridade sobre auth (acessíveis mesmo logado)
+  if (publicPage === "obrigado") {
+    return (
+      <Suspense fallback={publicFallback}>
+        <PageObrigado onNavigate={goPublic} />
+      </Suspense>
+    );
+  }
+
   if (user && profile) {
     return (
       <Shell
