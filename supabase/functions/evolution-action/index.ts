@@ -1010,6 +1010,33 @@ Deno.serve(async (req) => {
         (d?.profilePictureUrl || d?.url || d?.data?.url || d?.picture ||
          d?.profilePicture || d?.imgUrl || null) as string | null;
 
+      const isGroup = rawPhone.endsWith("@g.us");
+
+      // Grupos: tenta endpoints específicos de grupo antes dos genéricos
+      if (isGroup) {
+        // Tentativa G1: GET /group/fetchGroupProfilePicture/{instanceName}?groupJid={jid}
+        try {
+          const r = await iFetch(`/group/fetchGroupProfilePicture/${instName}?groupJid=${encodeURIComponent(rawPhone)}`);
+          if (r.ok) { const d = await r.json(); const u = extractUrl(d); if (u) return json({ success: true, photoUrl: u }); }
+        } catch (_) {}
+
+        // Tentativa G2: POST /group/fetchGroupProfilePicture/{instanceName}
+        try {
+          const r = await iFetch(`/group/fetchGroupProfilePicture/${instName}`, {
+            method: "POST", body: JSON.stringify({ groupJid: rawPhone }),
+          });
+          if (r.ok) { const d = await r.json(); const u = extractUrl(d); if (u) return json({ success: true, photoUrl: u }); }
+        } catch (_) {}
+
+        // Tentativa G3: POST /group/pictureUrl/{instanceName}
+        try {
+          const r = await iFetch(`/group/pictureUrl/${instName}`, {
+            method: "POST", body: JSON.stringify({ groupJid: rawPhone }),
+          });
+          if (r.ok) { const d = await r.json(); const u = extractUrl(d); if (u) return json({ success: true, photoUrl: u }); }
+        } catch (_) {}
+      }
+
       // Tentativa 1: GET /chat/fetchProfilePicture/{instanceName}?number={phone}
       try {
         const r1 = await iFetch(`/chat/fetchProfilePicture/${instName}?number=${rawPhone}`);

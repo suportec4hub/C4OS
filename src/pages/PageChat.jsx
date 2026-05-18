@@ -96,12 +96,13 @@ function AudioPlayer({ src, out }) {
   const [duration, setDuration] = useState(0);
   const [current,  setCurrent]  = useState(0);
   const [loaded,   setLoaded]   = useState(false);
+  const [errored,  setErrored]  = useState(false);
   const audioRef = useRef(null);
 
   const toggle = () => {
     const a = audioRef.current;
-    if (!a) return;
-    if (playing) { a.pause(); } else { a.play().catch(() => {}); }
+    if (!a || errored) return;
+    if (playing) { a.pause(); } else { a.play().catch(() => setErrored(true)); }
     setPlaying(p => !p);
   };
 
@@ -138,12 +139,24 @@ function AudioPlayer({ src, out }) {
   const track    = out ? "rgba(255,255,255,.28)"  : L.line;
   const dimColor = out ? "rgba(255,255,255,.65)"  : L.t4;
 
+  if (errored) {
+    return (
+      <a href={src} download target="_blank" rel="noreferrer"
+        style={{ display:"flex", alignItems:"center", gap:7, fontSize:12,
+          color: out ? "rgba(255,255,255,.85)" : L.teal, textDecoration:"none" }}>
+        <span style={{ fontSize:18 }}>⬇</span> Baixar áudio
+      </a>
+    );
+  }
+
   return (
     <div style={{ display:"flex", alignItems:"center", gap:10,
       minWidth:200, maxWidth:260, padding:"2px 0" }}>
       <audio ref={audioRef} src={src} preload="metadata"
         onTimeUpdate={onTimeUpdate} onLoadedMetadata={onLoaded}
-        onEnded={onEnded} onCanPlay={onLoaded} style={{ display:"none" }} />
+        onEnded={onEnded} onCanPlay={onLoaded}
+        onError={() => setErrored(true)}
+        style={{ display:"none" }} />
 
       {/* Play / Pause */}
       <button onClick={toggle}
@@ -459,6 +472,7 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
 
   // ── profile photos cache (phone → url) ───────────────────────────────────
   const [profilePhotos, setProfilePhotos] = useState({});
+  const fetchedPhonesRef = useRef(new Set());
 
   // ── notifications ─────────────────────────────────────────────────────────
   const [toast, setToast]         = useState(null); // { msg, tipo }
@@ -527,6 +541,27 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
     document.title = total > 0 ? `(${total}) WhatsApp · C4 OS` : "C4 OS";
     return () => { document.title = "C4 OS"; };
   }, [conversas]);
+
+  // ── batch fetch de fotos de perfil (contatos e grupos) ───────────────────
+  useEffect(() => {
+    if (!conversas.length || !user?.empresa_id) return;
+    const missing = conversas
+      .map(c => c.contato_telefone)
+      .filter(p => p && !profilePhotos[p] && !fetchedPhonesRef.current.has(p));
+    if (!missing.length) return;
+    missing.forEach(p => fetchedPhonesRef.current.add(p));
+    // Busca até 40 por lote com espaçamento de 300ms para não sobrecarregar
+    missing.slice(0, 40).forEach((phone, i) => {
+      setTimeout(() => {
+        supabase.functions.invoke("evolution-action", {
+          body: { action: "fetchProfilePhoto", empresa_id: user.empresa_id, phone },
+        }).then(({ data }) => {
+          if (data?.photoUrl) setProfilePhotos(prev => ({ ...prev, [phone]: data.photoUrl }));
+        }).catch(() => {});
+      }, i * 300);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversas.length, user?.empresa_id]);
 
   // ── subscription a notificações pessoais (transferências / atribuições) ───
   useEffect(() => {
