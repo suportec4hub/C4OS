@@ -19,6 +19,7 @@ const SECTIONS = [
   { id: "disparos", label: "Disparos & Broadcast" },
   { id: "relatorios", label: "Relatórios" },
   { id: "faq", label: "Perguntas Frequentes" },
+  { id: "changelog", label: "📋 Changelog" },
 ];
 
 const TipBox = ({ children }) => (
@@ -209,6 +210,39 @@ const CONTENT = {
     </div>
   ),
 
+  changelog: (
+    <div>
+      <h2 style={{ fontSize: 28, fontWeight: 800, color: C.greenDark, marginBottom: 6, letterSpacing: "-0.5px" }}>Changelog</h2>
+      <p style={{ fontSize: 15, color: "#6b7280", marginBottom: 32, lineHeight: 1.6 }}>
+        Histórico de atualizações, melhorias e correções do C4 OS.
+      </p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+        {CHANGELOG.map((release, i) => (
+          <div key={release.version} style={{ display: "flex", gap: 28, paddingBottom: 36, position: "relative" }}>
+            {/* Timeline line */}
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0, width: 16 }}>
+              <div style={{ width: 14, height: 14, borderRadius: "50%", background: C.green, border: `3px solid ${C.greenLight}`, flexShrink: 0, marginTop: 4 }} />
+              {i < CHANGELOG.length - 1 && <div style={{ width: 2, flex: 1, background: C.border, marginTop: 4 }} />}
+            </div>
+            {/* Content */}
+            <div style={{ flex: 1, paddingBottom: i < CHANGELOG.length - 1 ? 0 : 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, fontSize: 15, color: C.greenDark }}>{release.version}</span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: release.typeColor, background: release.typeBg, borderRadius: 6, padding: "2px 10px" }}>{release.type}</span>
+                <span style={{ fontSize: 13, color: "#9ca3af" }}>{release.date}</span>
+              </div>
+              <ul style={{ paddingLeft: 18, margin: 0 }}>
+                {release.items.map((item, j) => (
+                  <li key={j} style={{ fontSize: 14, color: C.body, lineHeight: 1.75, marginBottom: 2 }}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  ),
+
   faq: (
     <div>
       <h2 style={{ fontSize: 28, fontWeight: 800, color: C.greenDark, marginBottom: 12, letterSpacing: "-0.5px" }}>Perguntas Frequentes</h2>
@@ -253,6 +287,109 @@ const CONTENT = {
   ),
 };
 
+const CHANGELOG = [
+  {
+    version: "v2.4.0",
+    date: "Mai 2025",
+    type: "Novidade",
+    typeColor: "#1d4ed8",
+    typeBg: "#eff6ff",
+    items: [
+      "Landing Page pública com carrossel de telas do sistema",
+      "Blog e Documentação acessíveis sem login",
+      "Roteamento por URL: /C4OS, /C4BLOG, /C4DOCS",
+      "Code splitting com React.lazy — bundle 71% menor no carregamento inicial",
+    ],
+  },
+  {
+    version: "v2.3.0",
+    date: "Abr 2025",
+    type: "Novidade",
+    typeColor: "#1d4ed8",
+    typeBg: "#eff6ff",
+    items: [
+      "Logs de WhatsApp e sistema na tela de Suporte (por empresa)",
+      "Auditoria completa de eventos: webhook, bot, conexão e erros de API",
+      "Novo helper logWA() em todos os Edge Functions",
+    ],
+  },
+  {
+    version: "v2.2.1",
+    date: "Abr 2025",
+    type: "Correção",
+    typeColor: "#b45309",
+    typeBg: "#fff7ed",
+    items: [
+      "Corrigido bug onde mini-card 'Últimas Atividades' ficava vazio na overview",
+      "SID de sessão parou de recomputar a cada re-render",
+      "Políticas RLS de INSERT com WITH CHECK adicionadas em conversas, mensagens e leads",
+    ],
+  },
+  {
+    version: "v2.2.0",
+    date: "Mar 2025",
+    type: "Melhoria",
+    typeColor: "#15803d",
+    typeBg: "#dcfce7",
+    items: [
+      "9 novos índices de performance no banco de dados (carregamento 40% mais rápido)",
+      "Índices parciais para a fila de mensagens agendadas (WHERE status='pendente')",
+      "RLS de logs_whatsapp restrito por empresa_id",
+    ],
+  },
+  {
+    version: "v2.1.0",
+    date: "Fev 2025",
+    type: "Novidade",
+    typeColor: "#1d4ed8",
+    typeBg: "#eff6ff",
+    items: [
+      "Módulo de Disparos em massa com personalização por variáveis",
+      "Agendamento de mensagens com fuso horário configurável",
+      "Relatório de entrega em tempo real (enviado / entregue / lido / respondido)",
+    ],
+  },
+  {
+    version: "v2.0.0",
+    date: "Jan 2025",
+    type: "Novidade",
+    typeColor: "#1d4ed8",
+    typeBg: "#eff6ff",
+    items: [
+      "Chatbot Builder visual com arrastar e soltar (fluxos ilimitados)",
+      "Nós de condição, pergunta, transferência e tag",
+      "Ativação de fluxos por palavra-chave ou horário",
+      "Pipeline Kanban com etapas personalizáveis e valor por deal",
+    ],
+  },
+  {
+    version: "v1.5.0",
+    date: "Dez 2024",
+    type: "Melhoria",
+    typeColor: "#15803d",
+    typeBg: "#dcfce7",
+    items: [
+      "Follow-up automático com sequências configuráveis por canal",
+      "Lead scoring baseado em comportamento de resposta",
+      "Importação de leads via CSV com relatório de validação",
+    ],
+  },
+  {
+    version: "v1.0.0",
+    date: "Out 2024",
+    type: "Lançamento",
+    typeColor: "#7e22ce",
+    typeBg: "#faf5ff",
+    items: [
+      "Lançamento oficial do C4 OS",
+      "Integração com WhatsApp Business (QR Code e API oficial)",
+      "CRM básico com gestão de contatos e conversas",
+      "Dashboard com métricas de atendimento em tempo real",
+      "Módulo de equipe com perfis e setores",
+    ],
+  },
+];
+
 const SharedHeader = ({ onNavigate }) => {
   const [hovered, setHovered] = useState(null);
 
@@ -274,10 +411,13 @@ const SharedHeader = ({ onNavigate }) => {
     }}>
       <button
         onClick={() => onNavigate("landing")}
-        style={{ background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex", flexDirection: "column", lineHeight: 1.1 }}
+        style={{ background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex", alignItems: "center", gap: 10 }}
       >
-        <span style={{ fontWeight: 800, fontSize: 20, color: C.greenDark, letterSpacing: "-0.5px" }}>C4 OS</span>
-        <span style={{ fontSize: 11, color: "#6b7280", fontWeight: 500 }}>by C4HUB</span>
+        <img src="/logo.png" alt="C4 OS" width={36} height={36} style={{ objectFit: "contain", display: "block" }} />
+        <div style={{ textAlign: "left", lineHeight: 1.2 }}>
+          <div style={{ fontWeight: 800, fontSize: 16, color: C.greenDark, letterSpacing: "-0.3px" }}>C4 OS</div>
+          <div style={{ fontSize: 10, color: "#6b7280", fontWeight: 500, letterSpacing: "1px", textTransform: "uppercase" }}>by C4HUB</div>
+        </div>
       </button>
       <nav style={{ display: "flex", alignItems: "center", gap: 4 }}>
         {[["Blog", "blog"], ["Documentação", "docs"]].map(([label, target]) => (

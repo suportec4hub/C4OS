@@ -288,9 +288,7 @@ const Header = ({ onNavigate }) => {
   return (
     <header style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, height: 64, display: "flex", alignItems: "center", padding: "0 40px", justifyContent: "space-between", background: scrolled ? "rgba(255,255,255,0.96)" : C.white, backdropFilter: "blur(10px)", borderBottom: `1px solid ${scrolled ? C.border : "transparent"}`, boxShadow: scrolled ? "0 2px 16px rgba(0,0,0,0.07)" : "none", transition: "all .2s" }}>
       <button onClick={() => onNavigate("landing")} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, padding: 0 }}>
-        <div style={{ width: 36, height: 36, borderRadius: 10, background: C.dark, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <span style={{ fontFamily: "'Outfit',sans-serif", fontWeight: 900, fontSize: 14, color: C.teal }}>C4</span>
-        </div>
+        <img src="/logo.png" alt="C4 OS" width={36} height={36} style={{ objectFit: "contain", display: "block" }} />
         <div style={{ textAlign: "left" }}>
           <div style={{ fontFamily: "'Outfit',sans-serif", fontWeight: 800, fontSize: 17, color: C.dark, lineHeight: 1, letterSpacing: "-0.3px" }}>C4 <span style={{ color: C.teal }}>OS</span></div>
           <div style={{ fontSize: 9, color: C.faint, fontWeight: 500, letterSpacing: "1.5px", textTransform: "uppercase" }}>by C4HUB</div>
@@ -514,7 +512,7 @@ export default function PageLanding({ onNavigate }) {
         <div style={{ maxWidth: 1180, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-              <div style={{ width: 28, height: 28, borderRadius: 8, background: C.teal, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 900, color: "#fff" }}>C4</div>
+              <img src="/logo.png" alt="C4 OS" width={28} height={28} style={{ objectFit: "contain", display: "block" }} />
               <span style={{ fontFamily: "'Outfit',sans-serif", fontWeight: 800, fontSize: 15, color: "#fff" }}>C4 OS <span style={{ color: C.faint, fontWeight: 400, fontSize: 12 }}>by C4HUB</span></span>
             </div>
             <div style={{ fontSize: 12, color: "rgba(255,255,255,0.3)" }}>© 2025 C4HUB. Todos os direitos reservados.</div>

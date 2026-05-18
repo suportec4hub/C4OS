@@ -83,10 +83,13 @@ const SharedHeader = ({ onNavigate }) => {
     }}>
       <button
         onClick={() => onNavigate("landing")}
-        style={{ background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex", flexDirection: "column", lineHeight: 1.1 }}
+        style={{ background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex", alignItems: "center", gap: 10 }}
       >
-        <span style={{ fontWeight: 800, fontSize: 20, color: C.greenDark, letterSpacing: "-0.5px" }}>C4 OS</span>
-        <span style={{ fontSize: 11, color: "#6b7280", fontWeight: 500 }}>by C4HUB</span>
+        <img src="/logo.png" alt="C4 OS" width={36} height={36} style={{ objectFit: "contain", display: "block" }} />
+        <div style={{ textAlign: "left", lineHeight: 1.2 }}>
+          <div style={{ fontWeight: 800, fontSize: 16, color: C.greenDark, letterSpacing: "-0.3px" }}>C4 OS</div>
+          <div style={{ fontSize: 10, color: "#6b7280", fontWeight: 500, letterSpacing: "1px", textTransform: "uppercase" }}>by C4HUB</div>
+        </div>
       </button>
       <nav style={{ display: "flex", alignItems: "center", gap: 4 }}>
         {[["Blog", "blog"], ["Documentação", "docs"]].map(([label, target]) => (
