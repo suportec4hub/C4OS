@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { supabase } from "../lib/supabase";
 
 const C = {
   dark:      "#111827",
@@ -88,39 +89,36 @@ const CheckCircle = () => (
   </>
 );
 
-/* ── Passos ─────────────────────────────────────────────────────── */
-const STEPS = [
-  {
-    n: "01",
-    icon: "✉️",
-    title: "Verifique seu e-mail",
-    desc: "Enviamos um e-mail de confirmação com os detalhes do seu pedido e as instruções de acesso. Confira também sua caixa de spam.",
-  },
-  {
-    n: "02",
-    icon: "⚙️",
-    title: "Configure sua conta",
-    desc: "Acesse a plataforma com as credenciais enviadas, complete o perfil da empresa e convide os membros do seu time.",
-  },
-  {
-    n: "03",
-    icon: "🚀",
-    title: "Conecte seu WhatsApp",
-    desc: "Vincule seu número de WhatsApp Business e comece a centralizar atendimentos, automatizar respostas e fechar mais vendas.",
-  },
+const DEFAULT_STEPS = [
+  { n: "01", icon: "✉️", title: "Verifique seu e-mail", desc: "Enviamos um e-mail de confirmação com os detalhes do seu pedido e as instruções de acesso. Confira também sua caixa de spam." },
+  { n: "02", icon: "⚙️", title: "Configure sua conta", desc: "Acesse a plataforma com as credenciais enviadas, complete o perfil da empresa e convide os membros do seu time." },
+  { n: "03", icon: "🚀", title: "Conecte seu WhatsApp", desc: "Vincule seu número de WhatsApp Business e comece a centralizar atendimentos, automatizar respostas e fechar mais vendas." },
 ];
 
-/* ── Planos (detectado via ?plano= na URL) ──────────────────────── */
-const PLANOS = {
-  starter:      { nome: "Starter",      cor: C.teal,  usuarios: "Até 3 usuários",  destaque: false },
-  profissional: { nome: "Profissional", cor: "#2563eb", usuarios: "Até 10 usuários", destaque: true  },
-  enterprise:   { nome: "Enterprise",   cor: "#7c3aed", usuarios: "Usuários ilimitados", destaque: false },
+const DEFAULT_PLANOS = {
+  starter:      { nome: "Starter",      cor: C.teal,   usuarios: "Até 3 usuários" },
+  profissional: { nome: "Profissional", cor: "#2563eb", usuarios: "Até 10 usuários" },
+  enterprise:   { nome: "Enterprise",   cor: "#7c3aed", usuarios: "Usuários ilimitados" },
 };
 
 /* ── Página principal ───────────────────────────────────────────── */
 export default function PageObrigado({ onNavigate }) {
   const { isMobile } = useW();
-  const [hov, setHov] = useState(null);
+  const [hov, setHov]       = useState(null);
+  const [cfg, setCfg]       = useState(null);
+
+  useEffect(() => {
+    supabase.from("checkout_config").select("config").eq("id", 1).single()
+      .then(({ data }) => { if (data?.config) setCfg(data.config); });
+  }, []);
+
+  const titulo      = cfg?.titulo      ?? "Sua compra foi confirmada!";
+  const subtitulo   = cfg?.subtitulo   ?? "Estamos preparando tudo para você. Em breve você receberá o acesso completo à plataforma C4 OS e poderá começar a transformar seu time comercial.";
+  const badge       = cfg?.badge       ?? "🎉 Compra realizada com sucesso";
+  const whatsapp    = cfg?.whatsapp    ?? "5562982054815";
+  const whatsappMsg = cfg?.whatsapp_msg ?? "Olá! Acabei de finalizar minha compra do C4 OS e preciso de ajuda com o onboarding.";
+  const STEPS       = cfg?.steps       ?? DEFAULT_STEPS;
+  const PLANOS      = cfg?.planos      ?? DEFAULT_PLANOS;
 
   const params  = new URLSearchParams(window.location.search);
   const planoId = (params.get("plano") || "").toLowerCase();
@@ -162,13 +160,13 @@ export default function PageObrigado({ onNavigate }) {
             <CheckCircle />
           </div>
           <div style={{ display: "inline-block", background: C.tealLight, border: `1px solid ${C.tealA2}`, borderRadius: 999, padding: "5px 18px", fontSize: 13, fontWeight: 600, color: C.tealDk, marginBottom: 20 }}>
-            🎉 Compra realizada com sucesso
+            {badge}
           </div>
           <h1 style={{ fontSize: isMobile ? 30 : 44, fontWeight: 900, color: C.dark, letterSpacing: "-1px", margin: "0 0 16px", lineHeight: 1.1 }}>
-            {empresa ? `Bem-vindo(a), ${empresa}!` : "Sua compra foi confirmada!"}
+            {empresa ? `Bem-vindo(a), ${empresa}!` : titulo}
           </h1>
           <p style={{ fontSize: isMobile ? 15 : 18, color: C.muted, lineHeight: 1.75, maxWidth: 500, margin: "0 auto 28px" }}>
-            Estamos preparando tudo para você. Em breve você receberá o acesso completo à plataforma C4 OS e poderá começar a transformar seu time comercial.
+            {subtitulo}
           </p>
           <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: C.white, border: `1px solid ${C.border}`, borderRadius: 10, padding: "10px 20px", fontSize: 13, color: C.muted }}>
             <span style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.8px", fontWeight: 600 }}>Nº do pedido</span>
@@ -234,7 +232,7 @@ export default function PageObrigado({ onNavigate }) {
           <Btn id="plat" onClick={() => onNavigate && onNavigate("login")} full={isMobile}>
             Acessar a Plataforma →
           </Btn>
-          <Btn id="wpp" variant="outline" onClick={() => window.open("https://wa.me/5562982054815?text=Olá! Acabei de finalizar minha compra do C4 OS e preciso de ajuda com o onboarding.", "_blank")} full={isMobile}>
+          <Btn id="wpp" variant="outline" onClick={() => window.open(`https://wa.me/${whatsapp}?text=${encodeURIComponent(whatsappMsg)}`, "_blank")} full={isMobile}>
             💬 Falar com Especialista
           </Btn>
         </div>
@@ -245,7 +243,7 @@ export default function PageObrigado({ onNavigate }) {
           <div>
             <div style={{ fontWeight: 700, fontSize: 14, color: C.dark, marginBottom: 4 }}>Dúvidas sobre o acesso?</div>
             <div style={{ fontSize: 13, color: C.muted, lineHeight: 1.65 }}>
-              Nossa equipe de onboarding está disponível para ajudar. Entre em contato pelo WhatsApp <strong style={{ color: C.dark }}>(62) 98205-4815</strong> ou aguarde o contato do nosso especialista em até 24 horas úteis.
+              Nossa equipe de onboarding está disponível para ajudar. Entre em contato pelo WhatsApp <strong style={{ color: C.dark }}>({whatsapp.slice(2,4)}) {whatsapp.slice(4,9)}-{whatsapp.slice(9)}</strong> ou aguarde o contato do nosso especialista em até 24 horas úteis.
             </div>
           </div>
         </div>

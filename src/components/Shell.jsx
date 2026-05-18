@@ -40,6 +40,7 @@ const PageChatbotBuilder   = lazy(() => import("../pages/PageChatbotBuilder"));
 const PageDisparos         = lazy(() => import("../pages/PageDisparos"));
 const PageRelatoriosAtend  = lazy(() => import("../pages/PageRelatoriosAtend"));
 const PageMeta             = lazy(() => import("../pages/PageMeta"));
+const PageCheckoutAdmin    = lazy(() => import("../pages/PageCheckoutAdmin"));
 
 const NAV_ITEMS = [
   {id:"dashboard",  label:"Dashboard",      ico:"▦", g:"principal"},
@@ -81,7 +82,7 @@ const ADMIN_ITEMS = [
 
 import { hasFullAccess, hasPageAccess } from "../lib/auth";
 
-const ADMIN_ONLY = new Set(["clientes","logs","suporte","users","planos","reports","meta","relatoriosatend"]);
+const ADMIN_ONLY = new Set(["clientes","logs","suporte","users","planos","reports","meta","relatoriosatend","checkout"]);
 
 export default function Shell({user,onLogout,onProfileUpdate,theme,toggleTheme}) {
   const [sec,setSec] = useState("dashboard");
@@ -99,7 +100,6 @@ export default function Shell({user,onLogout,onProfileUpdate,theme,toggleTheme})
   }, [isTablet]);
 
   const navigate = useCallback((id) => {
-    if (id === "checkout") { window.open("/obrigado", "_blank"); return; }
     setSec(id);
     if (isMobile) setMobOpen(false);
   }, [isMobile]);
@@ -333,7 +333,8 @@ export default function Shell({user,onLogout,onProfileUpdate,theme,toggleTheme})
           {safe==="logs"      && isC4HubAdmin && <PageLogs     user={user}/>}
           {safe==="suporte"   && isC4HubAdmin && <PageSuporte  user={user}/>}
           {safe==="users"     && isC4HubAdmin && <PageUsers    user={user}/>}
-          {safe==="planos"    && isC4HubAdmin && <PagePlanos   user={user}/>}
+          {safe==="planos"    && isC4HubAdmin && <PagePlanos         user={user}/>}
+          {safe==="checkout"  && isC4HubAdmin && <PageCheckoutAdmin  user={user}/>}
           </Suspense>
         </div>
       </div>
