@@ -9,14 +9,29 @@ const PageLanding = lazy(() => import("./pages/PageLanding"));
 const PageBlog    = lazy(() => import("./pages/PageBlog"));
 const PageDocs    = lazy(() => import("./pages/PageDocs"));
 
+const PATH_MAP = { "/c4os": "login", "/c4blog": "blog", "/c4docs": "docs" };
+const PAGE_PATH = { landing: "/", login: "/C4OS", blog: "/C4BLOG", docs: "/C4DOCS" };
+
+const pathToPage = (path) =>
+  PATH_MAP[path.toLowerCase().replace(/\/$/, "")] ?? "landing";
+
 function AppInner() {
   const { theme, toggleTheme } = useTheme();
   const [user,setUser]         = useState(null);
   const [profile,setProfile]   = useState(null);
   const [ready,setReady]       = useState(false);
-  const [publicPage,setPublicPage] = useState("landing");
+  const [publicPage,setPublicPage] = useState(() => pathToPage(window.location.pathname));
 
-  const goPublic = (p) => setPublicPage(p);
+  const goPublic = (p) => {
+    setPublicPage(p);
+    history.pushState(null, "", PAGE_PATH[p] ?? "/");
+  };
+
+  useEffect(() => {
+    const onPop = () => setPublicPage(pathToPage(window.location.pathname));
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
 
   // CSS global
   useEffect(() => {
