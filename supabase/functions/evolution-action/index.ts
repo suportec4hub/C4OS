@@ -1011,19 +1011,21 @@ Deno.serve(async (req) => {
          d?.profilePicture || d?.imgUrl || null) as string | null;
 
       const isGroup = rawPhone.endsWith("@g.us");
+      // Para contatos, limpa sufixo JID (@s.whatsapp.net etc.) — mantém @g.us para grupos
+      const cleanPhone = isGroup ? rawPhone : rawPhone.split("@")[0];
 
       // Grupos: tenta endpoints específicos de grupo antes dos genéricos
       if (isGroup) {
         // Tentativa G1: GET /group/fetchGroupProfilePicture/{instanceName}?groupJid={jid}
         try {
-          const r = await iFetch(`/group/fetchGroupProfilePicture/${instName}?groupJid=${encodeURIComponent(rawPhone)}`);
+          const r = await iFetch(`/group/fetchGroupProfilePicture/${instName}?groupJid=${encodeURIComponent(cleanPhone)}`);
           if (r.ok) { const d = await r.json(); const u = extractUrl(d); if (u) return json({ success: true, photoUrl: u }); }
         } catch (_) {}
 
         // Tentativa G2: POST /group/fetchGroupProfilePicture/{instanceName}
         try {
           const r = await iFetch(`/group/fetchGroupProfilePicture/${instName}`, {
-            method: "POST", body: JSON.stringify({ groupJid: rawPhone }),
+            method: "POST", body: JSON.stringify({ groupJid: cleanPhone }),
           });
           if (r.ok) { const d = await r.json(); const u = extractUrl(d); if (u) return json({ success: true, photoUrl: u }); }
         } catch (_) {}
@@ -1031,41 +1033,64 @@ Deno.serve(async (req) => {
         // Tentativa G3: POST /group/pictureUrl/{instanceName}
         try {
           const r = await iFetch(`/group/pictureUrl/${instName}`, {
-            method: "POST", body: JSON.stringify({ groupJid: rawPhone }),
+            method: "POST", body: JSON.stringify({ groupJid: cleanPhone }),
           });
           if (r.ok) { const d = await r.json(); const u = extractUrl(d); if (u) return json({ success: true, photoUrl: u }); }
         } catch (_) {}
       }
 
-      // Tentativa 1: GET /chat/fetchProfilePicture/{instanceName}?number={phone}
+      // Tentativa 1: GET /chat/fetchProfilePicture/{instanceName}?number={cleanPhone}
       try {
-        const r1 = await iFetch(`/chat/fetchProfilePicture/${instName}?number=${rawPhone}`);
+        const r1 = await iFetch(`/chat/fetchProfilePicture/${instName}?number=${cleanPhone}`);
         if (r1.ok) { const d = await r1.json(); const u = extractUrl(d); if (u) return json({ success: true, photoUrl: u }); }
       } catch (_) {}
 
       // Tentativa 2: POST /chat/fetchProfilePicture/{instanceName}
       try {
         const r2 = await iFetch(`/chat/fetchProfilePicture/${instName}`, {
-          method: "POST", body: JSON.stringify({ number: rawPhone }),
+          method: "POST", body: JSON.stringify({ number: cleanPhone }),
         });
         if (r2.ok) { const d = await r2.json(); const u = extractUrl(d); if (u) return json({ success: true, photoUrl: u }); }
       } catch (_) {}
 
-      // Tentativa 3: GET /contact/getProfilePicture/{instanceName}?number={phone}
+      // Tentativa 3: GET /contact/getProfilePicture/{instanceName}?number={cleanPhone}
       try {
-        const r3 = await iFetch(`/contact/getProfilePicture/${instName}?number=${rawPhone}`);
+        const r3 = await iFetch(`/contact/getProfilePicture/${instName}?number=${cleanPhone}`);
         if (r3.ok) { const d = await r3.json(); const u = extractUrl(d); if (u) return json({ success: true, photoUrl: u }); }
       } catch (_) {}
 
       // Tentativa 4: POST /contact/getProfilePicture
       try {
         const r4 = await iFetch(`/contact/getProfilePicture/${instName}`, {
-          method: "POST", body: JSON.stringify({ number: rawPhone }),
+          method: "POST", body: JSON.stringify({ number: cleanPhone }),
         });
         if (r4.ok) { const d = await r4.json(); const u = extractUrl(d); if (u) return json({ success: true, photoUrl: u }); }
       } catch (_) {}
 
       return json({ success: true, photoUrl: null });
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // PROXY MEDIA — busca mídia (áudio/imagem) server-side evitando CORS
+    // ────────────────────────────────────────────────────────────────────────
+    if (action === "proxyMedia") {
+      const { url: mediaUrl } = body;
+      if (!mediaUrl) return json({ error: "url obrigatória" }, 400);
+      try {
+        const r = await fetch(String(mediaUrl), {
+          headers: { "User-Agent": "Mozilla/5.0 (compatible; C4OS/1.0)" },
+        });
+        if (!r.ok) return json({ error: `Upstream ${r.status}` }, 502);
+        const buffer = await r.arrayBuffer();
+        const bytes = new Uint8Array(buffer);
+        let binary = "";
+        for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+        const base64 = btoa(binary);
+        const contentType = r.headers.get("content-type") || "application/octet-stream";
+        return json({ success: true, base64, contentType });
+      } catch (e) {
+        return json({ error: (e as Error).message }, 500);
+      }
     }
 
     return json({ error: `Ação desconhecida: ${action}` }, 400);

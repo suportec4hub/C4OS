@@ -90,20 +90,44 @@ function showBrowserNotification(title, body) {
 }
 
 // ─── Custom Audio Player (WhatsApp-style) ────────────────────────────────────
-function AudioPlayer({ src, out }) {
-  const [playing,  setPlaying]  = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const [current,  setCurrent]  = useState(0);
-  const [loaded,   setLoaded]   = useState(false);
-  const [errored,  setErrored]  = useState(false);
+function AudioPlayer({ src, out, empresaId }) {
+  const [playing,   setPlaying]   = useState(false);
+  const [progress,  setProgress]  = useState(0);
+  const [duration,  setDuration]  = useState(0);
+  const [current,   setCurrent]   = useState(0);
+  const [loaded,    setLoaded]    = useState(false);
+  const [errored,   setErrored]   = useState(false);
+  const [proxying,  setProxying]  = useState(false);
+  const [blobSrc,   setBlobSrc]   = useState(null);
   const audioRef = useRef(null);
+
+  const activeSrc = blobSrc || src;
 
   const toggle = () => {
     const a = audioRef.current;
     if (!a || errored) return;
-    if (playing) { a.pause(); } else { a.play().catch(() => setErrored(true)); }
+    if (playing) { a.pause(); } else { a.play().catch(() => tryProxy()); }
     setPlaying(p => !p);
+  };
+
+  const tryProxy = async () => {
+    if (proxying || blobSrc) return;
+    setProxying(true);
+    setPlaying(false);
+    try {
+      const { data } = await supabase.functions.invoke("evolution-action", {
+        body: { action: "proxyMedia", empresa_id: empresaId, url: src },
+      });
+      if (data?.base64) {
+        const bytes = Uint8Array.from(atob(data.base64), c => c.charCodeAt(0));
+        const blob  = new Blob([bytes], { type: data.contentType || "audio/ogg" });
+        const url   = URL.createObjectURL(blob);
+        setBlobSrc(url);
+        setLoaded(false);
+        if (audioRef.current) { audioRef.current.src = url; audioRef.current.load(); }
+      } else { setErrored(true); }
+    } catch { setErrored(true); }
+    setProxying(false);
   };
 
   const onTimeUpdate = () => {
@@ -152,21 +176,21 @@ function AudioPlayer({ src, out }) {
   return (
     <div style={{ display:"flex", alignItems:"center", gap:10,
       minWidth:200, maxWidth:260, padding:"2px 0" }}>
-      <audio ref={audioRef} src={src} preload="metadata"
+      <audio ref={audioRef} src={activeSrc} preload="metadata"
         onTimeUpdate={onTimeUpdate} onLoadedMetadata={onLoaded}
         onEnded={onEnded} onCanPlay={onLoaded}
-        onError={() => setErrored(true)}
+        onError={() => { if (!blobSrc) tryProxy(); else setErrored(true); }}
         style={{ display:"none" }} />
 
       {/* Play / Pause */}
-      <button onClick={toggle}
+      <button onClick={proxying ? undefined : toggle}
         style={{ width:36, height:36, borderRadius:"50%", border:"none",
-          cursor: loaded ? "pointer" : "default",
+          cursor: proxying ? "wait" : loaded ? "pointer" : "default",
           background: out ? "rgba(255,255,255,.22)" : L.tealBg,
-          color: accent, fontSize:13, display:"flex", alignItems:"center",
+          color: accent, fontSize: proxying ? 11 : 13, display:"flex", alignItems:"center",
           justifyContent:"center", flexShrink:0, transition:"all .15s",
-          opacity: loaded ? 1 : 0.55 }}>
-        {playing ? "⏸" : "▶"}
+          opacity: (loaded || proxying) ? 1 : 0.55 }}>
+        {proxying ? "⟳" : playing ? "⏸" : "▶"}
       </button>
 
       {/* Barra + tempo */}
@@ -206,7 +230,7 @@ function AudioPlayer({ src, out }) {
 }
 
 // ─── Media message renderer ──────────────────────────────────────────────────
-function renderMsgContent(m, out) {
+function renderMsgContent(m, out, onImageClick, empresaId) {
   const t    = msgTexto(m);
   const tipo = m.tipo || m.type || "texto";
   const url  = m.midia_url || m.url || m.media_url || m.mediaUrl;
@@ -214,9 +238,10 @@ function renderMsgContent(m, out) {
   if ((tipo === "imagem" || tipo === "image") && url) {
     return (
       <div>
-        <img src={url} alt="imagem" onClick={() => window.open(url, "_blank")}
+        <img src={url} alt="imagem"
+          onClick={() => onImageClick ? onImageClick(url) : window.open(url, "_blank")}
           style={{ maxWidth:"100%", borderRadius:8, marginBottom: t ? 4 : 0,
-            cursor:"pointer", display:"block" }}
+            cursor:"zoom-in", display:"block" }}
           onError={e => { e.currentTarget.style.display="none"; }}/>
         {t && <div style={{ fontSize:12, marginTop:2 }}>{t}</div>}
       </div>
@@ -225,7 +250,7 @@ function renderMsgContent(m, out) {
   if (tipo === "audio" && url) {
     return (
       <div>
-        <AudioPlayer src={url} out={out} />
+        <AudioPlayer src={url} out={out} empresaId={empresaId} />
         {t && <div style={{ fontSize:11, marginTop:3, opacity:.8 }}>{t}</div>}
       </div>
     );
@@ -473,6 +498,9 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
   // ── profile photos cache (phone → url) ───────────────────────────────────
   const [profilePhotos, setProfilePhotos] = useState({});
   const fetchedPhonesRef = useRef(new Set());
+
+  // ── lightbox ──────────────────────────────────────────────────────────────
+  const [lightboxImg, setLightboxImg] = useState(null);
 
   // ── notifications ─────────────────────────────────────────────────────────
   const [toast, setToast]         = useState(null); // { msg, tipo }
@@ -1647,7 +1675,7 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
                         {m.remetente === "bot" && !nota && (
                           <div style={{ fontSize: 9, marginBottom: 2, color: L.waTimestamp }}>🤖 Bot</div>
                         )}
-                        {renderMsgContent(m, out)}
+                        {renderMsgContent(m, out, setLightboxImg, user?.empresa_id)}
                         <div style={{ display: "flex", alignItems: "center", gap: 3, marginTop: 2,
                           justifyContent: "flex-end" }}>
                           <span style={{ fontSize: 10, color: L.waTimestamp }}>{fmtHora(h)}</span>
@@ -2172,6 +2200,31 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
             <button onClick={() => setNotifPerm(true) /* esconde banner */}
               style={{ background: "none", border: "none", cursor: "pointer", color: L.t4, fontSize: 16, padding: 2 }}>×</button>
           )}
+        </div>
+      )}
+
+      {/* ── Lightbox de imagem ──────────────────────────────────────────── */}
+      {lightboxImg && (
+        <div onClick={() => setLightboxImg(null)}
+          style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.92)", zIndex:9999,
+            display:"flex", alignItems:"center", justifyContent:"center", cursor:"zoom-out" }}>
+          <img src={lightboxImg} alt=""
+            onClick={e => e.stopPropagation()}
+            style={{ maxWidth:"92vw", maxHeight:"88vh", objectFit:"contain",
+              borderRadius:10, boxShadow:"0 8px 40px rgba(0,0,0,.6)", cursor:"default" }}/>
+          <button onClick={() => setLightboxImg(null)}
+            style={{ position:"absolute", top:18, right:22, background:"rgba(255,255,255,.12)",
+              border:"none", color:"white", fontSize:26, cursor:"pointer", lineHeight:1,
+              borderRadius:8, width:40, height:40, display:"flex", alignItems:"center", justifyContent:"center" }}>
+            ×
+          </button>
+          <a href={lightboxImg} download target="_blank" rel="noreferrer"
+            onClick={e => e.stopPropagation()}
+            style={{ position:"absolute", bottom:22, right:22, background:"rgba(255,255,255,.15)",
+              color:"white", padding:"8px 18px", borderRadius:10, textDecoration:"none",
+              fontSize:13, fontWeight:600, fontFamily:"inherit" }}>
+            ⬇ Baixar
+          </a>
         </div>
       )}
     </div>
