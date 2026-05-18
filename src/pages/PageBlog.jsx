@@ -11,13 +11,13 @@ function useW() {
 }
 
 const C = {
-  green: "#16a34a",
-  greenCta: "#22c55e",
-  greenLight: "#f0fdf4",
-  greenDark: "#052e16",
-  body: "#374151",
-  border: "#e5e7eb",
-  white: "#ffffff",
+  green:      "#1aaa96",
+  greenCta:   "#1aaa96",
+  greenLight: "#e6f7f5",
+  greenDark:  "#111827",
+  body:       "#374151",
+  border:     "#e5e7eb",
+  white:      "#ffffff",
 };
 
 const CATEGORY_COLORS = {
