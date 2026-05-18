@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, lazy, Suspense } from "react";
 import { useBreakpoint } from "../hooks/useBreakpoint";
 import Logo from "./Logo";
 import { Av, Chip } from "./ui";
@@ -6,38 +6,40 @@ import ModalPerfil from "./ModalPerfil";
 import { L } from "../constants/theme";
 import { supabase } from "../lib/supabase";
 import { injectMetaPixel, injectGA4 } from "../lib/analytics";
-import PageDashboard  from "../pages/PageDashboard";
-import PageLeads      from "../pages/PageLeads";
-import PagePipeline   from "../pages/PagePipeline";
-import PageChat       from "../pages/PageChat";
-import PageBroadcast  from "../pages/PageBroadcast";
-import PageChatbot    from "../pages/PageChatbot";
-import PageFollowUp   from "../pages/PageFollowUp";
-import PageReports    from "../pages/PageReports";
-import PageAI         from "../pages/PageAI";
-import PageEmpresa    from "../pages/PageEmpresa";
-import PageEquipe     from "../pages/PageEquipe";
-import PageDeps       from "../pages/PageDeps";
-import PageFinanceiro from "../pages/PageFinanceiro";
-import PageRH         from "../pages/PageRH";
-import PageMarketing  from "../pages/PageMarketing";
-import PageDigital    from "../pages/PageDigital";
-import PageWorkspace  from "../pages/PageWorkspace";
-import PageAgenda     from "../pages/PageAgenda";
-import PageContratos  from "../pages/PageContratos";
-import PagePropostas  from "../pages/PagePropostas";
-import PageEstoque    from "../pages/PageEstoque";
-import PageClientes         from "../pages/PageClientes";
-import PageLogs             from "../pages/PageLogs";
-import PageSuporte          from "../pages/PageSuporte";
-import PageUsers            from "../pages/PageUsers";
-import PagePlanos           from "../pages/PagePlanos";
-import PageSetores          from "../pages/PageSetores";
-import PageEtiquetas        from "../pages/PageEtiquetas";
-import PageChatbotBuilder   from "../pages/PageChatbotBuilder";
-import PageDisparos         from "../pages/PageDisparos";
-import PageRelatoriosAtend  from "../pages/PageRelatoriosAtend";
-import PageMeta             from "../pages/PageMeta";
+
+// Lazy load: cada página vira chunk separado — carregado só quando o usuário navega até ela
+const PageDashboard        = lazy(() => import("../pages/PageDashboard"));
+const PageLeads            = lazy(() => import("../pages/PageLeads"));
+const PagePipeline         = lazy(() => import("../pages/PagePipeline"));
+const PageChat             = lazy(() => import("../pages/PageChat"));
+const PageBroadcast        = lazy(() => import("../pages/PageBroadcast"));
+const PageChatbot          = lazy(() => import("../pages/PageChatbot"));
+const PageFollowUp         = lazy(() => import("../pages/PageFollowUp"));
+const PageReports          = lazy(() => import("../pages/PageReports"));
+const PageAI               = lazy(() => import("../pages/PageAI"));
+const PageEmpresa          = lazy(() => import("../pages/PageEmpresa"));
+const PageEquipe           = lazy(() => import("../pages/PageEquipe"));
+const PageDeps             = lazy(() => import("../pages/PageDeps"));
+const PageFinanceiro       = lazy(() => import("../pages/PageFinanceiro"));
+const PageRH               = lazy(() => import("../pages/PageRH"));
+const PageMarketing        = lazy(() => import("../pages/PageMarketing"));
+const PageDigital          = lazy(() => import("../pages/PageDigital"));
+const PageWorkspace        = lazy(() => import("../pages/PageWorkspace"));
+const PageAgenda           = lazy(() => import("../pages/PageAgenda"));
+const PageContratos        = lazy(() => import("../pages/PageContratos"));
+const PagePropostas        = lazy(() => import("../pages/PagePropostas"));
+const PageEstoque          = lazy(() => import("../pages/PageEstoque"));
+const PageClientes         = lazy(() => import("../pages/PageClientes"));
+const PageLogs             = lazy(() => import("../pages/PageLogs"));
+const PageSuporte          = lazy(() => import("../pages/PageSuporte"));
+const PageUsers            = lazy(() => import("../pages/PageUsers"));
+const PagePlanos           = lazy(() => import("../pages/PagePlanos"));
+const PageSetores          = lazy(() => import("../pages/PageSetores"));
+const PageEtiquetas        = lazy(() => import("../pages/PageEtiquetas"));
+const PageChatbotBuilder   = lazy(() => import("../pages/PageChatbotBuilder"));
+const PageDisparos         = lazy(() => import("../pages/PageDisparos"));
+const PageRelatoriosAtend  = lazy(() => import("../pages/PageRelatoriosAtend"));
+const PageMeta             = lazy(() => import("../pages/PageMeta"));
 
 const NAV_ITEMS = [
   {id:"dashboard",  label:"Dashboard",      ico:"▦", g:"principal"},
@@ -292,6 +294,12 @@ export default function Shell({user,onLogout,onProfileUpdate,theme,toggleTheme})
 
         {/* Content */}
         <div style={{flex:1,overflow:"auto",padding:isMobile?"14px":"24px"}}>
+          <Suspense fallback={
+            <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"60vh",gap:12,flexDirection:"column"}}>
+              <div style={{width:28,height:28,borderRadius:"50%",border:`3px solid ${L.tealA2}`,borderTopColor:L.accent,animation:"spin 0.8s linear infinite"}}/>
+              <span style={{fontSize:12,color:L.t4,fontFamily:"'JetBrains Mono',monospace"}}>carregando...</span>
+            </div>
+          }>
           {safe==="dashboard" && <PageDashboard user={user}/>}
           {safe==="leads"     && <PageLeads     user={user} onOpenChat={(target)=>{ setChatTarget(target); setSec("whatsapp"); }}/>}
           {safe==="pipeline"  && <PagePipeline  user={user} onOpenChat={(phone)=>{ setChatTarget(phone); setSec("whatsapp"); }}/>}
@@ -324,6 +332,7 @@ export default function Shell({user,onLogout,onProfileUpdate,theme,toggleTheme})
           {safe==="suporte"   && isC4HubAdmin && <PageSuporte  user={user}/>}
           {safe==="users"     && isC4HubAdmin && <PageUsers    user={user}/>}
           {safe==="planos"    && isC4HubAdmin && <PagePlanos   user={user}/>}
+          </Suspense>
         </div>
       </div>
     </div>
