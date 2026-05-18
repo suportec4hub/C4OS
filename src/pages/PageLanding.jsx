@@ -1,5 +1,15 @@
 import { useState, useEffect, useCallback } from "react";
 
+function useW() {
+  const [w, setW] = useState(() => window.innerWidth);
+  useEffect(() => {
+    const fn = () => setW(window.innerWidth);
+    window.addEventListener("resize", fn);
+    return () => window.removeEventListener("resize", fn);
+  }, []);
+  return { isMobile: w < 768, isTablet: w >= 768 && w < 1060, w };
+}
+
 const C = {
   dark:       "#111827",
   darkSoft:   "#1f2937",
@@ -236,7 +246,7 @@ const SLIDES = [
   { id: "leads",     label: "Leads",       icon: "◎", component: <MockLeads /> },
 ];
 
-const BrowserFrame = ({ slide, onPrev, onNext, onDot, activeIdx }) => (
+const BrowserFrame = ({ slide, onPrev, onNext, onDot, activeIdx, isMobile }) => (
   <div style={{ background: C.white, borderRadius: 16, boxShadow: "0 28px 80px rgba(0,0,0,0.22), 0 8px 32px rgba(0,0,0,0.12)", overflow: "hidden", border: `1px solid ${C.border}`, width: "100%" }}>
     {/* Browser chrome */}
     <div style={{ background: "#f3f4f6", padding: "10px 14px", display: "flex", alignItems: "center", gap: 8, borderBottom: `1px solid ${C.border}` }}>
@@ -255,13 +265,13 @@ const BrowserFrame = ({ slide, onPrev, onNext, onDot, activeIdx }) => (
     {/* Tab bar */}
     <div style={{ background: "#f9fafb", borderBottom: `1px solid ${C.border}`, display: "flex", padding: "0 8px", gap: 2, overflowX: "auto" }}>
       {SLIDES.map((s, i) => (
-        <button key={s.id} onClick={() => onDot(i)} style={{ background: i === activeIdx ? C.white : "none", border: "none", borderBottom: i === activeIdx ? `2px solid ${C.teal}` : "2px solid transparent", cursor: "pointer", padding: "7px 12px", fontSize: 10, fontWeight: i === activeIdx ? 700 : 500, color: i === activeIdx ? C.teal : C.muted, display: "flex", alignItems: "center", gap: 5, whiteSpace: "nowrap", transition: "all .15s" }}>
-          <span>{s.icon}</span>{s.label}
+        <button key={s.id} onClick={() => onDot(i)} style={{ background: i === activeIdx ? C.white : "none", border: "none", borderBottom: i === activeIdx ? `2px solid ${C.teal}` : "2px solid transparent", cursor: "pointer", padding: "7px 10px", fontSize: 10, fontWeight: i === activeIdx ? 700 : 500, color: i === activeIdx ? C.teal : C.muted, display: "flex", alignItems: "center", gap: 4, whiteSpace: "nowrap", transition: "all .15s" }}>
+          <span>{s.icon}</span>{!isMobile && s.label}
         </button>
       ))}
     </div>
     {/* Screen content */}
-    <div style={{ height: 320, overflow: "hidden" }}>
+    <div style={{ height: isMobile ? 260 : 320, overflow: "hidden" }}>
       {slide.component}
     </div>
     {/* Dot indicators */}
@@ -278,6 +288,7 @@ const BrowserFrame = ({ slide, onPrev, onNext, onDot, activeIdx }) => (
 const Header = ({ onNavigate }) => {
   const [hov, setHov] = useState(null);
   const [scrolled, setScrolled] = useState(false);
+  const { isMobile } = useW();
 
   useEffect(() => {
     const fn = () => setScrolled(window.scrollY > 12);
@@ -286,7 +297,7 @@ const Header = ({ onNavigate }) => {
   }, []);
 
   return (
-    <header style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, height: 64, display: "flex", alignItems: "center", padding: "0 40px", justifyContent: "space-between", background: scrolled ? "rgba(255,255,255,0.96)" : C.white, backdropFilter: "blur(10px)", borderBottom: `1px solid ${scrolled ? C.border : "transparent"}`, boxShadow: scrolled ? "0 2px 16px rgba(0,0,0,0.07)" : "none", transition: "all .2s" }}>
+    <header style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, height: 64, display: "flex", alignItems: "center", padding: isMobile ? "0 16px" : "0 40px", justifyContent: "space-between", background: scrolled ? "rgba(255,255,255,0.96)" : C.white, backdropFilter: "blur(10px)", borderBottom: `1px solid ${scrolled ? C.border : "transparent"}`, boxShadow: scrolled ? "0 2px 16px rgba(0,0,0,0.07)" : "none", transition: "all .2s" }}>
       <button onClick={() => onNavigate("landing")} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, padding: 0 }}>
         <img src="/logo.png" alt="C4 OS" width={36} height={36} style={{ objectFit: "contain", display: "block" }} />
         <div style={{ textAlign: "left" }}>
@@ -296,15 +307,15 @@ const Header = ({ onNavigate }) => {
       </button>
 
       <nav style={{ display: "flex", alignItems: "center", gap: 2 }}>
-        {[["Blog", "blog"], ["Documentação", "docs"]].map(([l, t]) => (
+        {!isMobile && [["Blog", "blog"], ["Documentação", "docs"]].map(([l, t]) => (
           <button key={t} onClick={() => onNavigate(t)} onMouseEnter={() => setHov(t)} onMouseLeave={() => setHov(null)}
             style={{ background: hov === t ? C.surface : "none", border: "none", cursor: "pointer", color: hov === t ? C.dark : C.text, fontWeight: 500, fontSize: 14, padding: "7px 14px", borderRadius: 8, transition: "all .15s" }}>
             {l}
           </button>
         ))}
         <button onClick={() => onNavigate("login")} onMouseEnter={() => setHov("cta")} onMouseLeave={() => setHov(null)}
-          style={{ marginLeft: 8, background: hov === "cta" ? C.tealDk : C.teal, color: "#fff", border: "none", borderRadius: 10, padding: "9px 22px", fontWeight: 700, fontSize: 14, cursor: "pointer", transition: "background .15s", boxShadow: `0 4px 14px ${C.tealA2}`, letterSpacing: "0.1px" }}>
-          Acessar Plataforma →
+          style={{ marginLeft: isMobile ? 0 : 8, background: hov === "cta" ? C.tealDk : C.teal, color: "#fff", border: "none", borderRadius: 10, padding: isMobile ? "8px 14px" : "9px 22px", fontWeight: 700, fontSize: isMobile ? 13 : 14, cursor: "pointer", transition: "background .15s", boxShadow: `0 4px 14px ${C.tealA2}`, letterSpacing: "0.1px", whiteSpace: "nowrap" }}>
+          {isMobile ? "Acessar →" : "Acessar Plataforma →"}
         </button>
       </nav>
     </header>
@@ -314,6 +325,7 @@ const Header = ({ onNavigate }) => {
 /* ─── Main page ──────────────────────────────────────────────────── */
 
 export default function PageLanding({ onNavigate }) {
+  const { isMobile, isTablet } = useW();
   const [slide, setSlide] = useState(0);
   const [paused, setPaused] = useState(false);
   const [hov, setHov] = useState(null);
@@ -366,9 +378,9 @@ export default function PageLanding({ onNavigate }) {
       <Header onNavigate={onNavigate} />
 
       {/* ── Hero ──────────────────────────────────────────────── */}
-      <section style={{ paddingTop: 100, paddingBottom: 72, background: `linear-gradient(150deg, #f0faf9 0%, ${C.white} 50%)`, minHeight: "88vh", display: "flex", alignItems: "center" }}>
-        <div style={{ maxWidth: 1180, margin: "0 auto", padding: "0 40px", display: "flex", alignItems: "center", gap: 64, width: "100%" }}>
-          <div style={{ flex: "0 0 46%", minWidth: 0 }}>
+      <section style={{ paddingTop: isMobile ? 80 : 100, paddingBottom: isMobile ? 48 : 72, background: `linear-gradient(150deg, #f0faf9 0%, ${C.white} 50%)`, minHeight: isMobile ? "auto" : "88vh", display: "flex", alignItems: "center" }}>
+        <div style={{ maxWidth: 1180, margin: "0 auto", padding: isMobile ? "0 20px" : "0 40px", display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "flex-start" : "center", gap: isMobile ? 40 : 64, width: "100%" }}>
+          <div style={{ flex: isMobile ? "none" : "0 0 46%", minWidth: 0, width: isMobile ? "100%" : "auto" }}>
             <div style={{ display: "inline-flex", alignItems: "center", gap: 7, background: C.tealLight, border: `1px solid ${C.tealA2}`, borderRadius: 999, padding: "6px 16px", fontSize: 13, fontWeight: 600, color: C.tealDk, marginBottom: 28 }}>
               🚀 Plataforma CRM + WhatsApp tudo-em-um
             </div>
@@ -390,30 +402,30 @@ export default function PageLanding({ onNavigate }) {
             </div>
           </div>
 
-          <div style={{ flex: 1, minWidth: 0 }}
+          <div style={{ flex: 1, minWidth: 0, width: isMobile ? "100%" : "auto" }}
             onMouseEnter={() => setPaused(true)}
             onMouseLeave={() => setPaused(false)}>
-            <BrowserFrame slide={SLIDES[slide]} onPrev={prev} onNext={next} onDot={setSlide} activeIdx={slide} />
+            <BrowserFrame slide={SLIDES[slide]} onPrev={prev} onNext={next} onDot={setSlide} activeIdx={slide} isMobile={isMobile} />
           </div>
         </div>
       </section>
 
       {/* ── Stats bar ─────────────────────────────────────────── */}
-      <section style={{ background: C.dark, padding: "36px 40px" }}>
+      <section style={{ background: C.dark, padding: isMobile ? "28px 20px" : "36px 40px" }}>
         <div style={{ maxWidth: 1180, margin: "0 auto", display: "flex", gap: 0, flexWrap: "wrap" }}>
           {STATS.map((s, i) => (
-            <div key={i} style={{ flex: "1 1 160px", textAlign: "center", padding: "12px 24px", borderRight: i < STATS.length - 1 ? "1px solid rgba(255,255,255,0.08)" : "none" }}>
-              <div style={{ fontSize: 32, fontWeight: 900, color: C.teal, fontFamily: "'Outfit',sans-serif", letterSpacing: "-1px" }}>{s.v}</div>
-              <div style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", marginTop: 4 }}>{s.l}</div>
+            <div key={i} style={{ flex: isMobile ? "1 1 50%" : "1 1 160px", textAlign: "center", padding: isMobile ? "14px 8px" : "12px 24px", borderRight: isMobile ? (i % 2 === 0 ? "1px solid rgba(255,255,255,0.08)" : "none") : (i < STATS.length - 1 ? "1px solid rgba(255,255,255,0.08)" : "none"), borderBottom: isMobile && i < 2 ? "1px solid rgba(255,255,255,0.08)" : "none" }}>
+              <div style={{ fontSize: isMobile ? 26 : 32, fontWeight: 900, color: C.teal, fontFamily: "'Outfit',sans-serif", letterSpacing: "-1px" }}>{s.v}</div>
+              <div style={{ fontSize: isMobile ? 11 : 13, color: "rgba(255,255,255,0.5)", marginTop: 4 }}>{s.l}</div>
             </div>
           ))}
         </div>
       </section>
 
       {/* ── Features grid ─────────────────────────────────────── */}
-      <section style={{ padding: "96px 40px", background: C.white }}>
+      <section style={{ padding: isMobile ? "60px 20px" : "96px 40px", background: C.white }}>
         <div style={{ maxWidth: 1180, margin: "0 auto" }}>
-          <div style={{ textAlign: "center", marginBottom: 60 }}>
+          <div style={{ textAlign: "center", marginBottom: isMobile ? 36 : 60 }}>
             <div style={{ display: "inline-block", background: C.tealLight, color: C.teal, borderRadius: 999, padding: "5px 16px", fontSize: 13, fontWeight: 600, marginBottom: 16 }}>Módulos do sistema</div>
             <h2 style={{ fontSize: "clamp(28px,3.5vw,44px)", fontWeight: 800, color: C.dark, letterSpacing: "-0.8px", margin: "0 0 16px" }}>
               Tudo que seu time precisa<br />em um só lugar
@@ -422,7 +434,7 @@ export default function PageLanding({ onNavigate }) {
               Do primeiro contato ao fechamento da venda, o C4 OS cobre cada etapa do seu processo comercial.
             </p>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 24 }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : isTablet ? "repeat(2, 1fr)" : "repeat(3, 1fr)", gap: isMobile ? 16 : 24 }}>
             {FEATURES.map((f) => (
               <div key={f.label} style={{ background: C.surface, borderRadius: 16, padding: "28px 28px", border: `1px solid ${C.border}`, transition: "all .2s", cursor: "default" }}
                 onMouseEnter={e => { e.currentTarget.style.borderColor = f.color; e.currentTarget.style.boxShadow = `0 8px 32px ${f.color}18`; e.currentTarget.style.background = C.white; }}
@@ -437,16 +449,16 @@ export default function PageLanding({ onNavigate }) {
       </section>
 
       {/* ── How it works ──────────────────────────────────────── */}
-      <section style={{ padding: "96px 40px", background: C.surface }}>
+      <section style={{ padding: isMobile ? "60px 20px" : "96px 40px", background: C.surface }}>
         <div style={{ maxWidth: 1180, margin: "0 auto" }}>
-          <div style={{ textAlign: "center", marginBottom: 60 }}>
+          <div style={{ textAlign: "center", marginBottom: isMobile ? 36 : 60 }}>
             <div style={{ display: "inline-block", background: C.tealLight, color: C.teal, borderRadius: 999, padding: "5px 16px", fontSize: 13, fontWeight: 600, marginBottom: 16 }}>Como funciona</div>
             <h2 style={{ fontSize: "clamp(28px,3.5vw,42px)", fontWeight: 800, color: C.dark, letterSpacing: "-0.8px", margin: 0 }}>
               Comece a vender mais em 3 passos
             </h2>
           </div>
-          <div style={{ display: "flex", gap: 40, position: "relative" }}>
-            <div style={{ position: "absolute", top: 28, left: "16%", right: "16%", height: 1, background: `linear-gradient(90deg, ${C.teal}, ${C.teal})`, opacity: 0.2 }} />
+          <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: isMobile ? 32 : 40, position: "relative" }}>
+            {!isMobile && <div style={{ position: "absolute", top: 28, left: "16%", right: "16%", height: 1, background: `linear-gradient(90deg, ${C.teal}, ${C.teal})`, opacity: 0.2 }} />}
             {STEPS.map((s) => (
               <div key={s.n} style={{ flex: 1, textAlign: "center", position: "relative" }}>
                 <div style={{ width: 56, height: 56, borderRadius: "50%", background: C.dark, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px", boxShadow: `0 0 0 6px ${C.tealLight}` }}>
@@ -461,9 +473,9 @@ export default function PageLanding({ onNavigate }) {
       </section>
 
       {/* ── Full carousel section ─────────────────────────────── */}
-      <section style={{ padding: "96px 40px", background: C.dark }}>
+      <section style={{ padding: isMobile ? "60px 20px" : "96px 40px", background: C.dark }}>
         <div style={{ maxWidth: 1180, margin: "0 auto" }}>
-          <div style={{ textAlign: "center", marginBottom: 52 }}>
+          <div style={{ textAlign: "center", marginBottom: isMobile ? 32 : 52 }}>
             <div style={{ display: "inline-block", background: C.tealA, color: C.teal, borderRadius: 999, padding: "5px 16px", fontSize: 13, fontWeight: 600, marginBottom: 16 }}>Veja o sistema</div>
             <h2 style={{ fontSize: "clamp(28px,3.5vw,42px)", fontWeight: 800, color: "#fff", letterSpacing: "-0.8px", margin: "0 0 16px" }}>
               Interface pensada para<br />times comerciais
@@ -472,10 +484,10 @@ export default function PageLanding({ onNavigate }) {
               Design limpo, rápido e intuitivo. Sua equipe aprende em minutos.
             </p>
           </div>
-          <div style={{ display: "flex", gap: 16, marginBottom: 32, justifyContent: "center", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: isMobile ? 8 : 16, marginBottom: isMobile ? 20 : 32, justifyContent: "center", flexWrap: "wrap" }}>
             {SLIDES.map((s, i) => (
               <button key={s.id} onClick={() => setSlide(i)}
-                style={{ background: i === slide ? C.teal : "rgba(255,255,255,0.07)", color: i === slide ? "#fff" : "rgba(255,255,255,0.55)", border: `1px solid ${i === slide ? C.teal : "rgba(255,255,255,0.12)"}`, borderRadius: 10, padding: "8px 18px", fontSize: 13, fontWeight: 600, cursor: "pointer", transition: "all .18s", display: "flex", alignItems: "center", gap: 7 }}>
+                style={{ background: i === slide ? C.teal : "rgba(255,255,255,0.07)", color: i === slide ? "#fff" : "rgba(255,255,255,0.55)", border: `1px solid ${i === slide ? C.teal : "rgba(255,255,255,0.12)"}`, borderRadius: 10, padding: isMobile ? "7px 12px" : "8px 18px", fontSize: isMobile ? 12 : 13, fontWeight: 600, cursor: "pointer", transition: "all .18s", display: "flex", alignItems: "center", gap: isMobile ? 4 : 7 }}>
                 <span>{s.icon}</span>{s.label}
               </button>
             ))}
@@ -487,7 +499,7 @@ export default function PageLanding({ onNavigate }) {
       </section>
 
       {/* ── CTA ───────────────────────────────────────────────── */}
-      <section style={{ padding: "96px 40px", background: `linear-gradient(135deg, ${C.teal} 0%, ${C.tealDk} 100%)`, textAlign: "center" }}>
+      <section style={{ padding: isMobile ? "60px 24px" : "96px 40px", background: `linear-gradient(135deg, ${C.teal} 0%, ${C.tealDk} 100%)`, textAlign: "center" }}>
         <div style={{ maxWidth: 640, margin: "0 auto" }}>
           <h2 style={{ fontSize: "clamp(28px,3.8vw,46px)", fontWeight: 900, color: "#fff", letterSpacing: "-1px", margin: "0 0 16px" }}>
             Pronto para transformar<br />seu time comercial?
@@ -508,8 +520,8 @@ export default function PageLanding({ onNavigate }) {
       </section>
 
       {/* ── Footer ────────────────────────────────────────────── */}
-      <footer style={{ background: C.dark, borderTop: "1px solid rgba(255,255,255,0.07)", padding: "36px 40px" }}>
-        <div style={{ maxWidth: 1180, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
+      <footer style={{ background: C.dark, borderTop: "1px solid rgba(255,255,255,0.07)", padding: isMobile ? "28px 20px" : "36px 40px" }}>
+        <div style={{ maxWidth: 1180, margin: "0 auto", display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "flex-start" : "center", justifyContent: "space-between", flexWrap: "wrap", gap: 16 }}>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
               <img src="/logo.png" alt="C4 OS" width={28} height={28} style={{ objectFit: "contain", display: "block" }} />

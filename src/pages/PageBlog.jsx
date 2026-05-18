@@ -1,4 +1,14 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+
+function useW() {
+  const [w, setW] = useState(() => window.innerWidth);
+  useEffect(() => {
+    const fn = () => setW(window.innerWidth);
+    window.addEventListener("resize", fn);
+    return () => window.removeEventListener("resize", fn);
+  }, []);
+  return { isMobile: w < 768 };
+}
 
 const C = {
   green: "#16a34a",
@@ -64,27 +74,11 @@ const POSTS = [
 
 const SharedHeader = ({ onNavigate }) => {
   const [hovered, setHovered] = useState(null);
+  const { isMobile } = useW();
 
   return (
-    <header style={{
-      position: "fixed",
-      top: 0,
-      left: 0,
-      right: 0,
-      zIndex: 100,
-      background: C.white,
-      borderBottom: `1px solid ${C.border}`,
-      boxShadow: "0 1px 8px rgba(0,0,0,.06)",
-      height: 64,
-      display: "flex",
-      alignItems: "center",
-      padding: "0 40px",
-      justifyContent: "space-between",
-    }}>
-      <button
-        onClick={() => onNavigate("landing")}
-        style={{ background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex", alignItems: "center", gap: 10 }}
-      >
+    <header style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, background: C.white, borderBottom: `1px solid ${C.border}`, boxShadow: "0 1px 8px rgba(0,0,0,.06)", height: 64, display: "flex", alignItems: "center", padding: isMobile ? "0 16px" : "0 40px", justifyContent: "space-between" }}>
+      <button onClick={() => onNavigate("landing")} style={{ background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex", alignItems: "center", gap: 10 }}>
         <img src="/logo.png" alt="C4 OS" width={36} height={36} style={{ objectFit: "contain", display: "block" }} />
         <div style={{ textAlign: "left", lineHeight: 1.2 }}>
           <div style={{ fontWeight: 800, fontSize: 16, color: C.greenDark, letterSpacing: "-0.3px" }}>C4 OS</div>
@@ -92,45 +86,15 @@ const SharedHeader = ({ onNavigate }) => {
         </div>
       </button>
       <nav style={{ display: "flex", alignItems: "center", gap: 4 }}>
-        {[["Blog", "blog"], ["Documentação", "docs"]].map(([label, target]) => (
-          <button
-            key={target}
-            onMouseEnter={() => setHovered(target)}
-            onMouseLeave={() => setHovered(null)}
-            onClick={() => onNavigate(target)}
-            style={{
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              color: hovered === target ? C.green : C.body,
-              fontWeight: 500,
-              fontSize: 15,
-              padding: "6px 12px",
-              borderRadius: 6,
-              transition: "color .15s",
-            }}
-          >
+        {!isMobile && [["Blog", "blog"], ["Documentação", "docs"]].map(([label, target]) => (
+          <button key={target} onMouseEnter={() => setHovered(target)} onMouseLeave={() => setHovered(null)} onClick={() => onNavigate(target)}
+            style={{ background: "none", border: "none", cursor: "pointer", color: hovered === target ? C.green : C.body, fontWeight: 500, fontSize: 15, padding: "6px 12px", borderRadius: 6, transition: "color .15s" }}>
             {label}
           </button>
         ))}
-        <button
-          onMouseEnter={() => setHovered("cta")}
-          onMouseLeave={() => setHovered(null)}
-          onClick={() => onNavigate("login")}
-          style={{
-            marginLeft: 8,
-            background: hovered === "cta" ? C.green : C.greenCta,
-            color: C.white,
-            border: "none",
-            borderRadius: 999,
-            padding: "9px 22px",
-            fontWeight: 700,
-            fontSize: 14,
-            cursor: "pointer",
-            transition: "background .15s",
-          }}
-        >
-          Acessar Plataforma →
+        <button onMouseEnter={() => setHovered("cta")} onMouseLeave={() => setHovered(null)} onClick={() => onNavigate("login")}
+          style={{ marginLeft: isMobile ? 0 : 8, background: hovered === "cta" ? C.green : C.greenCta, color: C.white, border: "none", borderRadius: 999, padding: isMobile ? "8px 14px" : "9px 22px", fontWeight: 700, fontSize: isMobile ? 13 : 14, cursor: "pointer", transition: "background .15s", whiteSpace: "nowrap" }}>
+          {isMobile ? "Acessar →" : "Acessar Plataforma →"}
         </button>
       </nav>
     </header>
@@ -182,71 +146,42 @@ const PostCard = ({ post }) => {
   );
 };
 
-const PageBlog = ({ onNavigate }) => (
-  <div style={{ fontFamily: "'Inter', system-ui, sans-serif", background: "#f9fafb", color: C.body, minHeight: "100vh" }}>
-    <SharedHeader onNavigate={onNavigate} />
+const PageBlog = ({ onNavigate }) => {
+  const { isMobile } = useW();
+  return (
+    <div style={{ fontFamily: "'Inter', system-ui, sans-serif", background: "#f9fafb", color: C.body, minHeight: "100vh" }}>
+      <SharedHeader onNavigate={onNavigate} />
 
-    <section style={{
-      paddingTop: 104,
-      paddingBottom: 56,
-      background: `linear-gradient(160deg, ${C.greenLight} 0%, ${C.white} 60%)`,
-      textAlign: "center",
-    }}>
-      <div style={{ maxWidth: 680, margin: "0 auto", padding: "40px 24px 0" }}>
-        <h1 style={{ fontSize: 44, fontWeight: 900, color: C.greenDark, letterSpacing: "-1px", marginBottom: 12 }}>Blog C4OS</h1>
-        <p style={{ fontSize: 18, color: C.body, lineHeight: 1.7 }}>
-          Novidades, dicas e estratégias para times comerciais.
-        </p>
-      </div>
-    </section>
+      <section style={{ paddingTop: 104, paddingBottom: 48, background: `linear-gradient(160deg, ${C.greenLight} 0%, ${C.white} 60%)`, textAlign: "center" }}>
+        <div style={{ maxWidth: 680, margin: "0 auto", padding: isMobile ? "24px 20px 0" : "40px 24px 0" }}>
+          <h1 style={{ fontSize: isMobile ? 32 : 44, fontWeight: 900, color: C.greenDark, letterSpacing: "-1px", marginBottom: 12 }}>Blog C4OS</h1>
+          <p style={{ fontSize: isMobile ? 15 : 18, color: C.body, lineHeight: 1.7 }}>
+            Novidades, dicas e estratégias para times comerciais.
+          </p>
+        </div>
+      </section>
 
-    <section style={{ maxWidth: 1100, margin: "0 auto", padding: "48px 32px 80px" }}>
-      <div style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
-        gap: 24,
-      }}>
-        {POSTS.map((p) => <PostCard key={p.title} post={p} />)}
-      </div>
-    </section>
+      <section style={{ maxWidth: 1100, margin: "0 auto", padding: isMobile ? "32px 16px 60px" : "48px 32px 80px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill, minmax(300px, 1fr))", gap: isMobile ? 16 : 24 }}>
+          {POSTS.map((p) => <PostCard key={p.title} post={p} />)}
+        </div>
+      </section>
 
-    <footer style={{
-      background: C.white,
-      borderTop: `1px solid ${C.border}`,
-      padding: "28px 40px",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "space-between",
-      flexWrap: "wrap",
-      gap: 12,
-    }}>
-      <div>
-        <div style={{ fontWeight: 700, fontSize: 15, color: C.greenDark }}>C4 OS by C4HUB</div>
-        <div style={{ fontSize: 13, color: "#9ca3af", marginTop: 2 }}>© 2025 C4HUB. Todos os direitos reservados.</div>
-      </div>
-      <div style={{ display: "flex", gap: 20 }}>
-        {[["Blog", "blog"], ["Documentação", "docs"]].map(([label, target]) => (
-          <button
-            key={target}
-            onClick={() => onNavigate(target)}
-            style={{
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              color: C.body,
-              fontSize: 14,
-              fontWeight: 500,
-              padding: 0,
-              textDecoration: "underline",
-              textUnderlineOffset: 3,
-            }}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-    </footer>
-  </div>
-);
+      <footer style={{ background: C.white, borderTop: `1px solid ${C.border}`, padding: isMobile ? "24px 20px" : "28px 40px", display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "flex-start" : "center", justifyContent: "space-between", gap: 12 }}>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 15, color: C.greenDark }}>C4 OS by C4HUB</div>
+          <div style={{ fontSize: 13, color: "#9ca3af", marginTop: 2 }}>© 2025 C4HUB. Todos os direitos reservados.</div>
+        </div>
+        <div style={{ display: "flex", gap: 20 }}>
+          {[["Blog", "blog"], ["Documentação", "docs"]].map(([label, target]) => (
+            <button key={target} onClick={() => onNavigate(target)} style={{ background: "none", border: "none", cursor: "pointer", color: C.body, fontSize: 14, fontWeight: 500, padding: 0, textDecoration: "underline", textUnderlineOffset: 3 }}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </footer>
+    </div>
+  );
+};
 
 export default PageBlog;
