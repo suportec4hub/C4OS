@@ -40,7 +40,6 @@ const PageChatbotBuilder   = lazy(() => import("../pages/PageChatbotBuilder"));
 const PageDisparos         = lazy(() => import("../pages/PageDisparos"));
 const PageRelatoriosAtend  = lazy(() => import("../pages/PageRelatoriosAtend"));
 const PageMeta             = lazy(() => import("../pages/PageMeta"));
-const PageVendedores       = lazy(() => import("../pages/PageVendedores"));
 
 const NAV_ITEMS = [
   {id:"dashboard",  label:"Dashboard",      ico:"▦", g:"principal"},
@@ -72,7 +71,6 @@ const NAV_ITEMS = [
 ];
 
 const ADMIN_ITEMS = [
-  {id:"vendedores", label:"Vendedores",  ico:"◉", g:"c4hub"},
   {id:"clientes",   label:"Clientes",    ico:"⊞", g:"c4hub"},
   {id:"logs",       label:"Logs",        ico:"≡", g:"c4hub"},
   {id:"suporte",    label:"Suporte",     ico:"⊙", g:"c4hub"},
@@ -82,7 +80,7 @@ const ADMIN_ITEMS = [
 
 import { hasFullAccess, hasPageAccess } from "../lib/auth";
 
-const ADMIN_ONLY = new Set(["clientes","logs","suporte","users","planos","reports","meta","relatoriosatend","vendedores"]);
+const ADMIN_ONLY = new Set(["clientes","logs","suporte","users","planos","reports","meta","relatoriosatend"]);
 
 export default function Shell({user,onLogout,onProfileUpdate,theme,toggleTheme}) {
   const [sec,setSec] = useState("dashboard");
@@ -311,7 +309,6 @@ export default function Shell({user,onLogout,onProfileUpdate,theme,toggleTheme})
           {safe==="disparos"       && <PageDisparos        user={user}/>}
           {safe==="broadcast"      && <PageBroadcast       user={user}/>}
           {safe==="followup"  && <PageFollowUp  user={user} onGoToChat={(leadId)=>navigate("whatsapp")}/>}
-          {safe==="vendedores"      && isC4HubAdmin && <PageVendedores user={user}/>}
           {safe==="meta"            && <PageMeta           user={user}/>}
           {safe==="reports"         && <PageReports        user={user}/>}
           {safe==="relatoriosatend" && <PageRelatoriosAtend user={user}/>}
