@@ -47,6 +47,109 @@ const TipBox = ({ children }) => (
   </div>
 );
 
+const CHANGELOG = [
+  {
+    version: "v2.4.0",
+    date: "Mai 2025",
+    type: "Novidade",
+    typeColor: "#1d4ed8",
+    typeBg: "#eff6ff",
+    items: [
+      "Landing Page pública com carrossel de telas do sistema",
+      "Blog e Documentação acessíveis sem login",
+      "Roteamento por URL: /C4OS, /C4BLOG, /C4DOCS",
+      "Code splitting com React.lazy — bundle 71% menor no carregamento inicial",
+    ],
+  },
+  {
+    version: "v2.3.0",
+    date: "Abr 2025",
+    type: "Novidade",
+    typeColor: "#1d4ed8",
+    typeBg: "#eff6ff",
+    items: [
+      "Logs de WhatsApp e sistema na tela de Suporte (por empresa)",
+      "Auditoria completa de eventos: webhook, bot, conexão e erros de API",
+      "Novo helper logWA() em todos os Edge Functions",
+    ],
+  },
+  {
+    version: "v2.2.1",
+    date: "Abr 2025",
+    type: "Correção",
+    typeColor: "#b45309",
+    typeBg: "#fff7ed",
+    items: [
+      "Corrigido bug onde mini-card 'Últimas Atividades' ficava vazio na overview",
+      "SID de sessão parou de recomputar a cada re-render",
+      "Políticas RLS de INSERT com WITH CHECK adicionadas em conversas, mensagens e leads",
+    ],
+  },
+  {
+    version: "v2.2.0",
+    date: "Mar 2025",
+    type: "Melhoria",
+    typeColor: "#15803d",
+    typeBg: "#dcfce7",
+    items: [
+      "9 novos índices de performance no banco de dados (carregamento 40% mais rápido)",
+      "Índices parciais para a fila de mensagens agendadas (WHERE status='pendente')",
+      "RLS de logs_whatsapp restrito por empresa_id",
+    ],
+  },
+  {
+    version: "v2.1.0",
+    date: "Fev 2025",
+    type: "Novidade",
+    typeColor: "#1d4ed8",
+    typeBg: "#eff6ff",
+    items: [
+      "Módulo de Disparos em massa com personalização por variáveis",
+      "Agendamento de mensagens com fuso horário configurável",
+      "Relatório de entrega em tempo real (enviado / entregue / lido / respondido)",
+    ],
+  },
+  {
+    version: "v2.0.0",
+    date: "Jan 2025",
+    type: "Novidade",
+    typeColor: "#1d4ed8",
+    typeBg: "#eff6ff",
+    items: [
+      "Chatbot Builder visual com arrastar e soltar (fluxos ilimitados)",
+      "Nós de condição, pergunta, transferência e tag",
+      "Ativação de fluxos por palavra-chave ou horário",
+      "Pipeline Kanban com etapas personalizáveis e valor por deal",
+    ],
+  },
+  {
+    version: "v1.5.0",
+    date: "Dez 2024",
+    type: "Melhoria",
+    typeColor: "#15803d",
+    typeBg: "#dcfce7",
+    items: [
+      "Follow-up automático com sequências configuráveis por canal",
+      "Lead scoring baseado em comportamento de resposta",
+      "Importação de leads via CSV com relatório de validação",
+    ],
+  },
+  {
+    version: "v1.0.0",
+    date: "Out 2024",
+    type: "Lançamento",
+    typeColor: "#7e22ce",
+    typeBg: "#faf5ff",
+    items: [
+      "Lançamento oficial do C4 OS",
+      "Integração com WhatsApp Business (QR Code e API oficial)",
+      "CRM básico com gestão de contatos e conversas",
+      "Dashboard com métricas de atendimento em tempo real",
+      "Módulo de equipe com perfis e setores",
+    ],
+  },
+];
+
 const CONTENT = {
   intro: (
     <div>
@@ -296,109 +399,6 @@ const CONTENT = {
     </div>
   ),
 };
-
-const CHANGELOG = [
-  {
-    version: "v2.4.0",
-    date: "Mai 2025",
-    type: "Novidade",
-    typeColor: "#1d4ed8",
-    typeBg: "#eff6ff",
-    items: [
-      "Landing Page pública com carrossel de telas do sistema",
-      "Blog e Documentação acessíveis sem login",
-      "Roteamento por URL: /C4OS, /C4BLOG, /C4DOCS",
-      "Code splitting com React.lazy — bundle 71% menor no carregamento inicial",
-    ],
-  },
-  {
-    version: "v2.3.0",
-    date: "Abr 2025",
-    type: "Novidade",
-    typeColor: "#1d4ed8",
-    typeBg: "#eff6ff",
-    items: [
-      "Logs de WhatsApp e sistema na tela de Suporte (por empresa)",
-      "Auditoria completa de eventos: webhook, bot, conexão e erros de API",
-      "Novo helper logWA() em todos os Edge Functions",
-    ],
-  },
-  {
-    version: "v2.2.1",
-    date: "Abr 2025",
-    type: "Correção",
-    typeColor: "#b45309",
-    typeBg: "#fff7ed",
-    items: [
-      "Corrigido bug onde mini-card 'Últimas Atividades' ficava vazio na overview",
-      "SID de sessão parou de recomputar a cada re-render",
-      "Políticas RLS de INSERT com WITH CHECK adicionadas em conversas, mensagens e leads",
-    ],
-  },
-  {
-    version: "v2.2.0",
-    date: "Mar 2025",
-    type: "Melhoria",
-    typeColor: "#15803d",
-    typeBg: "#dcfce7",
-    items: [
-      "9 novos índices de performance no banco de dados (carregamento 40% mais rápido)",
-      "Índices parciais para a fila de mensagens agendadas (WHERE status='pendente')",
-      "RLS de logs_whatsapp restrito por empresa_id",
-    ],
-  },
-  {
-    version: "v2.1.0",
-    date: "Fev 2025",
-    type: "Novidade",
-    typeColor: "#1d4ed8",
-    typeBg: "#eff6ff",
-    items: [
-      "Módulo de Disparos em massa com personalização por variáveis",
-      "Agendamento de mensagens com fuso horário configurável",
-      "Relatório de entrega em tempo real (enviado / entregue / lido / respondido)",
-    ],
-  },
-  {
-    version: "v2.0.0",
-    date: "Jan 2025",
-    type: "Novidade",
-    typeColor: "#1d4ed8",
-    typeBg: "#eff6ff",
-    items: [
-      "Chatbot Builder visual com arrastar e soltar (fluxos ilimitados)",
-      "Nós de condição, pergunta, transferência e tag",
-      "Ativação de fluxos por palavra-chave ou horário",
-      "Pipeline Kanban com etapas personalizáveis e valor por deal",
-    ],
-  },
-  {
-    version: "v1.5.0",
-    date: "Dez 2024",
-    type: "Melhoria",
-    typeColor: "#15803d",
-    typeBg: "#dcfce7",
-    items: [
-      "Follow-up automático com sequências configuráveis por canal",
-      "Lead scoring baseado em comportamento de resposta",
-      "Importação de leads via CSV com relatório de validação",
-    ],
-  },
-  {
-    version: "v1.0.0",
-    date: "Out 2024",
-    type: "Lançamento",
-    typeColor: "#7e22ce",
-    typeBg: "#faf5ff",
-    items: [
-      "Lançamento oficial do C4 OS",
-      "Integração com WhatsApp Business (QR Code e API oficial)",
-      "CRM básico com gestão de contatos e conversas",
-      "Dashboard com métricas de atendimento em tempo real",
-      "Módulo de equipe com perfis e setores",
-    ],
-  },
-];
 
 const SharedHeader = ({ onNavigate }) => {
   const [hovered, setHovered] = useState(null);
