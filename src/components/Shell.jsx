@@ -76,6 +76,7 @@ const ADMIN_ITEMS = [
   {id:"suporte",    label:"Suporte",     ico:"⊙", g:"c4hub"},
   {id:"users",      label:"Usuários",    ico:"◉", g:"c4hub"},
   {id:"planos",     label:"Planos",      ico:"★", g:"c4hub"},
+  {id:"checkout",   label:"Pg. Checkout",ico:"✓", g:"c4hub"},
 ];
 
 import { hasFullAccess, hasPageAccess } from "../lib/auth";
@@ -98,6 +99,7 @@ export default function Shell({user,onLogout,onProfileUpdate,theme,toggleTheme})
   }, [isTablet]);
 
   const navigate = useCallback((id) => {
+    if (id === "checkout") { window.open("/obrigado", "_blank"); return; }
     setSec(id);
     if (isMobile) setMobOpen(false);
   }, [isMobile]);

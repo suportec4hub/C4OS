@@ -5,12 +5,13 @@ import { globalCSS, L } from "./constants/theme";
 import { ThemeProvider, useTheme } from "./context/ThemeContext";
 import { supabase } from "./lib/supabase";
 
-const PageLanding = lazy(() => import("./pages/PageLanding"));
-const PageBlog    = lazy(() => import("./pages/PageBlog"));
-const PageDocs    = lazy(() => import("./pages/PageDocs"));
+const PageLanding  = lazy(() => import("./pages/PageLanding"));
+const PageBlog     = lazy(() => import("./pages/PageBlog"));
+const PageDocs     = lazy(() => import("./pages/PageDocs"));
+const PageObrigado = lazy(() => import("./pages/PageObrigado"));
 
-const PATH_MAP = { "/c4os": "login", "/c4blog": "blog", "/c4docs": "docs" };
-const PAGE_PATH = { landing: "/", login: "/C4OS", blog: "/C4BLOG", docs: "/C4DOCS" };
+const PATH_MAP  = { "/c4os": "login", "/c4blog": "blog", "/c4docs": "docs", "/obrigado": "obrigado" };
+const PAGE_PATH = { landing: "/", login: "/C4OS", blog: "/C4BLOG", docs: "/C4DOCS", obrigado: "/obrigado" };
 
 const pathToPage = (path) =>
   PATH_MAP[path.toLowerCase().replace(/\/$/, "")] ?? "landing";
@@ -134,9 +135,10 @@ function AppInner() {
 
   return (
     <Suspense fallback={publicFallback}>
-      {publicPage === "landing" && <PageLanding onNavigate={goPublic} />}
-      {publicPage === "blog"    && <PageBlog    onNavigate={goPublic} />}
-      {publicPage === "docs"    && <PageDocs    onNavigate={goPublic} />}
+      {publicPage === "landing"  && <PageLanding  onNavigate={goPublic} />}
+      {publicPage === "blog"     && <PageBlog     onNavigate={goPublic} />}
+      {publicPage === "docs"     && <PageDocs     onNavigate={goPublic} />}
+      {publicPage === "obrigado" && <PageObrigado onNavigate={goPublic} />}
     </Suspense>
   );
 }
