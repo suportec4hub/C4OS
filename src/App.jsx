@@ -1,6 +1,7 @@
 import { useState, useEffect, lazy, Suspense } from "react";
 import Login from "./components/Login";
 import Shell from "./components/Shell";
+import ChangePasswordScreen from "./components/ChangePasswordScreen";
 import { globalCSS, L } from "./constants/theme";
 import { ThemeProvider, useTheme } from "./context/ThemeContext";
 import { supabase } from "./lib/supabase";
@@ -76,18 +77,18 @@ function AppInner() {
 
       if (data) {
         setProfile({
-          id:         data.id,
-          nome:       data.nome,
-          cargo:      data.cargo ?? "",
-          email:      user?.email ?? "",
-          role:       data.role,
-          empresa:    data.empresas?.nome ?? "—",
-          empresa_id: data.empresa_id,
-          is_c4hub:   data.empresas?.is_c4hub ?? false,
-          // Mantido como hex para compatibilidade com Av/Chip que usam ${color}xx
-          cor:        data.role === "c4hub_admin" ? "#111827" : "#6b7280",
-          avatar:     data.nome.split(" ").map(n => n[0]).slice(0,2).join(""),
-          foto_url:   data.foto_url ?? null,
+          id:                   data.id,
+          nome:                 data.nome,
+          cargo:                data.cargo ?? "",
+          email:                user?.email ?? "",
+          role:                 data.role,
+          empresa:              data.empresas?.nome ?? "—",
+          empresa_id:           data.empresa_id,
+          is_c4hub:             data.empresas?.is_c4hub ?? false,
+          cor:                  data.role === "c4hub_admin" ? "#111827" : "#6b7280",
+          avatar:               data.nome.split(" ").map(n => n[0]).slice(0,2).join(""),
+          foto_url:             data.foto_url ?? null,
+          must_change_password: data.must_change_password ?? false,
         });
       }
     } catch (e) {
@@ -129,6 +130,14 @@ function AppInner() {
   }
 
   if (user && profile) {
+    if (profile.must_change_password) {
+      return (
+        <ChangePasswordScreen
+          user={profile}
+          onDone={() => setProfile(p => ({ ...p, must_change_password: false }))}
+        />
+      );
+    }
     return (
       <Shell
         user={profile}

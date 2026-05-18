@@ -1,11 +1,26 @@
 import { useState } from "react";
 import { L } from "../constants/theme";
 import { useTable, usePlanos, criarUsuario } from "../hooks/useData";
+import { supabase } from "../lib/supabase";
 import { Fade, Row, Grid, PBtn, DataTable, Tag, ScBar, IBtn, TD } from "../components/ui";
 import Modal, { Field, Input, Select, ModalFooter } from "../components/Modal";
 
 const VAZIO = { nome:"", cnpj:"", segmento:"", telefone:"", website:"", plano_id:"", status:"trial", mrr:"",
-                admin_nome:"", admin_email:"", admin_senha:"" };
+                admin_nome:"", admin_email:"", admin_senha:"", must_change_password: false };
+
+const Checkbox = ({ checked, onChange, label }) => (
+  <label style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer", marginTop:10, userSelect:"none" }}>
+    <div onClick={() => onChange(!checked)} style={{
+      width:16, height:16, borderRadius:4, flexShrink:0, cursor:"pointer", transition:"all .12s",
+      border:`2px solid ${checked ? L.accent : L.line}`,
+      background: checked ? L.accent : "transparent",
+      display:"flex", alignItems:"center", justifyContent:"center",
+    }}>
+      {checked && <span style={{ color:"white", fontSize:10, lineHeight:1, fontWeight:700 }}>✓</span>}
+    </div>
+    <span style={{ fontSize:12, color:L.t2, lineHeight:1.4 }}>{label}</span>
+  </label>
+);
 
 export default function PageClientes({ user }) {
   const { data: empresas, loading, insert, update, remove, refetch } = useTable("empresas");
@@ -61,6 +76,10 @@ export default function PageClientes({ user }) {
         setSaving(false);
         refetch();
         return;
+      }
+      if (form.must_change_password) {
+        await supabase.from("usuarios").update({ must_change_password: true })
+          .eq("email", form.admin_email.trim().toLowerCase());
       }
       setSucc(`Empresa e acesso criados! Login: ${form.admin_email.trim().toLowerCase()}`);
     } else {
@@ -185,6 +204,11 @@ export default function PageClientes({ user }) {
                     <Field label="E-mail de acesso *"><Input value={form.admin_email} onChange={F("admin_email")} type="email" placeholder="admin@empresa.com"/></Field>
                     <Field label="Senha *">           <Input value={form.admin_senha} onChange={F("admin_senha")} type="password" placeholder="Mínimo 6 caracteres"/></Field>
                   </div>
+                  <Checkbox
+                    checked={form.must_change_password}
+                    onChange={v => setForm(p => ({ ...p, must_change_password: v }))}
+                    label="Solicitar alteração de senha no primeiro login"
+                  />
                 </div>
               )}
 

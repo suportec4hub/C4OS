@@ -12,8 +12,22 @@ const ROLES = [
   {v:"c4hub_vendedor", l:"Vendedor C4HUB"},
   {v:"c4hub_admin",    l:"Admin C4HUB"},
 ];
-const VAZIO      = { nome:"", email:"", senha:"", cargo:"", role:"client_user" };
-const VAZIO_EDIT = { nome:"", cargo:"", role:"client_user", novaSenha:"" };
+const VAZIO      = { nome:"", email:"", senha:"", cargo:"", role:"client_user", must_change_password: false };
+const VAZIO_EDIT = { nome:"", cargo:"", role:"client_user", novaSenha:"", must_change_password: false };
+
+const Checkbox = ({ checked, onChange, label }) => (
+  <label style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer", marginTop:10, userSelect:"none" }}>
+    <div onClick={() => onChange(!checked)} style={{
+      width:16, height:16, borderRadius:4, flexShrink:0, cursor:"pointer", transition:"all .12s",
+      border:`2px solid ${checked ? L.accent : L.line}`,
+      background: checked ? L.accent : "transparent",
+      display:"flex", alignItems:"center", justifyContent:"center",
+    }}>
+      {checked && <span style={{ color:"white", fontSize:10, lineHeight:1, fontWeight:700 }}>✓</span>}
+    </div>
+    <span style={{ fontSize:12, color:L.t2, lineHeight:1.4 }}>{label}</span>
+  </label>
+);
 
 export default function PageUsers({ user }) {
   const isAdmin = hasFullAccess(user);
@@ -55,15 +69,19 @@ export default function PageUsers({ user }) {
       role:       form.role,
       empresa_id: user?.empresa_id,
     });
-    if (res.error) setErr(res.error);
-    else { setSucc(`Usuário ${form.nome} criado com sucesso!`); setForm(VAZIO); refetch(); }
+    if (res.error) { setErr(res.error); setSaving(false); return; }
+    if (form.must_change_password) {
+      await supabase.from("usuarios").update({ must_change_password: true })
+        .eq("email", form.email.trim().toLowerCase());
+    }
+    setSucc(`Usuário ${form.nome} criado com sucesso!`); setForm(VAZIO); refetch();
     setSaving(false);
   };
 
   /* ── handlers editar ── */
   const openEdit = (u) => {
     setEditTarget(u);
-    setEditForm({ nome: u.nome||"", cargo: u.cargo||"", role: u.role||"client_user", novaSenha:"" });
+    setEditForm({ nome: u.nome||"", cargo: u.cargo||"", role: u.role||"client_user", novaSenha:"", must_change_password: false });
     setEditErr("");
   };
 
@@ -72,9 +90,9 @@ export default function PageUsers({ user }) {
     setEditSaving(true); setEditErr("");
 
     const changes = { nome: editForm.nome.trim(), cargo: editForm.cargo, role: editForm.role };
+    if (editForm.must_change_password) changes.must_change_password = true;
     await update(editTarget.id, changes);
 
-    // reset de senha se preenchida
     if (editForm.novaSenha && editForm.novaSenha.length >= 6) {
       await supabase.functions.invoke("resetar-senha", { body: { id: editTarget.id, novaSenha: editForm.novaSenha } });
     }
@@ -185,7 +203,12 @@ export default function PageUsers({ user }) {
                   </Select>
                 </Field>
               </div>
-              {err && <div style={{padding:"8px 12px",background:L.redBg,borderRadius:8,fontSize:12,color:L.red,marginBottom:4}}>{err}</div>}
+              <Checkbox
+                checked={form.must_change_password}
+                onChange={v => setForm(p => ({ ...p, must_change_password: v }))}
+                label="Solicitar alteração de senha no primeiro login"
+              />
+              {err && <div style={{padding:"8px 12px",background:L.redBg,borderRadius:8,fontSize:12,color:L.red,marginTop:8}}>{err}</div>}
               <ModalFooter onClose={()=>setModal(false)} onSave={save} loading={saving} label="Criar Usuário"/>
             </>
           )}
@@ -211,7 +234,12 @@ export default function PageUsers({ user }) {
           <Field label="Nova senha (deixe vazio para não alterar)">
             <Input value={editForm.novaSenha} onChange={EF("novaSenha")} type="password" placeholder="Mínimo 6 caracteres"/>
           </Field>
-          {editErr && <div style={{padding:"8px 12px",background:L.redBg,borderRadius:8,fontSize:12,color:L.red,marginBottom:4}}>{editErr}</div>}
+          <Checkbox
+            checked={editForm.must_change_password}
+            onChange={v => setEditForm(p => ({ ...p, must_change_password: v }))}
+            label="Solicitar alteração de senha no próximo login"
+          />
+          {editErr && <div style={{padding:"8px 12px",background:L.redBg,borderRadius:8,fontSize:12,color:L.red,marginTop:8}}>{editErr}</div>}
           <ModalFooter onClose={()=>setEditTarget(null)} onSave={saveEdit} loading={editSaving} label="Salvar Alterações"/>
         </Modal>
       )}
