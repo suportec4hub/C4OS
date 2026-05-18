@@ -297,7 +297,7 @@ function TriggerSelectorModal({ no, onSave, onClose }) {
           <button
             onClick={handleSave}
             style={{
-              padding: "9px 22px", borderRadius: 9, background: L.t1, color: "white",
+              padding: "9px 22px", borderRadius: 9, background: L.accent, color: "white",
               border: "none", fontSize: 13, fontWeight: 600, cursor: "pointer",
               fontFamily: "inherit", transition: "opacity .12s",
             }}
@@ -690,7 +690,7 @@ function NodeEditPanel({ no, onSave, onClose }) {
 
       <div style={{ padding: "12px 16px", borderTop: `1px solid ${L.line}` }}>
         <button onClick={() => onSave(form)}
-          style={{ width: "100%", background: L.t1, color: "white", border: "none", borderRadius: 8,
+          style={{ width: "100%", background: L.accent, color: "white", border: "none", borderRadius: 8,
             padding: "10px", fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
             transition: "opacity .12s" }}
           onMouseEnter={e => e.currentTarget.style.opacity = ".85"}
@@ -715,7 +715,7 @@ function FluxoList({ fluxos, fluxoAtivoId, onOpen, onUsar, onToggleAtivo, onDele
             Crie fluxos de atendimento automático com arrastar e soltar
           </div>
         </div>
-        <button onClick={onNovo} style={btn(L.t1, "white", { fontWeight: 600 })}>+ Novo fluxo</button>
+        <button onClick={onNovo} style={btn(L.accent, "white", { fontWeight: 600 })}>+ Novo fluxo</button>
       </Row>
 
       {fluxos.length === 0 ? (
@@ -726,7 +726,7 @@ function FluxoList({ fluxos, fluxoAtivoId, onOpen, onUsar, onToggleAtivo, onDele
           <div style={{ fontSize: 12, marginBottom: 22, color: L.t3 }}>
             Crie fluxos visuais: menus, mensagens automáticas, transferências e muito mais.
           </div>
-          <button onClick={onNovo} style={btn(L.t1, "white", { fontWeight: 600 })}>+ Criar primeiro fluxo</button>
+          <button onClick={onNovo} style={btn(L.accent, "white", { fontWeight: 600 })}>+ Criar primeiro fluxo</button>
         </div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))", gap: 12 }}>
@@ -741,7 +741,7 @@ function FluxoList({ fluxos, fluxoAtivoId, onOpen, onUsar, onToggleAtivo, onDele
                   <span style={{ fontSize: 13.5, fontWeight: 600, color: L.t1 }}>{f.nome}</span>
                   <Row gap={5}>
                     {emUso && (
-                      <span style={{ fontSize: 10, background: L.t1, color: "white",
+                      <span style={{ fontSize: 10, background: L.accent, color: "white",
                         padding: "2px 8px", borderRadius: 10, fontWeight: 700 }}>🤖 Em uso</span>
                     )}
                     <span style={{ fontSize: 10,
@@ -762,7 +762,7 @@ function FluxoList({ fluxos, fluxoAtivoId, onOpen, onUsar, onToggleAtivo, onDele
                 </div>
                 <Row gap={6}>
                   <button onClick={() => onOpen(f)}
-                    style={btn(L.t1, "white", { flex: 1, fontSize: 11.5, fontWeight: 600 })}>
+                    style={btn(L.accent, "white", { flex: 1, fontSize: 11.5, fontWeight: 600 })}>
                     ✎ Editar
                   </button>
                   <button onClick={() => onUsar(f)} title={emUso ? "Remover do chatbot" : "Usar no chatbot"}
@@ -1016,7 +1016,7 @@ export default function PageChatbotBuilder({ user }) {
         <div style={{ fontSize: 13, fontWeight: 700, color: L.t1, display: "flex", alignItems: "center", gap: 8, flex: 1 }}>
           {activeFluxo.nome}
           {emUso && (
-            <span style={{ fontSize: 10, background: L.t1, color: "white",
+            <span style={{ fontSize: 10, background: L.accent, color: "white",
               padding: "2px 8px", borderRadius: 10, fontWeight: 700 }}>🤖 Em uso no chatbot</span>
           )}
           {connecting && (
@@ -1235,7 +1235,7 @@ function NovaFluxoModal({ form, setForm, onSave, onClose }) {
         ))}
         <Row gap={8} style={{ justifyContent: "flex-end", marginTop: 6 }}>
           <button onClick={onClose} style={btn()}>Cancelar</button>
-          <button onClick={onSave} style={btn(L.t1, "white", { fontWeight: 600 })}>Criar fluxo</button>
+          <button onClick={onSave} style={btn(L.accent, "white", { fontWeight: 600 })}>Criar fluxo</button>
         </Row>
       </div>
     </div>

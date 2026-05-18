@@ -289,7 +289,7 @@ function TransferModal({ conversa, atendentes, setores, onTransfer, onClose }) {
         <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
           {["atendente","setor"].map(t => (
             <button key={t} onClick={() => { setDestTipo(t); setDestId(""); }}
-              style={{ ...btnStyle(destTipo === t ? L.t1 : L.surface, destTipo === t ? "white" : L.t2), flex: 1, textTransform: "capitalize" }}>
+              style={{ ...btnStyle(destTipo === t ? L.accent : L.surface, destTipo === t ? "white" : L.t2), flex: 1, textTransform: "capitalize" }}>
               {t === "atendente" ? "👤 Atendente" : "🏢 Setor"}
             </button>
           ))}
@@ -314,7 +314,7 @@ function TransferModal({ conversa, atendentes, setores, onTransfer, onClose }) {
         <Row gap={8} style={{ justifyContent: "flex-end" }}>
           <button onClick={onClose} style={btnStyle()}>Cancelar</button>
           <button onClick={handleTransfer} disabled={!destId}
-            style={{ ...btnStyle(destId ? L.t1 : L.t5, "white"), opacity: destId ? 1 : .5 }}>
+            style={destId ? { ...btnStyle(L.accent, "white") } : { ...btnStyle(L.surface, L.t3), cursor: "not-allowed", border: `1px solid ${L.line}` }}>
             Transferir →
           </button>
         </Row>
@@ -1187,7 +1187,7 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
               {importing ? "Sincronizando…" : "👥 Grupos"}
             </button>
             <button onClick={() => importHistory(1)} disabled={importing}
-              style={{ ...btnStyle(importing ? L.surface : L.t1, importing ? L.t4 : "white"),
+              style={{ ...btnStyle(importing ? L.surface : L.accent, importing ? L.t4 : "white"),
                 fontSize: 10, padding: "3px 9px", opacity: importing ? 0.6 : 1 }}>
               {importing ? "Importando…" : "⬇ Histórico"}
             </button>
@@ -1226,7 +1226,7 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
                     {syncing ? "⟳" : "🔄"}
                   </button>
                   <button onClick={() => loadConversas()} title="Atualizar" style={btnStyle()}>⟳</button>
-                  <button onClick={() => setNovaModal(true)} style={btnStyle(L.t1, "white")}>+ Nova</button>
+                  <button onClick={() => setNovaModal(true)} style={btnStyle(L.accent, "white")}>+ Nova</button>
                 </Row>
               </Row>
 
@@ -1296,7 +1296,7 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
                         <button key={t.id} onClick={() => setStatusTab(t.id)}
                           style={{ flexShrink: 0, padding: "4px 8px", borderRadius: 6, fontSize: 10, cursor: "pointer",
                             fontFamily: "inherit", border: "none", fontWeight: statusTab === t.id ? 700 : 400,
-                            background: statusTab === t.id ? L.t1 : "transparent",
+                            background: statusTab === t.id ? L.accent : "transparent",
                             color: statusTab === t.id ? "white" : L.t3, transition: "all .1s", position: "relative" }}>
                           {t.label}
                           {count > 0 && (
@@ -1765,16 +1765,16 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
             {/* Abas do painel */}
             <div style={{ display: "flex", borderBottom: `1px solid ${L.line}` }}>
               {[
-                { id: "info",      label: "Info"      },
-                { id: "etiquetas", label: "Tags"      },
-                { id: "agendadas", label: "Agendadas" },
-                { id: "log",       label: "Log"       },
+                { id: "info",      label: "Info"    },
+                { id: "etiquetas", label: "Tags"    },
+                { id: "agendadas", label: "Agenda"  },
+                { id: "log",       label: "Log"     },
               ].map(t => (
                 <button key={t.id} onClick={() => setRightTab(t.id)}
-                  style={{ flex: 1, padding: "9px 4px", fontSize: 10, fontWeight: rightTab === t.id ? 700 : 400,
+                  style={{ flex: 1, padding: "8px 2px", fontSize: 11, fontWeight: rightTab === t.id ? 700 : 400,
                     background: "none", border: "none", cursor: "pointer", fontFamily: "inherit",
-                    color: rightTab === t.id ? L.t1 : L.t3,
-                    borderBottom: rightTab === t.id ? `2px solid ${L.t1}` : "2px solid transparent",
+                    color: rightTab === t.id ? L.accent : L.t3,
+                    borderBottom: rightTab === t.id ? `2px solid ${L.accent}` : "2px solid transparent",
                     transition: "all .12s" }}>
                   {t.label}
                 </button>
@@ -2036,8 +2036,8 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
               <button
                 onClick={criarConversa}
                 disabled={savingNova || !novaForm.nome.trim()}
-                style={{ ...btnStyle(savingNova || !novaForm.nome.trim() ? L.t5 : L.teal, "white"),
-                  opacity: savingNova || !novaForm.nome.trim() ? 0.6 : 1,
+                style={{ ...btnStyle(savingNova || !novaForm.nome.trim() ? L.surface : L.teal, savingNova || !novaForm.nome.trim() ? L.t3 : "white"),
+                  opacity: savingNova || !novaForm.nome.trim() ? 0.7 : 1,
                   display: "flex", alignItems: "center", gap: 6 }}>
                 {savingNova ? (
                   <>
@@ -2076,7 +2076,7 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
       {toast && (
         <div style={{
           position: "fixed", bottom: 24, right: 24, zIndex: 9999,
-          background: L.t1, color: "white", padding: "12px 18px",
+          background: L.accent, color: "white", padding: "12px 18px",
           borderRadius: 12, boxShadow: "0 6px 24px rgba(0,0,0,.28)",
           fontSize: 12.5, maxWidth: 320, animation: "up .2s ease",
           display: "flex", alignItems: "flex-start", gap: 10,

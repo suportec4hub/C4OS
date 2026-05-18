@@ -469,15 +469,15 @@ export default function PageMeta({ user }) {
                             {/* checkbox visual */}
                             <div style={{
                               width:18,height:18,borderRadius:4,flexShrink:0,
-                              background: marcado?L.t1:L.white,
-                              border:`2px solid ${marcado?L.t1:L.line}`,
+                              background: marcado?L.accent:L.white,
+                              border:`2px solid ${marcado?L.accent:L.line}`,
                               display:"flex",alignItems:"center",justifyContent:"center",
                               transition:"all .12s",
                             }}>
                               {marcado && <span style={{color:"#fff",fontSize:11,lineHeight:1}}>✓</span>}
                             </div>
                             {/* avatar */}
-                            <div style={{width:32,height:32,borderRadius:"50%",background:marcado?L.t1:L.surface,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:marcado?"#fff":L.t2,flexShrink:0,transition:"all .12s"}}>
+                            <div style={{width:32,height:32,borderRadius:"50%",background:marcado?L.accent:L.surface,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:marcado?"#fff":L.t2,flexShrink:0,transition:"all .12s"}}>
                               {u.nome.split(" ").slice(0,2).map(n=>n[0]).join("").toUpperCase()}
                             </div>
                             <div style={{flex:1,minWidth:0}}>
