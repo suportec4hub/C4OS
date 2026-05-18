@@ -31,8 +31,9 @@ const PAGE_ACCESS_MAP = {
 
 export function getCargoGroup(user) {
   if (!user) return "vendas";
-  if (user.role === "c4hub_admin") return "full";
-  if (user.role === "client_admin") return "full";
+  if (user.role === "c4hub_admin")    return "full";
+  if (user.role === "c4hub_vendedor") return "full"; // acesso completo ao CRM, sem admin
+  if (user.role === "client_admin")   return "full";
   // perfil_acesso explícito tem prioridade sobre cargo
   if (user.perfil_acesso && (user.perfil_acesso === "full" || PAGE_ACCESS_MAP[user.perfil_acesso] !== undefined)) {
     return user.perfil_acesso;

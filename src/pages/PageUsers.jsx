@@ -7,9 +7,10 @@ import { Fade, Row, Grid, PBtn, DataTable, Av, Tag, IBtn, TD } from "../componen
 import Modal, { Field, Input, Select, ModalFooter } from "../components/Modal";
 
 const ROLES = [
-  {v:"client_user",  l:"Vendedor / Usuário"},
-  {v:"client_admin", l:"Admin Cliente"},
-  {v:"c4hub_admin",  l:"Admin C4HUB"},
+  {v:"client_user",    l:"Vendedor / Usuário"},
+  {v:"client_admin",   l:"Admin Cliente"},
+  {v:"c4hub_vendedor", l:"Vendedor C4HUB"},
+  {v:"c4hub_admin",    l:"Admin C4HUB"},
 ];
 const VAZIO      = { nome:"", email:"", senha:"", cargo:"", role:"client_user" };
 const VAZIO_EDIT = { nome:"", cargo:"", role:"client_user", novaSenha:"" };
@@ -37,7 +38,7 @@ export default function PageUsers({ user }) {
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [deleting,      setDeleting]      = useState(false);
 
-  const rc  = { c4hub_admin:{c:L.teal,bg:L.tealBg}, client_admin:{c:L.copper,bg:L.copperBg}, client_user:{c:L.blue,bg:L.blueBg} };
+  const rc  = { c4hub_admin:{c:L.teal,bg:L.tealBg}, c4hub_vendedor:{c:L.green,bg:L.greenBg}, client_admin:{c:L.copper,bg:L.copperBg}, client_user:{c:L.blue,bg:L.blueBg} };
 
   /* ── handlers novo ── */
   const openNew = () => { setForm(VAZIO); setErr(""); setSucc(""); setModal(true); };

@@ -91,8 +91,9 @@ export default function Shell({user,onLogout,onProfileUpdate,theme,toggleTheme})
   const [perfilOpen,setPerfilOpen] = useState(false);
   const [chatTarget,setChatTarget] = useState(null); // telefone para auto-abrir no WhatsApp
   const { isMobile, isTablet } = useBreakpoint();
-  const isAdmin     = hasFullAccess(user);
-  const isC4HubAdmin = user?.role === "c4hub_admin"; // somente equipe C4HUB vê o menu C4HUB
+  const isAdmin       = hasFullAccess(user);
+  const isC4HubAdmin  = user?.role === "c4hub_admin";
+  const isC4HubVendedor = user?.role === "c4hub_vendedor";
 
   // Auto-collapse sidebar on tablet
   useEffect(() => {
@@ -164,10 +165,16 @@ export default function Shell({user,onLogout,onProfileUpdate,theme,toggleTheme})
 
         {/* Tenant badge */}
         {!showCollapsed && (
-          <div style={{margin:"10px 12px 6px",padding:"8px 11px",borderRadius:8,background:isAdmin?L.tealBg:L.copperBg,border:`1px solid ${isAdmin?L.tealA:L.copperA}`}}>
-            <div style={{fontSize:9,letterSpacing:"1.5px",textTransform:"uppercase",color:isAdmin?L.teal:L.copper,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",display:"flex",alignItems:"center",gap:5,marginBottom:2}}>
-              <span style={{width:5,height:5,borderRadius:"50%",background:isAdmin?L.teal:L.copper,display:"inline-block"}}/>
-              {isAdmin ? "C4HUB ADMIN" : user.empresa}
+          <div style={{margin:"10px 12px 6px",padding:"8px 11px",borderRadius:8,
+            background: isC4HubAdmin ? L.tealBg : isC4HubVendedor ? L.greenBg : L.copperBg,
+            border:`1px solid ${isC4HubAdmin ? L.tealA : isC4HubVendedor ? L.greenA : L.copperA}`}}>
+            <div style={{fontSize:9,letterSpacing:"1.5px",textTransform:"uppercase",
+              color: isC4HubAdmin ? L.teal : isC4HubVendedor ? L.green : L.copper,
+              fontWeight:700,fontFamily:"'JetBrains Mono',monospace",display:"flex",alignItems:"center",gap:5,marginBottom:2}}>
+              <span style={{width:5,height:5,borderRadius:"50%",
+                background: isC4HubAdmin ? L.teal : isC4HubVendedor ? L.green : L.copper,
+                display:"inline-block"}}/>
+              {isC4HubAdmin ? "C4HUB ADMIN" : isC4HubVendedor ? "VENDEDOR C4HUB" : user.empresa}
             </div>
             <div style={{fontSize:11,color:L.t2,fontWeight:500}}>{user.nome}</div>
           </div>
