@@ -49,19 +49,6 @@ const TipBox = ({ children }) => (
 
 const CHANGELOG = [
   {
-    version: "v2.4.0",
-    date: "Mai 2025",
-    type: "Novidade",
-    typeColor: "#1d4ed8",
-    typeBg: "#eff6ff",
-    items: [
-      "Landing Page pública com carrossel de telas do sistema",
-      "Blog e Documentação acessíveis sem login",
-      "Roteamento por URL: /C4OS, /C4BLOG, /C4DOCS",
-      "Code splitting com React.lazy — bundle 71% menor no carregamento inicial",
-    ],
-  },
-  {
     version: "v2.3.0",
     date: "Abr 2025",
     type: "Novidade",
@@ -327,7 +314,7 @@ const CONTENT = {
     <div>
       <h2 style={{ fontSize: 28, fontWeight: 800, color: C.greenDark, marginBottom: 6, letterSpacing: "-0.5px" }}>Changelog</h2>
       <p style={{ fontSize: 15, color: "#6b7280", marginBottom: 32, lineHeight: 1.6 }}>
-        Histórico de atualizações, melhorias e correções do C4 OS.
+        Histórico de atualizações, novas funcionalidades e correções da plataforma C4 OS (CRM).
       </p>
       <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
         {CHANGELOG.map((release, i) => (
