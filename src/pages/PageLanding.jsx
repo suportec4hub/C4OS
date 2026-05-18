@@ -313,9 +313,9 @@ const Header = ({ onNavigate }) => {
             {l}
           </button>
         ))}
-        <button onClick={() => onNavigate("login")} onMouseEnter={() => setHov("cta")} onMouseLeave={() => setHov(null)}
+        <button onClick={() => window.open("https://wa.me/5562982054815", "_blank")} onMouseEnter={() => setHov("cta")} onMouseLeave={() => setHov(null)}
           style={{ marginLeft: isMobile ? 0 : 8, background: hov === "cta" ? C.tealDk : C.teal, color: "#fff", border: "none", borderRadius: 10, padding: isMobile ? "8px 14px" : "9px 22px", fontWeight: 700, fontSize: isMobile ? 13 : 14, cursor: "pointer", transition: "background .15s", boxShadow: `0 4px 14px ${C.tealA2}`, letterSpacing: "0.1px", whiteSpace: "nowrap" }}>
-          {isMobile ? "Acessar →" : "Acessar Plataforma →"}
+          {isMobile ? "Especialista →" : "Fale com um Especialista →"}
         </button>
       </nav>
     </header>
@@ -392,7 +392,7 @@ export default function PageLanding({ onNavigate }) {
               CRM inteligente, WhatsApp automatizado e pipeline visual para times comerciais de alta performance.
             </p>
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 28 }}>
-              <Btn id="hero-start" onClick={() => window.open("https://wa.me/5562982054815", "_blank")}>Começar agora →</Btn>
+              <Btn id="hero-start" onClick={() => window.open("https://wa.me/5562982054815", "_blank")}>Fale com um Especialista →</Btn>
               <Btn id="hero-docs" onClick={() => onNavigate("docs")} variant="outline">Ver como funciona</Btn>
             </div>
             <div style={{ display: "flex", gap: 18, flexWrap: "wrap", fontSize: 13, color: C.muted }}>
@@ -507,9 +507,9 @@ export default function PageLanding({ onNavigate }) {
           <p style={{ fontSize: 17, color: "rgba(255,255,255,0.8)", marginBottom: 40, lineHeight: 1.7 }}>
             Junte-se a centenas de empresas que já automatizaram<br />seu atendimento e vendas com o C4 OS.
           </p>
-          <button onClick={() => onNavigate("login")} onMouseEnter={e => { e.currentTarget.style.background = C.dark; }} onMouseLeave={e => { e.currentTarget.style.background = "#fff"; }}
+          <button onClick={() => window.open("https://wa.me/5562982054815", "_blank")} onMouseEnter={e => { e.currentTarget.style.background = C.dark; e.currentTarget.style.color = "#fff"; }} onMouseLeave={e => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.color = C.dark; }}
             style={{ background: "#fff", color: C.dark, border: "none", borderRadius: 12, padding: "16px 40px", fontWeight: 800, fontSize: 17, cursor: "pointer", transition: "background .18s, color .18s", boxShadow: "0 8px 32px rgba(0,0,0,0.2)", fontFamily: "'Outfit',sans-serif" }}>
-            Acessar Plataforma →
+            Fale com um Especialista →
           </button>
           <div style={{ display: "flex", justifyContent: "center", gap: 24, marginTop: 28, fontSize: 13, color: "rgba(255,255,255,0.65)" }}>
             <span>✓ Configuração gratuita</span>
@@ -530,7 +530,7 @@ export default function PageLanding({ onNavigate }) {
             <div style={{ fontSize: 12, color: "rgba(255,255,255,0.3)" }}>© 2025 C4HUB. Todos os direitos reservados.</div>
           </div>
           <div style={{ display: "flex", gap: 6 }}>
-            {[["Blog", "blog"], ["Documentação", "docs"], ["Acessar", "login"]].map(([l, t]) => (
+            {[["Blog", "blog"], ["Documentação", "docs"], ["Login", "login"]].map(([l, t]) => (
               <button key={t} onClick={() => onNavigate(t)}
                 style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, cursor: "pointer", color: "rgba(255,255,255,0.6)", fontSize: 13, fontWeight: 500, padding: "7px 14px", transition: "all .15s" }}
                 onMouseEnter={e => { e.currentTarget.style.background = C.tealA; e.currentTarget.style.color = C.teal; }}
