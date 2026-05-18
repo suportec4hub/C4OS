@@ -82,7 +82,11 @@ const ADMIN_ITEMS = [
 
 import { hasFullAccess, hasPageAccess } from "../lib/auth";
 
-const ADMIN_ONLY = new Set(["clientes","logs","suporte","users","planos","reports","meta","relatoriosatend","checkout"]);
+// Visível somente para c4hub_admin
+const STRICT_ADMIN_ONLY = new Set(["logs","users","planos","checkout"]);
+// Visível para c4hub_admin E c4hub_vendedor
+const C4HUB_TEAM_ONLY   = new Set(["clientes","suporte","reports","meta","relatoriosatend"]);
+const ADMIN_ONLY = new Set([...STRICT_ADMIN_ONLY, ...C4HUB_TEAM_ONLY]);
 
 export default function Shell({user,onLogout,onProfileUpdate,theme,toggleTheme}) {
   const [sec,setSec] = useState("dashboard");
@@ -115,14 +119,16 @@ export default function Shell({user,onLogout,onProfileUpdate,theme,toggleTheme})
       });
   }, [user?.empresa_id]);
 
-  const allNav   = isC4HubAdmin ? [...NAV_ITEMS, ...ADMIN_ITEMS] : NAV_ITEMS;
+  const isC4HubTeam = isC4HubAdmin || isC4HubVendedor;
+  const allNav   = isC4HubTeam ? [...NAV_ITEMS, ...ADMIN_ITEMS] : NAV_ITEMS;
   const navItems = allNav.filter(item => {
-    if (ADMIN_ONLY.has(item.id)) return isC4HubAdmin; // só c4hub_admin vê Clientes/Logs/Suporte/Usuários/Planos
+    if (STRICT_ADMIN_ONLY.has(item.id)) return isC4HubAdmin;
+    if (C4HUB_TEAM_ONLY.has(item.id))  return isC4HubTeam;
     if (item.c4hubOnly && !isAdmin) return false;
     return hasPageAccess(user, item.id);
   });
   const groups   = [...new Set(navItems.map(n => n.g))];
-  const safe     = (!isC4HubAdmin && ADMIN_ONLY.has(sec)) ? "dashboard" : sec;
+  const safe     = (!isC4HubTeam && ADMIN_ONLY.has(sec)) ? "dashboard" : sec;
   const curr     = navItems.find(n => n.id === safe);
 
   const showCollapsed = isMobile ? false : col;
@@ -336,10 +342,10 @@ export default function Shell({user,onLogout,onProfileUpdate,theme,toggleTheme})
           {safe==="departs"    && <PageDeps      user={user}/>}
           {safe==="setores"    && <PageSetores   user={user}/>}
           {safe==="etiquetas"  && <PageEtiquetas user={user}/>}
-          {safe==="clientes"  && isC4HubAdmin && <PageClientes user={user}/>}
-          {safe==="logs"      && isC4HubAdmin && <PageLogs     user={user}/>}
-          {safe==="suporte"   && isC4HubAdmin && <PageSuporte  user={user}/>}
-          {safe==="users"     && isC4HubAdmin && <PageUsers    user={user}/>}
+          {safe==="clientes"  && isC4HubTeam  && <PageClientes      user={user}/>}
+          {safe==="suporte"   && isC4HubTeam  && <PageSuporte       user={user}/>}
+          {safe==="logs"      && isC4HubAdmin && <PageLogs           user={user}/>}
+          {safe==="users"     && isC4HubAdmin && <PageUsers          user={user}/>}
           {safe==="planos"    && isC4HubAdmin && <PagePlanos         user={user}/>}
           {safe==="checkout"  && isC4HubAdmin && <PageCheckoutAdmin  user={user}/>}
           </Suspense>
