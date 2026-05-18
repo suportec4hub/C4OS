@@ -1,15 +1,22 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
 import Login from "./components/Login";
 import Shell from "./components/Shell";
 import { globalCSS, L } from "./constants/theme";
 import { ThemeProvider, useTheme } from "./context/ThemeContext";
 import { supabase } from "./lib/supabase";
 
+const PageLanding = lazy(() => import("./pages/PageLanding"));
+const PageBlog    = lazy(() => import("./pages/PageBlog"));
+const PageDocs    = lazy(() => import("./pages/PageDocs"));
+
 function AppInner() {
   const { theme, toggleTheme } = useTheme();
-  const [user,setUser]       = useState(null);
-  const [profile,setProfile] = useState(null);
-  const [ready,setReady]     = useState(false);
+  const [user,setUser]         = useState(null);
+  const [profile,setProfile]   = useState(null);
+  const [ready,setReady]       = useState(false);
+  const [publicPage,setPublicPage] = useState("landing");
+
+  const goPublic = (p) => setPublicPage(p);
 
   // CSS global
   useEffect(() => {
@@ -82,6 +89,12 @@ function AppInner() {
     setProfile(p => ({ ...p, ...updated }));
   };
 
+  const publicFallback = (
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#f0fdf4"}}>
+      <div style={{width:18,height:18,borderRadius:"50%",border:"2px solid #bbf7d0",borderTopColor:"#16a34a",animation:"spin .7s linear infinite"}}/>
+    </div>
+  );
+
   if (!ready) {
     return (
       <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"var(--c-bg)"}}>
@@ -90,15 +103,26 @@ function AppInner() {
     );
   }
 
-  if (!user || !profile) return <Login />;
+  if (user && profile) {
+    return (
+      <Shell
+        user={profile}
+        onLogout={handleLogout}
+        onProfileUpdate={handleProfileUpdate}
+        theme={theme}
+        toggleTheme={toggleTheme}
+      />
+    );
+  }
+
+  if (publicPage === "login") return <Login />;
+
   return (
-    <Shell
-      user={profile}
-      onLogout={handleLogout}
-      onProfileUpdate={handleProfileUpdate}
-      theme={theme}
-      toggleTheme={toggleTheme}
-    />
+    <Suspense fallback={publicFallback}>
+      {publicPage === "landing" && <PageLanding onNavigate={goPublic} />}
+      {publicPage === "blog"    && <PageBlog    onNavigate={goPublic} />}
+      {publicPage === "docs"    && <PageDocs    onNavigate={goPublic} />}
+    </Suspense>
   );
 }
 
