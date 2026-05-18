@@ -1,7 +1,7 @@
 export default function Logo({ size = 32 }) {
   return (
     <img
-      src="/C4OS/logo.png"
+      src="/logo.png"
       alt="C4 OS Logo"
       width={size}
       height={size}
