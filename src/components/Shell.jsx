@@ -60,7 +60,6 @@ const NAV_ITEMS = [
   {id:"propostas",  label:"Propostas",      ico:"◎", g:"negócios"},
   {id:"contratos",  label:"Contratos",      ico:"◫", g:"negócios"},
   {id:"estoque",    label:"Estoque",        ico:"⬡", g:"operações"},
-  {id:"vendedores",    label:"Vendedores",     ico:"◉",   g:"analytics"},
   {id:"meta",         label:"Metas",         ico:"🎯",  g:"analytics"},
   {id:"reports",      label:"Relatórios",    ico:"◫",  g:"analytics"},
   {id:"relatoriosatend", label:"Atendimento",ico:"📊", g:"analytics"},
@@ -73,16 +72,17 @@ const NAV_ITEMS = [
 ];
 
 const ADMIN_ITEMS = [
-  {id:"clientes",label:"Clientes",    ico:"⊞", g:"c4hub"},
-  {id:"logs",    label:"Logs",        ico:"≡", g:"c4hub"},
-  {id:"suporte", label:"Suporte",     ico:"⊙", g:"c4hub"},
-  {id:"users",   label:"Usuários",    ico:"◉", g:"c4hub"},
-  {id:"planos",  label:"Planos",      ico:"★", g:"c4hub"},
+  {id:"vendedores", label:"Vendedores",  ico:"◉", g:"c4hub"},
+  {id:"clientes",   label:"Clientes",    ico:"⊞", g:"c4hub"},
+  {id:"logs",       label:"Logs",        ico:"≡", g:"c4hub"},
+  {id:"suporte",    label:"Suporte",     ico:"⊙", g:"c4hub"},
+  {id:"users",      label:"Usuários",    ico:"◉", g:"c4hub"},
+  {id:"planos",     label:"Planos",      ico:"★", g:"c4hub"},
 ];
 
 import { hasFullAccess, hasPageAccess } from "../lib/auth";
 
-const ADMIN_ONLY = new Set(["clientes","logs","suporte","users","planos","reports","meta","relatoriosatend"]);
+const ADMIN_ONLY = new Set(["clientes","logs","suporte","users","planos","reports","meta","relatoriosatend","vendedores"]);
 
 export default function Shell({user,onLogout,onProfileUpdate,theme,toggleTheme}) {
   const [sec,setSec] = useState("dashboard");
@@ -311,7 +311,7 @@ export default function Shell({user,onLogout,onProfileUpdate,theme,toggleTheme})
           {safe==="disparos"       && <PageDisparos        user={user}/>}
           {safe==="broadcast"      && <PageBroadcast       user={user}/>}
           {safe==="followup"  && <PageFollowUp  user={user} onGoToChat={(leadId)=>navigate("whatsapp")}/>}
-          {safe==="vendedores"      && <PageVendedores     user={user}/>}
+          {safe==="vendedores"      && isC4HubAdmin && <PageVendedores user={user}/>}
           {safe==="meta"            && <PageMeta           user={user}/>}
           {safe==="reports"         && <PageReports        user={user}/>}
           {safe==="relatoriosatend" && <PageRelatoriosAtend user={user}/>}
