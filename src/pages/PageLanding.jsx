@@ -392,7 +392,7 @@ export default function PageLanding({ onNavigate }) {
               CRM inteligente, WhatsApp automatizado e pipeline visual para times comerciais de alta performance.
             </p>
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 28 }}>
-              <Btn id="hero-start" onClick={() => onNavigate("login")}>Começar agora →</Btn>
+              <Btn id="hero-start" onClick={() => window.open("https://wa.me/5562982054815", "_blank")}>Começar agora →</Btn>
               <Btn id="hero-docs" onClick={() => onNavigate("docs")} variant="outline">Ver como funciona</Btn>
             </div>
             <div style={{ display: "flex", gap: 18, flexWrap: "wrap", fontSize: 13, color: C.muted }}>
