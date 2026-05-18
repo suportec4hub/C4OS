@@ -89,45 +89,106 @@ function showBrowserNotification(title, body) {
   } catch (_) {}
 }
 
+// ─── Helpers para mídia criptografada do WhatsApp ────────────────────────────
+async function fetchMediaViaWamid(wamid, empresaId) {
+  const { data } = await supabase.functions.invoke("evolution-action", {
+    body: { action: "fetchMedia", empresa_id: empresaId, wamid },
+  });
+  if (!data?.base64) throw new Error(data?.error || "Sem base64");
+  const bytes = Uint8Array.from(atob(data.base64), c => c.charCodeAt(0));
+  const blob  = new Blob([bytes], { type: data.mimetype || "application/octet-stream" });
+  return { blobUrl: URL.createObjectURL(blob), mimetype: data.mimetype };
+}
+const isEncUrl = (u) => u && (u.includes(".enc") || u.includes("t62.7"));
+
+// ─── MediaImage — imagem com lazy-load/descriptografia automática ─────────────
+function MediaImage({ url, wamid, out, onImageClick, empresaId, caption }) {
+  const needsFetch = isEncUrl(url) || !url;
+  const [blobUrl,  setBlobUrl]  = useState(null);
+  const [loading,  setLoading]  = useState(false);
+  const [failed,   setFailed]   = useState(false);
+
+  const load = async () => {
+    if (loading || blobUrl || !wamid || !empresaId) { if (!wamid) setFailed(true); return; }
+    setLoading(true);
+    try {
+      const { blobUrl: bu } = await fetchMediaViaWamid(wamid, empresaId);
+      setBlobUrl(bu);
+    } catch { setFailed(true); }
+    setLoading(false);
+  };
+
+  const displayUrl = blobUrl || (!needsFetch ? url : null);
+  const accent = out ? "rgba(255,255,255,.9)" : L.teal;
+
+  if (failed) return (
+    <div style={{ fontSize:12, color: out ? "rgba(255,255,255,.5)" : L.t4, padding:"6px 0" }}>⚠ Imagem indisponível</div>
+  );
+
+  if (!displayUrl) return (
+    <button onClick={load} disabled={loading}
+      style={{ display:"flex", alignItems:"center", gap:8, padding:"10px 14px",
+        background: out ? "rgba(255,255,255,.14)" : L.surface,
+        border: `1px solid ${out ? "rgba(255,255,255,.22)" : L.line}`,
+        borderRadius:10, cursor: loading ? "wait" : "pointer",
+        color: accent, fontSize:12.5, fontFamily:"inherit", outline:"none" }}>
+      {loading
+        ? <><span style={{ display:"inline-block", animation:"spin .7s linear infinite" }}>⟳</span> Carregando...</>
+        : <>🖼 Ver imagem</>}
+    </button>
+  );
+
+  return (
+    <div>
+      <img src={displayUrl} alt="imagem"
+        onClick={() => onImageClick?.(displayUrl)}
+        onError={() => { if (!blobUrl && wamid) load(); else setFailed(true); }}
+        style={{ maxWidth:"100%", borderRadius:8, marginBottom: caption ? 4 : 0,
+          cursor:"zoom-in", display:"block" }} />
+      {caption && <div style={{ fontSize:12, marginTop:2 }}>{caption}</div>}
+    </div>
+  );
+}
+
 // ─── Custom Audio Player (WhatsApp-style) ────────────────────────────────────
-function AudioPlayer({ src, out, empresaId }) {
+function AudioPlayer({ src, wamid, out, empresaId }) {
+  const needsFetch = isEncUrl(src) || !src;
   const [playing,   setPlaying]   = useState(false);
   const [progress,  setProgress]  = useState(0);
   const [duration,  setDuration]  = useState(0);
   const [current,   setCurrent]   = useState(0);
   const [loaded,    setLoaded]    = useState(false);
   const [errored,   setErrored]   = useState(false);
-  const [proxying,  setProxying]  = useState(false);
+  const [fetching,  setFetching]  = useState(false);
   const [blobSrc,   setBlobSrc]   = useState(null);
   const audioRef = useRef(null);
 
-  const activeSrc = blobSrc || src;
+  const activeSrc = blobSrc || (!needsFetch ? src : null);
 
-  const toggle = () => {
-    const a = audioRef.current;
-    if (!a || errored) return;
-    if (playing) { a.pause(); } else { a.play().catch(() => tryProxy()); }
-    setPlaying(p => !p);
+  const fetchAndPlay = async () => {
+    if (fetching || blobSrc || !wamid || !empresaId) { if (!wamid && !blobSrc) setErrored(true); return; }
+    setFetching(true);
+    try {
+      const { blobUrl, mimetype } = await fetchMediaViaWamid(wamid, empresaId);
+      setBlobSrc(blobUrl);
+      setLoaded(false);
+      if (audioRef.current) {
+        audioRef.current.src = blobUrl;
+        audioRef.current.load();
+        audioRef.current.play().catch(() => {});
+        setPlaying(true);
+      }
+    } catch { setErrored(true); }
+    setFetching(false);
   };
 
-  const tryProxy = async () => {
-    if (proxying || blobSrc) return;
-    setProxying(true);
-    setPlaying(false);
-    try {
-      const { data } = await supabase.functions.invoke("evolution-action", {
-        body: { action: "proxyMedia", empresa_id: empresaId, url: src },
-      });
-      if (data?.base64) {
-        const bytes = Uint8Array.from(atob(data.base64), c => c.charCodeAt(0));
-        const blob  = new Blob([bytes], { type: data.contentType || "audio/ogg" });
-        const url   = URL.createObjectURL(blob);
-        setBlobSrc(url);
-        setLoaded(false);
-        if (audioRef.current) { audioRef.current.src = url; audioRef.current.load(); }
-      } else { setErrored(true); }
-    } catch { setErrored(true); }
-    setProxying(false);
+  const toggle = () => {
+    if (fetching || errored) return;
+    if (needsFetch && !blobSrc) { fetchAndPlay(); return; }
+    const a = audioRef.current;
+    if (!a) return;
+    if (playing) { a.pause(); setPlaying(false); }
+    else { a.play().catch(() => fetchAndPlay()); setPlaying(true); }
   };
 
   const onTimeUpdate = () => {
@@ -136,23 +197,14 @@ function AudioPlayer({ src, out, empresaId }) {
     setCurrent(a.currentTime);
     setProgress(a.duration ? (a.currentTime / a.duration) * 100 : 0);
   };
-
-  const onLoaded = () => {
-    if (audioRef.current) { setDuration(audioRef.current.duration); setLoaded(true); }
-  };
-
-  const onEnded = () => {
-    setPlaying(false); setProgress(0); setCurrent(0);
-    if (audioRef.current) audioRef.current.currentTime = 0;
-  };
-
-  const seek = (e) => {
+  const onLoaded = () => { if (audioRef.current) { setDuration(audioRef.current.duration); setLoaded(true); } };
+  const onEnded  = () => { setPlaying(false); setProgress(0); setCurrent(0); if (audioRef.current) audioRef.current.currentTime = 0; };
+  const seek     = (e) => {
     const a = audioRef.current;
     if (!a || !duration) return;
     const rect = e.currentTarget.getBoundingClientRect();
     a.currentTime = ((e.clientX - rect.left) / rect.width) * duration;
   };
-
   const fmt = (s) => {
     if (!s || isNaN(s) || !isFinite(s)) return "0:00";
     const m = Math.floor(s / 60), sec = Math.floor(s % 60);
@@ -160,68 +212,52 @@ function AudioPlayer({ src, out, empresaId }) {
   };
 
   const accent   = out ? "rgba(255,255,255,.95)" : L.teal;
-  const track    = out ? "rgba(255,255,255,.28)"  : L.line;
-  const dimColor = out ? "rgba(255,255,255,.65)"  : L.t4;
+  const track    = out ? "rgba(255,255,255,.28)" : L.line;
+  const dimColor = out ? "rgba(255,255,255,.65)" : L.t4;
 
-  if (errored) {
-    return (
-      <a href={src} download target="_blank" rel="noreferrer"
-        style={{ display:"flex", alignItems:"center", gap:7, fontSize:12,
-          color: out ? "rgba(255,255,255,.85)" : L.teal, textDecoration:"none" }}>
-        <span style={{ fontSize:18 }}>⬇</span> Baixar áudio
-      </a>
-    );
-  }
+  if (errored) return (
+    <a href={src || "#"} download target="_blank" rel="noreferrer"
+      style={{ display:"flex", alignItems:"center", gap:7, fontSize:12,
+        color: out ? "rgba(255,255,255,.85)" : L.teal, textDecoration:"none" }}>
+      <span style={{ fontSize:18 }}>⬇</span> Baixar áudio
+    </a>
+  );
 
   return (
-    <div style={{ display:"flex", alignItems:"center", gap:10,
-      minWidth:200, maxWidth:260, padding:"2px 0" }}>
-      <audio ref={audioRef} src={activeSrc} preload="metadata"
-        onTimeUpdate={onTimeUpdate} onLoadedMetadata={onLoaded}
-        onEnded={onEnded} onCanPlay={onLoaded}
-        onError={() => { if (!blobSrc) tryProxy(); else setErrored(true); }}
-        style={{ display:"none" }} />
+    <div style={{ display:"flex", alignItems:"center", gap:10, minWidth:200, maxWidth:260, padding:"2px 0" }}>
+      {activeSrc && (
+        <audio ref={audioRef} src={activeSrc} preload="metadata"
+          onTimeUpdate={onTimeUpdate} onLoadedMetadata={onLoaded}
+          onEnded={onEnded} onCanPlay={onLoaded}
+          onError={() => { if (!blobSrc) fetchAndPlay(); else setErrored(true); }}
+          style={{ display:"none" }} />
+      )}
 
-      {/* Play / Pause */}
-      <button onClick={proxying ? undefined : toggle}
+      <button onClick={toggle}
         style={{ width:36, height:36, borderRadius:"50%", border:"none",
-          cursor: proxying ? "wait" : loaded ? "pointer" : "default",
+          cursor: fetching ? "wait" : "pointer",
           background: out ? "rgba(255,255,255,.22)" : L.tealBg,
-          color: accent, fontSize: proxying ? 11 : 13, display:"flex", alignItems:"center",
-          justifyContent:"center", flexShrink:0, transition:"all .15s",
-          opacity: (loaded || proxying) ? 1 : 0.55 }}>
-        {proxying ? "⟳" : playing ? "⏸" : "▶"}
+          color: accent, fontSize: fetching ? 11 : 13, display:"flex",
+          alignItems:"center", justifyContent:"center", flexShrink:0, transition:"all .15s",
+          opacity: fetching ? 0.7 : 1 }}>
+        {fetching ? "⟳" : playing ? "⏸" : "▶"}
       </button>
 
-      {/* Barra + tempo */}
       <div style={{ flex:1, minWidth:0 }}>
-        {/* Waveform / progress track */}
-        <div onClick={seek}
-          style={{ height:4, background:track, borderRadius:2,
-            cursor:"pointer", marginBottom:5, position:"relative", overflow:"hidden" }}>
-          <div style={{ width:`${progress}%`, height:"100%",
-            background:accent, borderRadius:2, transition:"width .08s linear" }} />
+        <div onClick={seek} style={{ height:4, background:track, borderRadius:2,
+          cursor:"pointer", marginBottom:5, position:"relative", overflow:"hidden" }}>
+          <div style={{ width:`${progress}%`, height:"100%", background:accent,
+            borderRadius:2, transition:"width .08s linear" }} />
         </div>
-
-        {/* Pseudo-waveform bars (visual only) */}
-        <div style={{ display:"flex", alignItems:"flex-end", gap:1.5,
-          height:14, marginBottom:4, overflow:"hidden" }}>
+        <div style={{ display:"flex", alignItems:"flex-end", gap:1.5, height:14, marginBottom:4, overflow:"hidden" }}>
           {Array.from({ length: 32 }, (_, i) => {
             const h = [4,6,10,8,13,9,6,12,8,5,11,7,9,14,6,10,8,12,5,9,13,7,11,6,10,8,14,9,6,11,7,9][i % 32];
             const filled = progress / 100 > i / 32;
-            return (
-              <div key={i} style={{
-                width:2.5, height:h, borderRadius:2, flexShrink:0,
-                background: filled ? accent : track,
-                transition: "background .08s",
-              }} />
-            );
+            return <div key={i} style={{ width:2.5, height:h, borderRadius:2, flexShrink:0,
+              background: filled ? accent : track, transition:"background .08s" }} />;
           })}
         </div>
-
-        {/* Tempo */}
-        <div style={{ fontSize:10, color:dimColor,
-          fontFamily:"'JetBrains Mono',monospace", letterSpacing:".5px" }}>
+        <div style={{ fontSize:10, color:dimColor, fontFamily:"'JetBrains Mono',monospace", letterSpacing:".5px" }}>
           {fmt(current)} / {fmt(duration || 0)}
         </div>
       </div>
@@ -231,61 +267,45 @@ function AudioPlayer({ src, out, empresaId }) {
 
 // ─── Media message renderer ──────────────────────────────────────────────────
 function renderMsgContent(m, out, onImageClick, empresaId) {
-  const t    = msgTexto(m);
-  const tipo = (m.tipo || m.type || "texto").toLowerCase();
-  const url  = m.midia_url || m.url || m.media_url || m.mediaUrl;
+  const t      = msgTexto(m);
+  const tipo   = (m.tipo || m.type || "texto").toLowerCase();
+  const url    = m.midia_url || m.url || m.media_url || m.mediaUrl;
+  const wamid  = m.wamid;
+  const fname  = m.nome_arquivo || "";
 
-  // Normaliza tipos vindos do Evolution API (imageMessage, ptt, audioMessage, etc.)
-  const isImage = url && (tipo === "imagem" || tipo === "image" || tipo === "imagemessage" ||
-    tipo.startsWith("image/") || (tipo === "texto" && /\.(jpe?g|png|gif|webp)(\?|$)/i.test(url)));
-  const isAudio = url && (tipo === "audio" || tipo === "ptt" || tipo === "audiomessage" ||
-    tipo.startsWith("audio/") || (tipo === "texto" && /\.(ogg|mp3|m4a|aac|wav|opus)(\?|$)/i.test(url)));
-  const isVideo = url && (tipo === "video" || tipo === "videomessage" ||
-    tipo.startsWith("video/") || (tipo === "texto" && /\.(mp4|webm|mov)(\?|$)/i.test(url)));
-  const isDoc   = url && (tipo === "documento" || tipo === "document" || tipo === "documentmessage" ||
-    tipo === "application/pdf" || tipo.startsWith("application/"));
+  const isImage = (tipo === "imagem" || tipo === "image" || tipo === "imagemessage" || tipo.startsWith("image/"))
+    || (tipo === "documento" && /\.(jpe?g|png|gif|webp)$/i.test(fname))
+    || (url && !tipo.includes("audio") && !tipo.includes("video") && isEncUrl(url) && /imagem|image/i.test(tipo));
+  const isAudio = tipo === "audio" || tipo === "ptt" || tipo === "audiomessage" || tipo.startsWith("audio/")
+    || (url && /\.(ogg|mp3|m4a|aac|wav|opus)(\?|$)/i.test(url));
+  const isVideo = tipo === "video" || tipo === "videomessage" || tipo.startsWith("video/")
+    || (url && /\.(mp4|webm|mov)(\?|$)/i.test(url));
+  const isDoc   = !isImage && (tipo === "documento" || tipo === "document" || tipo === "documentmessage"
+    || tipo.startsWith("application/"));
 
-  if (isImage) {
-    return (
-      <div>
-        <img src={url} alt="imagem"
-          onClick={() => onImageClick ? onImageClick(url) : window.open(url, "_blank")}
-          style={{ maxWidth:"100%", borderRadius:8, marginBottom: t ? 4 : 0,
-            cursor:"zoom-in", display:"block" }}
-          onError={e => { e.currentTarget.style.display="none"; }}/>
-        {t && <div style={{ fontSize:12, marginTop:2 }}>{t}</div>}
-      </div>
-    );
-  }
-  if (isAudio) {
-    return (
-      <div>
-        <AudioPlayer src={url} out={out} empresaId={empresaId} />
-        {t && <div style={{ fontSize:11, marginTop:3, opacity:.8 }}>{t}</div>}
-      </div>
-    );
-  }
-  if (isVideo) {
-    return (
-      <div>
-        <video controls src={url} onClick={e => e.stopPropagation()}
-          style={{ maxWidth:"100%", maxHeight:220, borderRadius:8, marginBottom: t ? 4 : 0, display:"block" }}/>
-        {t && <div style={{ fontSize:12, marginTop:2 }}>{t}</div>}
-      </div>
-    );
-  }
-  if (isDoc) {
-    return (
-      <a href={url} target="_blank" rel="noopener noreferrer"
-        style={{ color: out ? "rgba(255,255,255,.9)" : L.blue, display:"flex", alignItems:"center", gap:5, textDecoration:"none" }}>
-        <span>📎</span>
-        <span style={{ textDecoration:"underline", fontSize:12, wordBreak:"break-all" }}>
-          {m.nome_arquivo || t || "Documento"}
-        </span>
-      </a>
-    );
-  }
-  // default: text (possibly with newlines)
+  if (isImage) return <MediaImage url={url} wamid={wamid} out={out} onImageClick={onImageClick} empresaId={empresaId} caption={t} />;
+  if (isAudio) return (
+    <div>
+      <AudioPlayer src={url} wamid={wamid} out={out} empresaId={empresaId} />
+      {t && <div style={{ fontSize:11, marginTop:3, opacity:.8 }}>{t}</div>}
+    </div>
+  );
+  if (isVideo) return (
+    <div>
+      <video controls src={url} onClick={e => e.stopPropagation()}
+        style={{ maxWidth:"100%", maxHeight:220, borderRadius:8, marginBottom: t ? 4 : 0, display:"block" }}/>
+      {t && <div style={{ fontSize:12, marginTop:2 }}>{t}</div>}
+    </div>
+  );
+  if (isDoc) return (
+    <a href={url} target="_blank" rel="noopener noreferrer"
+      style={{ color: out ? "rgba(255,255,255,.9)" : L.blue, display:"flex", alignItems:"center", gap:5, textDecoration:"none" }}>
+      <span>📎</span>
+      <span style={{ textDecoration:"underline", fontSize:12, wordBreak:"break-all" }}>
+        {fname || t || "Documento"}
+      </span>
+    </a>
+  );
   return t ? t.split("\n").map((line, i) => (
     <span key={i}>{line}{i < t.split("\n").length - 1 && <br/>}</span>
   )) : null;

@@ -1071,6 +1071,32 @@ Deno.serve(async (req) => {
     }
 
     // ────────────────────────────────────────────────────────────────────────
+    // FETCH MEDIA — descriptografa mídia do WhatsApp via Evolution API
+    // ────────────────────────────────────────────────────────────────────────
+    if (action === "fetchMedia") {
+      const { wamid } = body;
+      if (!wamid) return json({ error: "wamid obrigatório" }, 400);
+      try {
+        const r = await iFetch(`/message/getBase64FromMediaMessage/${instName}`, {
+          method: "POST",
+          body: JSON.stringify({ id: String(wamid) }),
+        });
+        if (!r.ok) {
+          const errTxt = await r.text().catch(() => "");
+          return json({ error: `Evolution ${r.status}: ${errTxt.slice(0, 120)}` }, 502);
+        }
+        const d = await r.json();
+        // Evolution pode retornar em diferentes formatos dependendo da versão
+        const base64   = d?.base64   ?? d?.data?.base64   ?? d?.media?.base64   ?? null;
+        const mimetype = d?.mimetype ?? d?.data?.mimetype ?? d?.media?.mimetype ?? d?.type ?? "application/octet-stream";
+        if (base64) return json({ success: true, base64, mimetype });
+        return json({ success: false, error: "Mídia não disponível ou expirada" });
+      } catch (e) {
+        return json({ error: (e as Error).message }, 500);
+      }
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
     // PROXY MEDIA — busca mídia (áudio/imagem) server-side evitando CORS
     // ────────────────────────────────────────────────────────────────────────
     if (action === "proxyMedia") {
