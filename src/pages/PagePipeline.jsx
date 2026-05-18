@@ -27,12 +27,13 @@ const ETAPAS_DEFAULT = [
 const CANAIS_AQUISICAO = ["WhatsApp","Site","Instagram","Facebook ADS","Google ADS","Email","Indicação","Ligação","Evento","Outro"];
 const CORES_ETAPA = [L.teal, L.copper, L.yellow, L.blue, L.green, L.red, "#6366F1", "#f59e0b", "#10b981"];
 
-const VAZIO = { titulo:"", valor:"", etapa:"novo", probabilidade:50, observacoes:"", canal_aquisicao:"WhatsApp", lead_id:"", whatsapp_contato:"" };
+const VAZIO = { titulo:"", valor:"", etapa:"novo", probabilidade:50, observacoes:"", canal_aquisicao:"WhatsApp", lead_id:"", whatsapp_contato:"", responsavel_id:"" };
 const VAZIO_COL = { label:"", cor: L.teal };
 
 export default function PagePipeline({ user, onOpenChat }) {
   const { data: deals, loading, insert, update, remove } = useTable("deals", { empresa_id: user?.empresa_id });
   const { data: leads } = useTable("leads", { empresa_id: user?.empresa_id });
+  const { data: usuarios } = useTable("usuarios", { empresa_id: user?.empresa_id });
 
   const [etapas,  setEtapas]   = useState(ETAPAS_DEFAULT);
   const [modal,   setModal]    = useState(false);
@@ -87,6 +88,7 @@ export default function PagePipeline({ user, onOpenChat }) {
       whatsapp_contato: d.whatsapp_contato || "",
       lead_id:          d.lead_id          || "",
       observacoes:      d.observacoes      || "",
+      responsavel_id:   d.responsavel_id   || "",
     });
     setEditId(d.id); setErr(""); setModal(true);
   };
@@ -111,7 +113,8 @@ export default function PagePipeline({ user, onOpenChat }) {
       canal_aquisicao:  form.canal_aquisicao || "WhatsApp",
       whatsapp_contato: form.whatsapp_contato || null,
       observacoes:      form.observacoes || null,
-      lead_id:          form.lead_id || null,   // UUID — nunca string vazia
+      lead_id:          form.lead_id || null,
+      responsavel_id:   form.responsavel_id || null,
     };
 
     const { error } = editId ? await update(editId, payload) : await insert(payload);
@@ -247,7 +250,19 @@ export default function PagePipeline({ user, onOpenChat }) {
                   onMouseEnter={e=>{e.currentTarget.style.borderColor=ao(stage.cor, 40);e.currentTarget.style.transform="translateY(-1px)";e.currentTarget.style.boxShadow="0 4px 12px rgba(0,0,0,0.08)";}}
                   onMouseLeave={e=>{e.currentTarget.style.borderColor=L.line;e.currentTarget.style.transform="none";e.currentTarget.style.boxShadow="0 1px 2px rgba(0,0,0,0.04)";}}
                 >
-                  <div style={{fontSize:12.5,fontWeight:600,color:L.t1,marginBottom:5,lineHeight:1.35}}>{deal.titulo}</div>
+                  <Row between style={{marginBottom:5}}>
+                    <div style={{fontSize:12.5,fontWeight:600,color:L.t1,lineHeight:1.35,flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{deal.titulo}</div>
+                    {deal.responsavel_id && (() => {
+                      const v = usuarios.find(u => u.id === deal.responsavel_id);
+                      if (!v) return null;
+                      const ini = (v.nome||"?").slice(0,2).toUpperCase();
+                      return (
+                        <div title={v.nome} style={{width:20,height:20,borderRadius:"50%",background:v.cor||L.teal,display:"flex",alignItems:"center",justifyContent:"center",fontSize:8,fontWeight:700,color:"white",flexShrink:0,marginLeft:6}}>
+                          {ini}
+                        </div>
+                      );
+                    })()}
+                  </Row>
                   <div style={{fontSize:15,fontWeight:800,color:L.t2,fontFamily:"'Outfit',sans-serif",marginBottom:5}}>
                     R$ {parseFloat(deal.valor||0).toLocaleString("pt-BR",{minimumFractionDigits:2})}
                   </div>
@@ -333,6 +348,12 @@ export default function PagePipeline({ user, onOpenChat }) {
             </Field>
             <Field label="WhatsApp do contato">
               <Input value={form.whatsapp_contato||""} onChange={F("whatsapp_contato")} placeholder="(11) 99999-9999"/>
+            </Field>
+            <Field label="Vendedor responsável">
+              <Select value={form.responsavel_id||""} onChange={F("responsavel_id")}>
+                <option value="">— Sem vendedor —</option>
+                {(usuarios||[]).filter(u=>u.ativo!==false).map(u=><option key={u.id} value={u.id}>{u.nome}</option>)}
+              </Select>
             </Field>
           </div>
           <Field label="Observações">

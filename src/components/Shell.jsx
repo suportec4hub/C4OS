@@ -40,6 +40,7 @@ const PageChatbotBuilder   = lazy(() => import("../pages/PageChatbotBuilder"));
 const PageDisparos         = lazy(() => import("../pages/PageDisparos"));
 const PageRelatoriosAtend  = lazy(() => import("../pages/PageRelatoriosAtend"));
 const PageMeta             = lazy(() => import("../pages/PageMeta"));
+const PageVendedores       = lazy(() => import("../pages/PageVendedores"));
 
 const NAV_ITEMS = [
   {id:"dashboard",  label:"Dashboard",      ico:"▦", g:"principal"},
@@ -59,6 +60,7 @@ const NAV_ITEMS = [
   {id:"propostas",  label:"Propostas",      ico:"◎", g:"negócios"},
   {id:"contratos",  label:"Contratos",      ico:"◫", g:"negócios"},
   {id:"estoque",    label:"Estoque",        ico:"⬡", g:"operações"},
+  {id:"vendedores",    label:"Vendedores",     ico:"◉",   g:"analytics"},
   {id:"meta",         label:"Metas",         ico:"🎯",  g:"analytics"},
   {id:"reports",      label:"Relatórios",    ico:"◫",  g:"analytics"},
   {id:"relatoriosatend", label:"Atendimento",ico:"📊", g:"analytics"},
@@ -309,6 +311,7 @@ export default function Shell({user,onLogout,onProfileUpdate,theme,toggleTheme})
           {safe==="disparos"       && <PageDisparos        user={user}/>}
           {safe==="broadcast"      && <PageBroadcast       user={user}/>}
           {safe==="followup"  && <PageFollowUp  user={user} onGoToChat={(leadId)=>navigate("whatsapp")}/>}
+          {safe==="vendedores"      && <PageVendedores     user={user}/>}
           {safe==="meta"            && <PageMeta           user={user}/>}
           {safe==="reports"         && <PageReports        user={user}/>}
           {safe==="relatoriosatend" && <PageRelatoriosAtend user={user}/>}
