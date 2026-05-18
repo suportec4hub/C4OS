@@ -232,10 +232,20 @@ function AudioPlayer({ src, out, empresaId }) {
 // ─── Media message renderer ──────────────────────────────────────────────────
 function renderMsgContent(m, out, onImageClick, empresaId) {
   const t    = msgTexto(m);
-  const tipo = m.tipo || m.type || "texto";
+  const tipo = (m.tipo || m.type || "texto").toLowerCase();
   const url  = m.midia_url || m.url || m.media_url || m.mediaUrl;
 
-  if ((tipo === "imagem" || tipo === "image") && url) {
+  // Normaliza tipos vindos do Evolution API (imageMessage, ptt, audioMessage, etc.)
+  const isImage = url && (tipo === "imagem" || tipo === "image" || tipo === "imagemessage" ||
+    tipo.startsWith("image/") || (tipo === "texto" && /\.(jpe?g|png|gif|webp)(\?|$)/i.test(url)));
+  const isAudio = url && (tipo === "audio" || tipo === "ptt" || tipo === "audiomessage" ||
+    tipo.startsWith("audio/") || (tipo === "texto" && /\.(ogg|mp3|m4a|aac|wav|opus)(\?|$)/i.test(url)));
+  const isVideo = url && (tipo === "video" || tipo === "videomessage" ||
+    tipo.startsWith("video/") || (tipo === "texto" && /\.(mp4|webm|mov)(\?|$)/i.test(url)));
+  const isDoc   = url && (tipo === "documento" || tipo === "document" || tipo === "documentmessage" ||
+    tipo === "application/pdf" || tipo.startsWith("application/"));
+
+  if (isImage) {
     return (
       <div>
         <img src={url} alt="imagem"
@@ -247,7 +257,7 @@ function renderMsgContent(m, out, onImageClick, empresaId) {
       </div>
     );
   }
-  if (tipo === "audio" && url) {
+  if (isAudio) {
     return (
       <div>
         <AudioPlayer src={url} out={out} empresaId={empresaId} />
@@ -255,7 +265,7 @@ function renderMsgContent(m, out, onImageClick, empresaId) {
       </div>
     );
   }
-  if (tipo === "video" && url) {
+  if (isVideo) {
     return (
       <div>
         <video controls src={url} onClick={e => e.stopPropagation()}
@@ -264,7 +274,7 @@ function renderMsgContent(m, out, onImageClick, empresaId) {
       </div>
     );
   }
-  if ((tipo === "documento" || tipo === "document") && url) {
+  if (isDoc) {
     return (
       <a href={url} target="_blank" rel="noopener noreferrer"
         style={{ color: out ? "rgba(255,255,255,.9)" : L.blue, display:"flex", alignItems:"center", gap:5, textDecoration:"none" }}>
