@@ -44,7 +44,7 @@ function CampanhaCard({ c, enviandoId, progress, onDisparar, onCancelar, onExclu
   const loadContatos = async () => {
     const { data } = await supabase
       .from("transmissao_contatos")
-      .select("id, nome, telefone, status, erro, enviado_em")
+      .select("id, nome, telefone, status, erro_msg, enviado_em")
       .eq("campanha_id", c.id)
       .order("nome");
     setContatos(data || []);
@@ -239,11 +239,11 @@ function CampanhaCard({ c, enviandoId, progress, onDisparar, onCancelar, onExclu
                           {ct.nome || "Contato"}
                         </div>
                         <div style={{ fontSize: 10, color: L.t3 }}>{ct.telefone}</div>
-                        {ct.erro && (
+                        {ct.erro_msg && (
                           <div style={{ fontSize: 10, color: L.red, marginTop: 2,
                             overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-                            title={ct.erro}>
-                            Erro: {ct.erro}
+                            title={ct.erro_msg}>
+                            Erro: {ct.erro_msg}
                           </div>
                         )}
                       </div>
