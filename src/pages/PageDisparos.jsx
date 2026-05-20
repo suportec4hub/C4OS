@@ -504,7 +504,7 @@ export default function PageDisparos({ user }) {
       status,
       total_contatos: contatosLimitados.length,
       enviados: 0, entregues: 0, lidos: 0, respostas: 0,
-      agendado_para: form.agendado_para || null,
+      agendado_para: form.agendado_para ? new Date(form.agendado_para).toISOString() : null,
       intervalo_min: intMin,
       intervalo_max: intMax,
       limite_envios: limEnvios,
