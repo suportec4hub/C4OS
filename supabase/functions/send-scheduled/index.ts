@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const SUPA_URL       = Deno.env.get("SUPABASE_URL")!;
 const SUPA_KEY       = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const GLOBAL_EVO_URL = "https://evolution-api-xrrw.srv1583408.hstgr.cloud";
+const CRON_TOKEN     = "c4os-cron-2025";
 
 const json = (data: unknown, status = 200) =>
   new Response(JSON.stringify(data), {
@@ -38,7 +39,13 @@ async function logWA(
   } catch (_) { /* nunca propaga */ }
 }
 
-Deno.serve(async (_req) => {
+Deno.serve(async (req) => {
+  // Aceita chamadas autenticadas (JWT) ou do pg_cron via token interno
+  const cronToken = req.headers.get("x-cron-token");
+  const authHeader = req.headers.get("authorization") || "";
+  const isAuthenticated = cronToken === CRON_TOKEN || authHeader.startsWith("Bearer ");
+  if (!isAuthenticated) return new Response("Unauthorized", { status: 401 });
+
   const db = createClient(SUPA_URL, SUPA_KEY);
 
   // 1. Busca mensagens pendentes com hora já vencida
@@ -183,6 +190,50 @@ Deno.serve(async (_req) => {
     }
   }
 
-  console.log(`[send-scheduled] sent=${sent} failed=${failed}`);
-  return json({ sent, failed });
+  console.log(`[send-scheduled] mensagens: sent=${sent} failed=${failed}`);
+
+  // ── Campanhas agendadas: detecta e dispara automaticamente ──────────────
+  let campaignsTriggered = 0;
+  try {
+    const now = new Date().toISOString();
+    const { data: dueCampaigns } = await db
+      .from("campanhas")
+      .select("id, empresa_id")
+      .eq("status", "agendado")
+      .lte("agendado_para", now)
+      .limit(5); // máx 5 por tick para evitar timeout
+
+    for (const camp of (dueCampaigns || [])) {
+      // Lock atômico: só processa se ainda estiver 'agendado'
+      const { data: locked } = await db
+        .from("campanhas")
+        .update({ status: "enviando" })
+        .eq("id", camp.id)
+        .eq("status", "agendado")
+        .select("id");
+
+      if (!locked?.length) continue;
+
+      // Dispara o broadcast via evolution-action (fire-and-forget)
+      fetch(`${SUPA_URL}/functions/v1/evolution-action`, {
+        method:  "POST",
+        headers: {
+          "Content-Type":  "application/json",
+          "Authorization": `Bearer ${SUPA_KEY}`,
+        },
+        body: JSON.stringify({
+          action:      "broadcast",
+          empresa_id:  camp.empresa_id,
+          campanha_id: camp.id,
+        }),
+      }).catch(e => console.error("[send-scheduled] broadcast error:", e));
+
+      campaignsTriggered++;
+      console.log(`[send-scheduled] campanha ${camp.id} disparada automaticamente`);
+    }
+  } catch (e) {
+    console.error("[send-scheduled] erro ao verificar campanhas:", e);
+  }
+
+  return json({ sent, failed, campaignsTriggered });
 });

@@ -24,7 +24,13 @@ const TIPOS_MIDIA = [
   { id: "video",  label: "Vídeo",  ico: "🎬" },
 ];
 
-const VAZIO = { titulo: "", mensagem: "", intervalo_min: 5, intervalo_max: 15, agendado_para: "", tipo_midia: "texto", chave_pix: "", caption: "" };
+const VAZIO = { titulo: "", mensagem: "", intervalo_min: 5, intervalo_max: 15, intervalo_unidade: "segundos", limite_envios: "", agendado_para: "", tipo_midia: "texto", chave_pix: "", caption: "" };
+
+const UNIDADES = [
+  { id: "segundos", label: "seg", mult: 1 },
+  { id: "minutos",  label: "min", mult: 60 },
+  { id: "horas",    label: "h",   mult: 3600 },
+];
 
 export default function PageDisparos({ user }) {
   const [tab,       setTab]       = useState("nova");
@@ -245,17 +251,25 @@ export default function PageDisparos({ user }) {
     if (!form.mensagem.trim()) { setErr("Mensagem obrigatória."); return; }
     if (contatos.length === 0) { setErr("Adicione pelo menos um contato."); return; }
     setSaving(true); setErr(""); setSucc("");
+    // Converte intervalo para segundos
+    const mult = UNIDADES.find(u => u.id === form.intervalo_unidade)?.mult || 1;
+    const intMin = Math.max(1, (parseInt(form.intervalo_min) || 5) * mult);
+    const intMax = Math.max(intMin, (parseInt(form.intervalo_max) || 15) * mult);
+    const limEnvios = form.limite_envios ? parseInt(form.limite_envios) : null;
+    const contatosLimitados = limEnvios ? contatos.slice(0, limEnvios) : contatos;
+
     const { data: camp, error } = await supabase.from("campanhas").insert({
       empresa_id: user.empresa_id,
       titulo: form.titulo.trim(),
       mensagem: form.mensagem.trim(),
       segmentacao: [],
       status,
-      total_contatos: contatos.length,
+      total_contatos: contatosLimitados.length,
       enviados: 0, entregues: 0, lidos: 0, respostas: 0,
       agendado_para: form.agendado_para || null,
-      intervalo_min: form.intervalo_min,
-      intervalo_max: form.intervalo_max,
+      intervalo_min: intMin,
+      intervalo_max: intMax,
+      limite_envios: limEnvios,
       tipo_midia: form.tipo_midia || "texto",
       url_midia: midiaUrl || null,
       chave_pix: form.chave_pix?.trim() || null,
@@ -264,7 +278,7 @@ export default function PageDisparos({ user }) {
     if (error) { setErr(error.message); setSaving(false); return; }
 
     // Insert contacts
-    const rows = contatos.map(c => ({
+    const rows = contatosLimitados.map(c => ({
       campanha_id: camp.id, empresa_id: user.empresa_id,
       nome: c.nome, telefone: c.telefone, status: "pendente",
     }));
@@ -414,23 +428,55 @@ export default function PageDisparos({ user }) {
 
             {/* Intervalo */}
             <label style={{ fontSize: 11, color: L.t3, display: "block", marginBottom: 6 }}>
-              Intervalo entre mensagens (segundos) — evita bloqueios
+              Intervalo entre mensagens — evita bloqueios do WhatsApp
             </label>
-            <Row gap={10} mb={14}>
+            <Row gap={8} mb={14} style={{ alignItems: "flex-end" }}>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 10, color: L.t4, marginBottom: 4 }}>Mínimo</div>
-                <input type="number" min={3} max={300} value={form.intervalo_min}
+                <input type="number" min={1} max={9999} value={form.intervalo_min}
                   onChange={e => setForm(p => ({ ...p, intervalo_min: parseInt(e.target.value) || 5 }))}
                   style={{ width: "100%", border: `1px solid ${L.line}`, borderRadius: 8, padding: "7px 10px",
                     fontSize: 12, outline: "none", fontFamily: "inherit", boxSizing: "border-box" }} />
               </div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 10, color: L.t4, marginBottom: 4 }}>Máximo</div>
-                <input type="number" min={3} max={300} value={form.intervalo_max}
+                <input type="number" min={1} max={9999} value={form.intervalo_max}
                   onChange={e => setForm(p => ({ ...p, intervalo_max: parseInt(e.target.value) || 15 }))}
                   style={{ width: "100%", border: `1px solid ${L.line}`, borderRadius: 8, padding: "7px 10px",
                     fontSize: 12, outline: "none", fontFamily: "inherit", boxSizing: "border-box" }} />
               </div>
+              {/* Unidade */}
+              <div style={{ flexShrink: 0 }}>
+                <div style={{ fontSize: 10, color: L.t4, marginBottom: 4 }}>Unidade</div>
+                <div style={{ display: "flex", border: `1px solid ${L.line}`, borderRadius: 8, overflow: "hidden" }}>
+                  {UNIDADES.map(u => (
+                    <button key={u.id} onClick={() => setForm(p => ({ ...p, intervalo_unidade: u.id }))}
+                      style={{ padding: "7px 10px", fontSize: 11, cursor: "pointer", fontFamily: "inherit",
+                        border: "none", outline: "none", transition: "all .1s",
+                        background: form.intervalo_unidade === u.id ? L.accent : L.surface,
+                        color:      form.intervalo_unidade === u.id ? "white"  : L.t2,
+                        fontWeight: form.intervalo_unidade === u.id ? 600 : 400 }}>
+                      {u.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </Row>
+
+            <label style={{ fontSize: 11, color: L.t3, display: "block", marginBottom: 4 }}>
+              Limite de envios (opcional) — máx. de mensagens por disparo
+            </label>
+            <Row gap={8} mb={14}>
+              <input type="number" min={1} value={form.limite_envios}
+                onChange={e => setForm(p => ({ ...p, limite_envios: e.target.value }))}
+                placeholder="Sem limite (enviar para todos)"
+                style={{ flex: 1, border: `1px solid ${L.line}`, borderRadius: 8, padding: "7px 10px",
+                  fontSize: 12, outline: "none", fontFamily: "inherit", boxSizing: "border-box" }} />
+              {form.limite_envios && (
+                <div style={{ fontSize: 11, color: L.t3, alignSelf: "center", whiteSpace: "nowrap" }}>
+                  de {contatos.length} contatos
+                </div>
+              )}
             </Row>
 
             <label style={{ fontSize: 11, color: L.t3, display: "block", marginBottom: 4 }}>Agendar para (opcional)</label>
@@ -687,12 +733,21 @@ export default function PageDisparos({ user }) {
                   <div key={c.id} style={{ background: L.white, borderRadius: 12, border: `1px solid ${L.line}`,
                     padding: 18, boxShadow: "0 1px 3px rgba(0,0,0,.04)" }}>
                     <Row between mb={6}>
-                      <div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                         <span style={{ fontSize: 13.5, fontWeight: 600, color: L.t1 }}>{c.titulo}</span>
-                        <span style={{ marginLeft: 8, fontSize: 10, background: st.bg, color: st.c,
+                        <span style={{ fontSize: 10, background: st.bg, color: st.c,
                           padding: "2px 8px", borderRadius: 10, fontWeight: 600, border: `1px solid ${st.c}33` }}>
                           {st.label}
                         </span>
+                        {c.agendado_para && c.status === "agendado" && (
+                          <span style={{ fontSize: 10, color: L.blue, background: L.blueBg,
+                            padding: "2px 8px", borderRadius: 10, border: `1px solid ${L.blue}33` }}>
+                            ⏰ {new Date(c.agendado_para).toLocaleString("pt-BR", { day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit" })}
+                          </span>
+                        )}
+                        {c.limite_envios && (
+                          <span style={{ fontSize: 10, color: L.t3 }}>· lim. {c.limite_envios} msgs</span>
+                        )}
                       </div>
                       <span style={{ fontSize: 10, color: L.t4 }}>
                         {new Date(c.created_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" })}
