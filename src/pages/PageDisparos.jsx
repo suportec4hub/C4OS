@@ -32,6 +32,244 @@ const UNIDADES = [
   { id: "horas",    label: "h",   mult: 3600 },
 ];
 
+function CampanhaCard({ c, enviandoId, progress, onDisparar, onCancelar, onExcluir }) {
+  const [open,     setOpen]     = useState(false);
+  const [contatos, setContatos] = useState([]);
+  const [loadingC, setLoadingC] = useState(false);
+  const pollRef = useRef(null);
+
+  const isEnviando = c.status === "enviando";
+  const st = ST[c.status] || ST.rascunho;
+
+  const loadContatos = async () => {
+    const { data } = await supabase
+      .from("transmissao_contatos")
+      .select("id, nome, telefone, status, erro, enviado_em")
+      .eq("campanha_id", c.id)
+      .order("nome");
+    setContatos(data || []);
+  };
+
+  useEffect(() => {
+    if (!open) { clearInterval(pollRef.current); return; }
+    setLoadingC(true);
+    loadContatos().finally(() => setLoadingC(false));
+    if (isEnviando) {
+      pollRef.current = setInterval(loadContatos, 3000);
+    }
+    return () => clearInterval(pollRef.current);
+  }, [open, c.id, isEnviando]);
+
+  // Also reload when status changes to/from enviando
+  useEffect(() => {
+    if (open && !isEnviando) { clearInterval(pollRef.current); loadContatos(); }
+  }, [c.status]);
+
+  const fmtDate = (iso) => {
+    if (!iso) return "—";
+    const d = new Date(iso);
+    return d.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric",
+      hour: "2-digit", minute: "2-digit" });
+  };
+
+  const statusColor = {
+    pendente:  { color: L.t3,    bg: L.surface  },
+    enviando:  { color: L.yellow,bg: L.yellowBg },
+    enviado:   { color: L.green, bg: L.greenBg  },
+    entregue:  { color: L.teal,  bg: L.tealBg   },
+    falhou:    { color: L.red,   bg: L.redBg    },
+    cancelado: { color: L.t3,    bg: L.surface  },
+  };
+
+  const total   = c.total_contatos || 0;
+  const enviados = c.enviados       || 0;
+  const pct = total > 0 ? Math.round((enviados / total) * 100) : 0;
+
+  return (
+    <div style={{ background: L.white, borderRadius: 12, border: `1px solid ${L.line}`, overflow: "hidden" }}>
+      {/* Header */}
+      <div style={{ padding: "14px 16px", display: "flex", alignItems: "center", gap: 10 }}>
+        <button onClick={() => setOpen(o => !o)}
+          style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: L.t3, padding: "2px 4px", flexShrink: 0 }}>
+          {open ? "▼" : "▶"}
+        </button>
+
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: L.t1,
+              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {c.titulo}
+            </span>
+            <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20,
+              color: st.c, background: st.bg, flexShrink: 0 }}>
+              {st.label}
+            </span>
+            {isEnviando && enviandoId === c.id && progress && (
+              <span style={{ fontSize: 10, color: L.yellow, flexShrink: 0 }}>
+                {progress.enviados}/{progress.total}
+              </span>
+            )}
+          </div>
+          <div style={{ fontSize: 10, color: L.t4, marginTop: 2, display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <span>Criado: {fmtDate(c.created_at)}</span>
+            {c.agendado_para && (
+              <span style={{ color: L.blue }}>Agendado: {fmtDate(c.agendado_para)}</span>
+            )}
+            <span>{total} contato{total !== 1 ? "s" : ""}</span>
+            {c.limite_envios && <span>Limite: {c.limite_envios}</span>}
+          </div>
+        </div>
+
+        {/* Stats quick */}
+        <div style={{ display: "flex", gap: 10, flexShrink: 0, fontSize: 11, color: L.t3 }}>
+          <span title="Enviados" style={{ color: L.green }}>✓ {c.enviados || 0}</span>
+          <span title="Entregues" style={{ color: L.teal }}>✓✓ {c.entregues || 0}</span>
+          <span title="Lidos" style={{ color: L.blue }}>👁 {c.lidos || 0}</span>
+          {(c.respostas || 0) > 0 && <span title="Respostas" style={{ color: L.accent }}>💬 {c.respostas}</span>}
+        </div>
+
+        {/* Actions */}
+        <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+          {(c.status === "rascunho" || c.status === "agendado") && (
+            <button onClick={() => onDisparar(c.id)}
+              style={btn(L.greenBg, L.green, { padding: "5px 10px", fontSize: 11 })}>
+              ▶ Disparar
+            </button>
+          )}
+          {c.status === "enviando" && (
+            <button onClick={() => onCancelar(c.id)}
+              style={btn(L.yellowBg, L.yellow, { padding: "5px 10px", fontSize: 11 })}>
+              ⏹ Cancelar
+            </button>
+          )}
+          <button onClick={() => onExcluir(c.id)}
+            style={btn(L.redBg, L.red, { padding: "5px 8px", fontSize: 11 })}>
+            🗑
+          </button>
+        </div>
+      </div>
+
+      {/* Progress bar (only when sending) */}
+      {isEnviando && total > 0 && (
+        <div style={{ height: 3, background: L.line, margin: "0 16px 0" }}>
+          <div style={{ height: "100%", background: L.green, borderRadius: 2,
+            width: `${pct}%`, transition: "width .5s" }} />
+        </div>
+      )}
+
+      {/* Expanded panel */}
+      {open && (
+        <div style={{ borderTop: `1px solid ${L.line}`, padding: 16, background: L.surface }}>
+          {/* Message preview */}
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 10, color: L.t4, fontWeight: 700, textTransform: "uppercase", marginBottom: 6 }}>
+              Mensagem
+            </div>
+            <div style={{ background: L.white, borderRadius: 8, border: `1px solid ${L.line}`,
+              padding: "10px 14px", fontSize: 12, color: L.t1, whiteSpace: "pre-wrap", wordBreak: "break-word",
+              maxHeight: 160, overflowY: "auto" }}>
+              {c.mensagem}
+            </div>
+            {c.tipo_midia !== "texto" && c.tipo_midia && (
+              <div style={{ fontSize: 10, color: L.t3, marginTop: 4 }}>
+                Tipo de mídia: {c.tipo_midia}
+                {c.url_midia && <> · <a href={c.url_midia} target="_blank" rel="noopener noreferrer"
+                  style={{ color: L.blue }}>Ver arquivo</a></>}
+              </div>
+            )}
+          </div>
+
+          {/* Config info */}
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14, fontSize: 11, color: L.t3 }}>
+            <div style={{ background: L.white, borderRadius: 6, border: `1px solid ${L.line}`,
+              padding: "4px 10px" }}>
+              Intervalo: {c.intervalo_min}s – {c.intervalo_max}s
+            </div>
+            {c.agendado_para && (
+              <div style={{ background: L.blueBg, borderRadius: 6, border: `1px solid ${L.line}`,
+                padding: "4px 10px", color: L.blue }}>
+                Agendado: {fmtDate(c.agendado_para)}
+              </div>
+            )}
+            {c.limite_envios && (
+              <div style={{ background: L.white, borderRadius: 6, border: `1px solid ${L.line}`,
+                padding: "4px 10px" }}>
+                Limite: {c.limite_envios} envios
+              </div>
+            )}
+          </div>
+
+          {/* Contacts list */}
+          <div>
+            <div style={{ fontSize: 10, color: L.t4, fontWeight: 700, textTransform: "uppercase", marginBottom: 8,
+              display: "flex", alignItems: "center", gap: 8 }}>
+              Contatos ({contatos.length})
+              {isEnviando && (
+                <span style={{ fontSize: 9, color: L.yellow, fontWeight: 500 }}>● atualizando em tempo real</span>
+              )}
+            </div>
+            {loadingC ? (
+              <div style={{ textAlign: "center", padding: "16px 0", color: L.t4, fontSize: 11 }}>
+                Carregando contatos...
+              </div>
+            ) : contatos.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "12px 0", color: L.t4, fontSize: 11 }}>
+                Nenhum contato registrado
+              </div>
+            ) : (
+              <div style={{ background: L.white, borderRadius: 8, border: `1px solid ${L.line}`,
+                maxHeight: 280, overflowY: "auto" }}>
+                {contatos.map((ct, i) => {
+                  const cs = statusColor[ct.status] || statusColor.pendente;
+                  const statusLabel = {
+                    pendente:  "Pendente",
+                    enviando:  "Enviando...",
+                    enviado:   "Enviado",
+                    entregue:  "Entregue",
+                    falhou:    "Falhou",
+                    cancelado: "Cancelado",
+                  }[ct.status] || ct.status;
+                  return (
+                    <div key={ct.id || i}
+                      style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px",
+                        borderBottom: i < contatos.length - 1 ? `1px solid ${L.lineSoft}` : "none" }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 12, fontWeight: 500, color: L.t1,
+                          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {ct.nome || "Contato"}
+                        </div>
+                        <div style={{ fontSize: 10, color: L.t3 }}>{ct.telefone}</div>
+                        {ct.erro && (
+                          <div style={{ fontSize: 10, color: L.red, marginTop: 2,
+                            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                            title={ct.erro}>
+                            Erro: {ct.erro}
+                          </div>
+                        )}
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2, flexShrink: 0 }}>
+                        <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 20,
+                          color: cs.color, background: cs.bg }}>
+                          {statusLabel}
+                        </span>
+                        {ct.enviado_em && (
+                          <span style={{ fontSize: 9, color: L.t4 }}>
+                            {fmtDate(ct.enviado_em)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function PageDisparos({ user }) {
   const [tab,       setTab]       = useState("nova");
   const [campanhas, setCampanhas] = useState([]);
@@ -725,96 +963,22 @@ export default function PageDisparos({ user }) {
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {campanhas.map(c => {
-                const st = ST[c.status] || ST.rascunho;
-                const pct = c.total_contatos > 0 ? Math.round((c.enviados / c.total_contatos) * 100) : 0;
-                const isEnviando = c.status === "enviando";
-                return (
-                  <div key={c.id} style={{ background: L.white, borderRadius: 12, border: `1px solid ${L.line}`,
-                    padding: 18, boxShadow: "0 1px 3px rgba(0,0,0,.04)" }}>
-                    <Row between mb={6}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                        <span style={{ fontSize: 13.5, fontWeight: 600, color: L.t1 }}>{c.titulo}</span>
-                        <span style={{ fontSize: 10, background: st.bg, color: st.c,
-                          padding: "2px 8px", borderRadius: 10, fontWeight: 600, border: `1px solid ${st.c}33` }}>
-                          {st.label}
-                        </span>
-                        {c.agendado_para && c.status === "agendado" && (
-                          <span style={{ fontSize: 10, color: L.blue, background: L.blueBg,
-                            padding: "2px 8px", borderRadius: 10, border: `1px solid ${L.blue}33` }}>
-                            ⏰ {new Date(c.agendado_para).toLocaleString("pt-BR", { day:"2-digit", month:"2-digit", hour:"2-digit", minute:"2-digit" })}
-                          </span>
-                        )}
-                        {c.limite_envios && (
-                          <span style={{ fontSize: 10, color: L.t3 }}>· lim. {c.limite_envios} msgs</span>
-                        )}
-                      </div>
-                      <span style={{ fontSize: 10, color: L.t4 }}>
-                        {new Date(c.created_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" })}
-                      </span>
-                    </Row>
-
-                    <div style={{ fontSize: 11, color: L.t3, marginBottom: 10, overflow: "hidden",
-                      textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {c.mensagem}
-                    </div>
-
-                    {/* Stats */}
-                    <div style={{ display: "flex", gap: 16, marginBottom: 10 }}>
-                      {[
-                        { label: "Total",     val: c.total_contatos || 0 },
-                        { label: "Enviados",  val: c.enviados       || 0 },
-                        { label: "Entregues", val: c.entregues      || 0 },
-                        { label: "Lidos",     val: c.lidos          || 0 },
-                        { label: "Respostas", val: c.respostas      || 0 },
-                      ].map(s => (
-                        <div key={s.label} style={{ textAlign: "center" }}>
-                          <div style={{ fontSize: 15, fontWeight: 700, color: L.t1 }}>{s.val}</div>
-                          <div style={{ fontSize: 10, color: L.t4 }}>{s.label}</div>
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Progress bar */}
-                    {(isEnviando || pct > 0) && (
-                      <div style={{ marginBottom: 10 }}>
-                        <div style={{ height: 5, background: L.lineSoft, borderRadius: 3, overflow: "hidden" }}>
-                          <div style={{ height: "100%", width: `${isEnviando && enviandoId === c.id ? (progress?.enviados / progress?.total * 100) || pct : pct}%`,
-                            background: isEnviando ? L.yellow : L.green, transition: "width .5s", borderRadius: 3 }} />
-                        </div>
-                        <div style={{ fontSize: 10, color: L.t3, marginTop: 3 }}>
-                          {isEnviando && enviandoId === c.id && progress
-                            ? `Enviando ${progress.enviados}/${progress.total}...`
-                            : `${pct}% concluído`}
-                        </div>
-                      </div>
-                    )}
-
-                    <Row gap={6}>
-                      {c.status === "rascunho" && (
-                        <button onClick={() => disparar(c.id)} style={btn(L.green, "white", { fontSize: 11 })}>
-                          ▶ Disparar agora
-                        </button>
-                      )}
-                      {c.status === "agendado" && (
-                        <>
-                          <button onClick={() => disparar(c.id)} style={btn(L.green, "white", { fontSize: 11 })}>
-                            ▶ Disparar agora
-                          </button>
-                          <button onClick={() => cancelar(c.id)} style={btn(L.redBg, L.red, { fontSize: 11 })}>
-                            Cancelar
-                          </button>
-                        </>
-                      )}
-                      {c.status === "enviando" && (
-                        <button onClick={() => cancelar(c.id)} style={btn(L.redBg, L.red, { fontSize: 11 })}>
-                          ⏹ Parar envio
-                        </button>
-                      )}
-                    </Row>
-                  </div>
-                );
-              })}
+              {campanhas.map(c => (
+                <CampanhaCard
+                  key={c.id}
+                  c={c}
+                  enviandoId={enviandoId}
+                  progress={progress}
+                  onDisparar={disparar}
+                  onCancelar={cancelar}
+                  onExcluir={async (id) => {
+                    if (!window.confirm("Excluir campanha e todo o histórico de envios?")) return;
+                    await supabase.from("transmissao_contatos").delete().eq("campanha_id", id);
+                    await supabase.from("campanhas").delete().eq("id", id);
+                    load();
+                  }}
+                />
+              ))}
             </div>
           )}
         </div>
