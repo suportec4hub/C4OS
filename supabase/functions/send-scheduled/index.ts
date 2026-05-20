@@ -57,9 +57,12 @@ Deno.serve(async (req) => {
     .limit(20);
 
   if (fetchErr) return json({ error: fetchErr.message }, 500);
-  if (!pending?.length) return json({ sent: 0, failed: 0 });
 
   let sent = 0, failed = 0;
+
+  if (!pending?.length) {
+    // Sem mensagens individuais — continua para verificar campanhas agendadas
+  } else {
 
   for (const msg of pending) {
     // 2. Lock atômico: muda para 'enviando' ANTES de enviar.
@@ -190,7 +193,8 @@ Deno.serve(async (req) => {
     }
   }
 
-  console.log(`[send-scheduled] mensagens: sent=${sent} failed=${failed}`);
+    console.log(`[send-scheduled] mensagens: sent=${sent} failed=${failed}`);
+  } // end else (pending mensagens)
 
   // ── Campanhas agendadas: detecta e dispara automaticamente ──────────────
   let campaignsTriggered = 0;
@@ -214,22 +218,28 @@ Deno.serve(async (req) => {
 
       if (!locked?.length) continue;
 
-      // Dispara o broadcast via evolution-action (fire-and-forget)
-      fetch(`${SUPA_URL}/functions/v1/evolution-action`, {
-        method:  "POST",
-        headers: {
-          "Content-Type":  "application/json",
-          "Authorization": `Bearer ${SUPA_KEY}`,
-        },
-        body: JSON.stringify({
-          action:      "broadcast",
-          empresa_id:  camp.empresa_id,
-          campanha_id: camp.id,
-        }),
-      }).catch(e => console.error("[send-scheduled] broadcast error:", e));
-
-      campaignsTriggered++;
-      console.log(`[send-scheduled] campanha ${camp.id} disparada automaticamente`);
+      // Dispara o broadcast via evolution-action — AGUARDA para não ser cancelado pelo Deno
+      try {
+        const r = await fetch(`${SUPA_URL}/functions/v1/evolution-action`, {
+          method:  "POST",
+          headers: {
+            "Content-Type":  "application/json",
+            "Authorization": `Bearer ${SUPA_KEY}`,
+          },
+          body: JSON.stringify({
+            action:      "broadcast",
+            empresa_id:  camp.empresa_id,
+            campanha_id: camp.id,
+          }),
+        });
+        const result = await r.json().catch(() => ({}));
+        campaignsTriggered++;
+        console.log(`[send-scheduled] campanha ${camp.id} concluída:`, result);
+      } catch (e) {
+        console.error(`[send-scheduled] broadcast error campanha ${camp.id}:`, e);
+        // Reverte status para agendado em caso de falha de rede
+        await db.from("campanhas").update({ status: "agendado" }).eq("id", camp.id);
+      }
     }
   } catch (e) {
     console.error("[send-scheduled] erro ao verificar campanhas:", e);
