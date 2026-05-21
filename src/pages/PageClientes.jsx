@@ -53,6 +53,9 @@ export default function PageClientes({ user }) {
       ...empresaFields,
       is_c4hub: false,
       assinatura_ativa: form.status === "ativo",
+      cnpj:     form.cnpj?.trim()    || null,
+      telefone: form.telefone?.trim()|| null,
+      website:  form.website?.trim() || null,
       mrr:      form.mrr      === "" || form.mrr      == null ? null : parseFloat(form.mrr),
       plano_id: form.plano_id === "" || form.plano_id == null ? null : form.plano_id,
     };
