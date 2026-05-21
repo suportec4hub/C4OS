@@ -48,7 +48,7 @@ export default function PageClientes({ user }) {
     }
     setSaving(true); setErr("");
 
-    const { admin_nome, admin_email, admin_senha, ...empresaFields } = form;
+    const { admin_nome, admin_email, admin_senha, must_change_password, ...empresaFields } = form;
     const payload = {
       ...empresaFields,
       is_c4hub: false,
