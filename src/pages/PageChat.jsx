@@ -841,6 +841,19 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
       `Status: ${status}`);
   };
 
+  // Assume uma conversa da fila diretamente pelo id (sem precisar ser a ativa)
+  const assumirConversa = async (convId, e) => {
+    e?.stopPropagation();
+    await supabase.from("conversas").update({
+      atendente_id: user.id, status: "em_atendimento"
+    }).eq("id", convId);
+    setConversas(p => p.map(c => c.id === convId
+      ? { ...c, atendente_id: user.id, status: "em_atendimento", _atendente_nome: user.nome }
+      : c));
+    if (activeConv?.id === convId)
+      setActiveConv(p => ({ ...p, atendente_id: user.id, status: "em_atendimento", _atendente_nome: user.nome }));
+  };
+
   const assignAtendente = async (atendente_id) => {
     if (!activeConv) return;
     await supabase.from("conversas").update({
@@ -1384,7 +1397,9 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
                   {/* Abas de status */}
                   <div style={{ display: "flex", gap: 2, overflowX: "auto", scrollbarWidth: "none" }}>
                     {STATUS_TABS.map(t => {
-                      const count = t.id === "todas" ? totalNaoLidas : conversas.filter(c => c.status === t.id && c.nao_lidas > 0).reduce((s, c) => s + (c.nao_lidas || 0), 0);
+                      const count = t.id === "todas" ? totalNaoLidas
+                        : t.id === "aguardando" ? conversas.filter(c => c.status === "aguardando" && !c.atendente_id).length
+                        : conversas.filter(c => c.status === t.id && c.nao_lidas > 0).reduce((s, c) => s + (c.nao_lidas || 0), 0);
                       return (
                         <button key={t.id} onClick={() => setStatusTab(t.id)}
                           style={{ flexShrink: 0, padding: "4px 8px", borderRadius: 6, fontSize: 10, cursor: "pointer",
@@ -1474,10 +1489,18 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
                             <span style={{ fontSize: 9, color: L.t3 }}>👤 {c._atendente_nome.split(" ")[0]}</span>
                           )}
                           {c.bot_ativo && <span style={{ fontSize: 9, color: L.t3 }}>🤖</span>}
+                          {c.status === "aguardando" && !c.atendente_id && (
+                            <button onClick={e => assumirConversa(c.id, e)}
+                              style={{ fontSize: 9, color: L.teal, background: L.tealBg, border: `1px solid ${L.tealA2}`,
+                                borderRadius: 4, padding: "1px 6px", cursor: "pointer", fontFamily: "inherit",
+                                fontWeight: 700, marginLeft: "auto", flexShrink: 0 }}>
+                              ⊕ Assumir
+                            </button>
+                          )}
                           {c.nao_lidas > 0 && (
                             <span style={{ background: L.green, borderRadius: "50%", width: 16, height: 16,
                               display: "flex", alignItems: "center", justifyContent: "center",
-                              fontSize: 9, fontWeight: 700, color: "white", marginLeft: "auto" }}>
+                              fontSize: 9, fontWeight: 700, color: "white", marginLeft: c.status === "aguardando" && !c.atendente_id ? 4 : "auto" }}>
                               {c.nao_lidas}
                             </span>
                           )}
@@ -1589,6 +1612,14 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
               </Row>
 
               <Row gap={4} style={{ flexShrink: 0, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                {/* Assumir conversa da fila */}
+                {activeConv.status === "aguardando" && !activeConv.atendente_id && (
+                  <button onClick={e => assumirConversa(activeConv.id, e)}
+                    style={{ fontSize: 11, fontWeight: 700, color: "white", background: L.teal,
+                      border: "none", borderRadius: 7, padding: "5px 12px", cursor: "pointer", fontFamily: "inherit" }}>
+                    ⊕ Assumir conversa
+                  </button>
+                )}
                 {/* Status select */}
                 <select value={activeConv.status || "aberta"} onChange={e => updateConvStatus(e.target.value)}
                   style={{ fontSize: 10, border: `1px solid ${L.line}`, borderRadius: 6, padding: "4px 7px",
