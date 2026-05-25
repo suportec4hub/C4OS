@@ -94,6 +94,7 @@ export default function Shell({user,onLogout,onProfileUpdate,theme,toggleTheme})
   const [mobOpen,setMobOpen] = useState(false);
   const [perfilOpen,setPerfilOpen] = useState(false);
   const [chatTarget,setChatTarget] = useState(null); // telefone para auto-abrir no WhatsApp
+  const [totalNaoLidas,setTotalNaoLidas] = useState(0);
   const { isMobile, isTablet } = useBreakpoint();
   const isAdmin       = hasFullAccess(user);
   const isC4HubAdmin  = user?.role === "c4hub_admin";
@@ -103,6 +104,25 @@ export default function Shell({user,onLogout,onProfileUpdate,theme,toggleTheme})
   useEffect(() => {
     if (isTablet) setCol(true);
   }, [isTablet]);
+
+  useEffect(() => {
+    if (!user?.empresa_id) return;
+    const fetchUnread = async () => {
+      const { data } = await supabase
+        .from("conversas")
+        .select("nao_lidas")
+        .eq("empresa_id", user.empresa_id);
+      const total = (data || []).reduce((s, c) => s + (c.nao_lidas || 0), 0);
+      setTotalNaoLidas(total);
+    };
+    fetchUnread();
+    const interval = setInterval(fetchUnread, 30000);
+    const channel = supabase
+      .channel("shell-unread")
+      .on("postgres_changes", { event: "*", schema: "public", table: "conversas", filter: `empresa_id=eq.${user.empresa_id}` }, fetchUnread)
+      .subscribe();
+    return () => { clearInterval(interval); supabase.removeChannel(channel); };
+  }, [user?.empresa_id]);
 
   const navigate = useCallback((id) => {
     setSec(id);
@@ -201,7 +221,7 @@ export default function Shell({user,onLogout,onProfileUpdate,theme,toggleTheme})
                 const on = safe === item.id;
                 return (
                   <button key={item.id} onClick={()=>navigate(item.id)} title={showCollapsed?item.label:undefined}
-                    style={{display:"flex",alignItems:"center",gap:9,width:"100%",padding:showCollapsed?"10px 0":"7px 10px",justifyContent:showCollapsed?"center":"flex-start",background:on?L.tealA:"transparent",border:on?`1px solid ${L.tealA2}`:"1px solid transparent",outline:"none",borderRadius:8,cursor:"pointer",marginBottom:1,color:on?L.teal:L.t3,fontSize:12.5,fontFamily:"inherit",fontWeight:on?600:400,transition:"all .12s",boxShadow:on?`0 2px 8px ${L.tealA}`:"none"}}
+                    style={{display:"flex",alignItems:"center",gap:9,width:"100%",padding:showCollapsed?"10px 0":"7px 10px",justifyContent:showCollapsed?"center":"flex-start",background:on?L.tealA:"transparent",border:on?`1px solid ${L.tealA2}`:"1px solid transparent",outline:"none",borderRadius:8,cursor:"pointer",marginBottom:1,color:on?L.teal:L.t3,fontSize:12.5,fontFamily:"inherit",fontWeight:on?600:400,transition:"all .12s",boxShadow:on?`0 2px 8px ${L.tealA}`:"none",position:"relative"}}
                     onMouseEnter={e=>{if(!on){e.currentTarget.style.background=L.surface;e.currentTarget.style.color=L.t2;e.currentTarget.style.borderColor=L.lineSoft;}}}
                     onMouseLeave={e=>{if(!on){e.currentTarget.style.background="transparent";e.currentTarget.style.color=L.t3;e.currentTarget.style.borderColor="transparent";}}}
                   >
@@ -209,6 +229,16 @@ export default function Shell({user,onLogout,onProfileUpdate,theme,toggleTheme})
                     {!showCollapsed && <span style={{whiteSpace:"nowrap"}}>{item.label}</span>}
                     {!showCollapsed && item.id==="ai" && (
                       <span style={{marginLeft:"auto",background:L.tealA,color:L.teal,borderRadius:4,padding:"1px 6px",fontSize:8,fontWeight:700,letterSpacing:"1px",fontFamily:"'JetBrains Mono',monospace",border:`1px solid ${L.tealA2}`}}>AI</span>
+                    )}
+                    {!showCollapsed && item.id==="whatsapp" && totalNaoLidas > 0 && (
+                      <span style={{marginLeft:"auto",background:L.red,color:"white",borderRadius:10,padding:"1px 7px",fontSize:10,fontWeight:700,minWidth:18,textAlign:"center"}}>
+                        {totalNaoLidas > 99 ? "99+" : totalNaoLidas}
+                      </span>
+                    )}
+                    {showCollapsed && item.id==="whatsapp" && totalNaoLidas > 0 && (
+                      <span style={{position:"absolute",top:6,right:6,background:L.red,color:"white",borderRadius:"50%",width:14,height:14,fontSize:8,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                        {totalNaoLidas > 9 ? "9+" : totalNaoLidas}
+                      </span>
                     )}
                   </button>
                 );

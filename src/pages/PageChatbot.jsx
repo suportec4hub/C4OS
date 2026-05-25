@@ -13,7 +13,7 @@ export default function PageChatbot({ user }) {
   return (
     <Fade>
       <div style={{display:"flex",gap:4,marginBottom:20,background:L.surface,padding:4,borderRadius:9,border:`1px solid ${L.line}`,width:"fit-content"}}>
-        {[["config","⚙ Configurações"],["gatilhos","⚡ Gatilhos"]].map(([t,l])=>(
+        {[["config","⚙ Configurações"],["gatilhos","⚡ Gatilhos"],["rapidas","⚡ Respostas Rápidas"]].map(([t,l])=>(
           <button key={t} onClick={()=>setTab(t)}
             style={{padding:"7px 18px",borderRadius:7,fontSize:12.5,fontWeight:tab===t?600:400,cursor:"pointer",fontFamily:"inherit",background:tab===t?L.white:L.surface,color:tab===t?L.teal:L.t3,border:"none",transition:"all .12s",boxShadow:tab===t?"0 1px 3px rgba(0,0,0,0.07)":"none"}}>
             {l}
@@ -23,6 +23,7 @@ export default function PageChatbot({ user }) {
 
       {tab==="config"   && <TabConfig   user={user}/>}
       {tab==="gatilhos" && <TabGatilhos user={user}/>}
+      {tab==="rapidas"  && <TabRapidas  user={user}/>}
     </Fade>
   );
 }
