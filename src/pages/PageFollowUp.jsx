@@ -33,6 +33,7 @@ function tempoSemConversa(isoUltima) {
 }
 
 export default function PageFollowUp({ user, onGoToChat }) {
+  const [mainTab, setMainTab] = useState("followups");
   const { data: followups, loading, insert, update, remove, refetch } = useTable("follow_ups", { empresa_id: user?.empresa_id });
   const { data: usuarios } = useTable("usuarios", { empresa_id: user?.empresa_id, ativo: true });
   const [leads, setLeads] = useState([]);
@@ -186,6 +187,21 @@ export default function PageFollowUp({ user, onGoToChat }) {
 
   return (
     <Fade>
+      {/* Tabs principais */}
+      <div style={{ display:"flex", gap:4, marginBottom:20, background:L.surface, padding:4, borderRadius:9, border:`1px solid ${L.line}`, width:"fit-content" }}>
+        {[["followups","📋 Follow-ups"],["sequencias","🔄 Sequências Automáticas"]].map(([t,l]) => (
+          <button key={t} onClick={() => setMainTab(t)}
+            style={{ padding:"7px 18px", borderRadius:7, fontSize:12.5, fontWeight:mainTab===t?600:400, cursor:"pointer", fontFamily:"inherit",
+              background:mainTab===t?L.white:L.surface, color:mainTab===t?L.teal:L.t3, border:"none", transition:"all .12s",
+              boxShadow:mainTab===t?"0 1px 3px rgba(0,0,0,0.07)":"none" }}>
+            {l}
+          </button>
+        ))}
+      </div>
+
+      {mainTab === "sequencias" && <TabSequencias user={user} />}
+
+      {mainTab === "followups" && <>
       {/* Alertas */}
       {(urgentes > 0 || vencidos > 0) && (
         <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
@@ -290,6 +306,240 @@ export default function PageFollowUp({ user, onGoToChat }) {
           <ModalFooter onClose={() => setModal(false)} onSave={save} loading={saving} label={editId ? "Salvar" : "Criar Follow-up"} />
         </Modal>
       )}
+      </>}
     </Fade>
+  );
+}
+
+/* ─── Aba Sequências Automáticas ────────────────────────────────────────────── */
+function TabSequencias({ user }) {
+  const [sequencias, setSequencias] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [modal, setModal] = useState(false);
+  const [editSeq, setEditSeq] = useState(null);
+  const [form, setForm] = useState({ nome:"", descricao:"", gatilho:"sem_resposta", horas_espera:24, ativo:true });
+  const [passos, setPassos] = useState([{ delay_horas:24, mensagem:"", ativo:true }]);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+  const [execucoes, setExecucoes] = useState([]);
+
+  const load = async () => {
+    if (!user?.empresa_id) return;
+    setLoading(true);
+    const [{ data: seqs }, { data: execs }] = await Promise.all([
+      supabase.from("followup_sequencias").select("*, followup_passos(*)").eq("empresa_id", user.empresa_id).order("created_at", { ascending: false }),
+      supabase.from("followup_execucoes").select("*, followup_sequencias(nome)").eq("empresa_id", user.empresa_id).eq("status", "ativo").order("proximo_envio"),
+    ]);
+    setSequencias(seqs || []);
+    setExecucoes(execs || []);
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, [user?.empresa_id]);
+
+  const openNew = () => {
+    setEditSeq(null);
+    setForm({ nome:"", descricao:"", gatilho:"sem_resposta", horas_espera:24, ativo:true });
+    setPassos([{ delay_horas:24, mensagem:"", ativo:true }]);
+    setErr(""); setModal(true);
+  };
+
+  const openEdit = (seq) => {
+    setEditSeq(seq.id);
+    setForm({ nome: seq.nome, descricao: seq.descricao||"", gatilho: seq.gatilho, horas_espera: seq.horas_espera, ativo: seq.ativo });
+    setPassos((seq.followup_passos || []).sort((a,b) => a.ordem - b.ordem).map(p => ({ id: p.id, delay_horas: p.delay_horas, mensagem: p.mensagem, ativo: p.ativo })));
+    setErr(""); setModal(true);
+  };
+
+  const save = async () => {
+    if (!form.nome.trim()) { setErr("Nome obrigatório."); return; }
+    if (passos.length === 0) { setErr("Adicione pelo menos um passo."); return; }
+    if (passos.some(p => !p.mensagem.trim())) { setErr("Preencha a mensagem de todos os passos."); return; }
+    setSaving(true); setErr("");
+    try {
+      let seqId = editSeq;
+      if (editSeq) {
+        await supabase.from("followup_sequencias").update({ ...form }).eq("id", editSeq);
+        await supabase.from("followup_passos").delete().eq("sequencia_id", editSeq);
+      } else {
+        const { data } = await supabase.from("followup_sequencias").insert({ ...form, empresa_id: user.empresa_id }).select().single();
+        seqId = data.id;
+      }
+      await supabase.from("followup_passos").insert(
+        passos.map((p, i) => ({ sequencia_id: seqId, ordem: i, delay_horas: p.delay_horas, mensagem: p.mensagem, ativo: p.ativo }))
+      );
+      setModal(false); load();
+    } catch (e) { setErr(e.message); }
+    setSaving(false);
+  };
+
+  const toggleAtivo = async (seq) => {
+    await supabase.from("followup_sequencias").update({ ativo: !seq.ativo }).eq("id", seq.id);
+    setSequencias(p => p.map(s => s.id === seq.id ? { ...s, ativo: !s.ativo } : s));
+  };
+
+  const del = async (id) => {
+    if (!window.confirm("Excluir sequência e todos os seus passos?")) return;
+    await supabase.from("followup_sequencias").delete().eq("id", id);
+    load();
+  };
+
+  const GATILHOS = [
+    { id:"sem_resposta", label:"📭 Sem resposta do lead" },
+    { id:"lead_criado",  label:"🆕 Lead recém criado" },
+    { id:"manual",       label:"▶ Ativação manual" },
+  ];
+
+  const inStyle = { width:"100%", border:`1px solid ${L.line}`, borderRadius:8, padding:"8px 12px",
+    fontSize:12, outline:"none", fontFamily:"inherit", boxSizing:"border-box", background:L.surface, color:L.t1 };
+
+  return (
+    <div>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+        <div>
+          <div style={{ fontSize:14, fontWeight:700, color:L.t1 }}>Sequências Automáticas</div>
+          <div style={{ fontSize:11, color:L.t3, marginTop:2 }}>Mensagens enviadas automaticamente quando leads ficam sem resposta</div>
+        </div>
+        <button onClick={openNew} style={{ background:L.accent, color:"white", border:"none", borderRadius:8, padding:"8px 16px", fontSize:12, cursor:"pointer", fontFamily:"inherit", fontWeight:600 }}>
+          + Nova Sequência
+        </button>
+      </div>
+
+      {/* Execuções ativas */}
+      {execucoes.length > 0 && (
+        <div style={{ background:L.blueBg, borderRadius:10, border:`1px solid ${L.blueA||L.line}`, padding:"12px 16px", marginBottom:16 }}>
+          <div style={{ fontSize:11, fontWeight:700, color:L.blue, marginBottom:8 }}>▶ {execucoes.length} sequência(s) em execução</div>
+          <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+            {execucoes.slice(0,5).map(e => (
+              <div key={e.id} style={{ fontSize:11, color:L.t2, display:"flex", justifyContent:"space-between" }}>
+                <span>{e.followup_sequencias?.nome} · Passo {e.passo_atual + 1}</span>
+                <span style={{ color:L.t4 }}>Próximo: {e.proximo_envio ? new Date(e.proximo_envio).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}) : "—"}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {loading ? (
+        <div style={{ textAlign:"center", padding:40, color:L.t4 }}>Carregando...</div>
+      ) : sequencias.length === 0 ? (
+        <div style={{ textAlign:"center", padding:60, color:L.t4 }}>
+          <div style={{ fontSize:32, marginBottom:12 }}>🔄</div>
+          <div style={{ fontSize:14, fontWeight:600 }}>Nenhuma sequência criada</div>
+          <div style={{ fontSize:12, marginTop:4 }}>Crie sequências para fazer follow-up automático com leads</div>
+        </div>
+      ) : (
+        <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+          {sequencias.map(seq => (
+            <div key={seq.id} style={{ background:L.white, borderRadius:12, border:`1px solid ${L.line}`, padding:"14px 18px", opacity:seq.ativo?1:0.6 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:13, fontWeight:700, color:L.t1 }}>{seq.nome}</div>
+                  <div style={{ fontSize:11, color:L.t3, marginTop:2 }}>
+                    {GATILHOS.find(g=>g.id===seq.gatilho)?.label} · {seq.horas_espera}h de espera · {(seq.followup_passos||[]).length} passo(s)
+                  </div>
+                  {seq.descricao && <div style={{ fontSize:11, color:L.t4, marginTop:2 }}>{seq.descricao}</div>}
+                </div>
+                <div style={{ display:"flex", gap:6, flexShrink:0 }}>
+                  <button onClick={() => toggleAtivo(seq)}
+                    style={{ fontSize:11, padding:"4px 12px", borderRadius:6, cursor:"pointer", fontFamily:"inherit", fontWeight:600, border:"none",
+                      background:seq.ativo?L.greenBg:L.surface, color:seq.ativo?L.green:L.t3 }}>
+                    {seq.ativo?"● Ativo":"○ Inativo"}
+                  </button>
+                  <button onClick={() => openEdit(seq)}
+                    style={{ fontSize:11, padding:"4px 10px", borderRadius:6, cursor:"pointer", fontFamily:"inherit", border:`1px solid ${L.line}`, background:L.surface, color:L.t2 }}>
+                    ✎ Editar
+                  </button>
+                  <button onClick={() => del(seq.id)}
+                    style={{ fontSize:11, padding:"4px 10px", borderRadius:6, cursor:"pointer", fontFamily:"inherit", border:`1px solid ${L.redA||L.line}`, background:L.redBg, color:L.red }}>
+                    🗑
+                  </button>
+                </div>
+              </div>
+              {/* Passos */}
+              {(seq.followup_passos||[]).sort((a,b)=>a.ordem-b.ordem).map((p,i) => (
+                <div key={p.id} style={{ marginTop:8, paddingLeft:16, borderLeft:`2px solid ${L.line}`, marginLeft:8 }}>
+                  <div style={{ fontSize:10, color:L.t4, fontWeight:600 }}>Passo {i+1} — {i===0?"imediato após ativação":`${p.delay_horas}h após passo ${i}`}</div>
+                  <div style={{ fontSize:11, color:L.t2, marginTop:2, whiteSpace:"pre-wrap" }}>{p.mensagem}</div>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Modal */}
+      {modal && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.45)", zIndex:200, display:"flex", alignItems:"center", justifyContent:"center" }}
+          onClick={() => setModal(false)}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background:L.white, borderRadius:14, padding:24, width:560, maxHeight:"90vh", overflowY:"auto",
+              boxShadow:"0 8px 40px rgba(0,0,0,.18)" }}>
+            <div style={{ fontSize:15, fontWeight:700, color:L.t1, marginBottom:16 }}>
+              {editSeq ? "Editar Sequência" : "Nova Sequência"}
+            </div>
+
+            <label style={{ fontSize:11, color:L.t3, display:"block", marginBottom:4 }}>Nome *</label>
+            <input value={form.nome} onChange={e => setForm(p=>({...p,nome:e.target.value}))} placeholder="Ex: Follow-up Leads Frios"
+              style={{ ...inStyle, marginBottom:12 }} />
+
+            <label style={{ fontSize:11, color:L.t3, display:"block", marginBottom:4 }}>Gatilho de ativação</label>
+            <select value={form.gatilho} onChange={e => setForm(p=>({...p,gatilho:e.target.value}))} style={{ ...inStyle, marginBottom:12 }}>
+              {GATILHOS.map(g => <option key={g.id} value={g.id}>{g.label}</option>)}
+            </select>
+
+            <label style={{ fontSize:11, color:L.t3, display:"block", marginBottom:4 }}>Horas de espera antes de iniciar</label>
+            <input type="number" min={1} value={form.horas_espera} onChange={e => setForm(p=>({...p,horas_espera:parseInt(e.target.value)||24}))}
+              style={{ ...inStyle, marginBottom:12 }} />
+
+            <label style={{ fontSize:11, color:L.t3, display:"block", marginBottom:4 }}>Descrição (opcional)</label>
+            <input value={form.descricao} onChange={e => setForm(p=>({...p,descricao:e.target.value}))} placeholder="Para que serve esta sequência?"
+              style={{ ...inStyle, marginBottom:16 }} />
+
+            {/* Passos */}
+            <div style={{ fontSize:12, fontWeight:700, color:L.t1, marginBottom:10 }}>Mensagens da sequência</div>
+            {passos.map((p, i) => (
+              <div key={i} style={{ background:L.surface, borderRadius:8, border:`1px solid ${L.line}`, padding:"12px 14px", marginBottom:8 }}>
+                <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:8 }}>
+                  <span style={{ fontSize:11, fontWeight:600, color:L.t2 }}>
+                    Passo {i+1} {i===0?"(imediato)":`(+${p.delay_horas}h após passo ${i})`}
+                  </span>
+                  {passos.length > 1 && (
+                    <button onClick={() => setPassos(pp => pp.filter((_,j)=>j!==i))}
+                      style={{ background:"none", border:"none", cursor:"pointer", color:L.red, fontSize:14 }}>×</button>
+                  )}
+                </div>
+                {i > 0 && (
+                  <div style={{ marginBottom:8 }}>
+                    <label style={{ fontSize:10, color:L.t4 }}>Horas de espera após passo anterior</label>
+                    <input type="number" min={1} value={p.delay_horas}
+                      onChange={e => setPassos(pp => pp.map((x,j)=>j===i?{...x,delay_horas:parseInt(e.target.value)||24}:x))}
+                      style={{ ...inStyle, marginTop:4 }} />
+                  </div>
+                )}
+                <label style={{ fontSize:10, color:L.t4 }}>Mensagem *</label>
+                <textarea value={p.mensagem} rows={3} placeholder="Olá {nome}! Passando para retomar nosso contato..."
+                  onChange={e => setPassos(pp => pp.map((x,j)=>j===i?{...x,mensagem:e.target.value}:x))}
+                  style={{ ...inStyle, resize:"vertical", marginTop:4 }} />
+                <div style={{ fontSize:10, color:L.t4, marginTop:4 }}>Variáveis: {"{nome}"} {"{telefone}"} {"{empresa}"}</div>
+              </div>
+            ))}
+            <button onClick={() => setPassos(pp => [...pp, { delay_horas:24, mensagem:"", ativo:true }])}
+              style={{ background:L.tealBg, color:L.teal, border:`1px solid ${L.tealA2||L.line}`, borderRadius:7, padding:"7px 14px", fontSize:12, cursor:"pointer", fontFamily:"inherit", fontWeight:600, marginBottom:16 }}>
+              + Adicionar passo
+            </button>
+
+            {err && <div style={{ padding:"8px 12px", background:L.redBg, borderRadius:8, color:L.red, fontSize:11, marginBottom:10 }}>{err}</div>}
+
+            <div style={{ display:"flex", justifyContent:"flex-end", gap:8 }}>
+              <button onClick={() => setModal(false)} style={{ padding:"8px 16px", borderRadius:8, fontSize:12, cursor:"pointer", fontFamily:"inherit", background:L.surface, color:L.t2, border:`1px solid ${L.line}` }}>Cancelar</button>
+              <button onClick={save} disabled={saving} style={{ padding:"8px 20px", borderRadius:8, fontSize:12, cursor:"pointer", fontFamily:"inherit", background:L.accent, color:"white", border:"none", fontWeight:600, opacity:saving?0.6:1 }}>
+                {saving?"Salvando...":"Salvar sequência"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
