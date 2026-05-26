@@ -51,6 +51,16 @@ Deno.serve(async (req) => {
     const event = body.event || body.eventString || body.Event || "";
     const data  = body.data  || body.Data  || body;
 
+    // Saída rápida para eventos de alta frequência que não processamos — evita queries desnecessárias ao banco
+    const SKIP_EVENTS = [
+      "presence.update", "PRESENCE", "CHAT_PRESENCE",
+      "chats.update", "CHATS_UPDATE", "CHATS_UPSERT", "CHATS_SET", "CHATS_DELETE",
+      "contacts.update", "CONTACTS_UPDATE", "CONTACTS_UPSERT", "CONTACTS_SET",
+      "message.ack", "READ_RECEIPT",
+      "labels.edit", "LABELS_EDIT", "labels.association", "LABELS_ASSOCIATION",
+    ];
+    if (SKIP_EVENTS.includes(event)) return new Response("OK");
+
     console.log("[webhook] event:", event, "| keys:", Object.keys(body).join(","));
 
     const instanceToken = tokenFromUrl || body.apikey || body.instance?.apikey || body.instance?.token || "";
