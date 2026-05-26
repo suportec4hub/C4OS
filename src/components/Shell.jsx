@@ -41,6 +41,7 @@ const PageDisparos         = lazy(() => import("../pages/PageDisparos"));
 const PageRelatoriosAtend  = lazy(() => import("../pages/PageRelatoriosAtend"));
 const PageMeta             = lazy(() => import("../pages/PageMeta"));
 const PageCheckoutAdmin    = lazy(() => import("../pages/PageCheckoutAdmin"));
+const PageFluxosVendedor   = lazy(() => import("../pages/PageFluxosVendedor"));
 
 const NAV_ITEMS = [
   {id:"dashboard",  label:"Dashboard",      ico:"▦", g:"principal"},
@@ -48,7 +49,8 @@ const NAV_ITEMS = [
   {id:"pipeline",   label:"Pipeline",       ico:"⬡", g:"principal"},
   {id:"whatsapp",   label:"WhatsApp",       ico:"◈",  g:"comunicação"},
   {id:"chatbot",    label:"Chatbot",        ico:"🤖", g:"comunicação"},
-  {id:"chatbotbuilder", label:"Fluxo Visual",ico:"⬡", g:"comunicação"},
+  {id:"chatbotbuilder",  label:"Fluxo Visual",   ico:"⬡", g:"comunicação"},
+  {id:"fluxosvendedor", label:"Scripts Vendas", ico:"📋", g:"comunicação"},
   {id:"disparos",   label:"Disparos",       ico:"◉",  g:"comunicação"},
   {id:"workspace",  label:"Workspace",      ico:"◫",  g:"comunicação"},
   {id:"followup",   label:"Follow-ups",     ico:"◷", g:"atividades"},
@@ -350,7 +352,8 @@ export default function Shell({user,onLogout,onProfileUpdate,theme,toggleTheme})
           {safe==="pipeline"  && <PagePipeline  user={user} onOpenChat={(phone)=>{ setChatTarget(phone); setSec("whatsapp"); }}/>}
           {safe==="whatsapp"       && <PageChat            user={user} openPhone={chatTarget} onChatTargetUsed={()=>setChatTarget(null)}/>}
           {safe==="chatbot"        && <PageChatbot         user={user}/>}
-          {safe==="chatbotbuilder" && <PageChatbotBuilder  user={user}/>}
+          {safe==="chatbotbuilder"  && <PageChatbotBuilder  user={user}/>}
+          {safe==="fluxosvendedor" && <PageFluxosVendedor  user={user}/>}
           {safe==="disparos"       && <PageDisparos        user={user}/>}
           {safe==="broadcast"      && <PageBroadcast       user={user}/>}
           {safe==="followup"  && <PageFollowUp  user={user} onGoToChat={(leadId)=>navigate("whatsapp")}/>}

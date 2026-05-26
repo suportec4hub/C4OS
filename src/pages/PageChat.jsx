@@ -506,8 +506,13 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
   const [syncMsg,      setSyncMsg]      = useState("");
 
   // ── right panel ───────────────────────────────────────────────────────────
-  const [rightTab,     setRightTab]     = useState("info"); // info | etiquetas | agendadas | log
+  const [rightTab,     setRightTab]     = useState("info"); // info | etiquetas | agendadas | log | script
   const [convEtiquetas,setConvEtiquetas]= useState([]);
+
+  // ── script / fluxo vendedor ───────────────────────────────────────────────
+  const [scriptFluxo,  setScriptFluxo]  = useState(null);  // fluxo ativo
+  const [scriptPassos, setScriptPassos] = useState([]);    // passos ordenados
+  const [scriptSending,setScriptSending]= useState(null);  // id do passo sendo enviado
   const [logsAtend,    setLogsAtend]    = useState([]);
   const [agendadas,    setAgendadas]    = useState([]);
   const [showRight,    setShowRight]    = useState(true);
@@ -820,6 +825,29 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
       .order("agendado_para", { ascending: false })
       .limit(20)
       .then(({ data }) => setAgendadas(data || []));
+    // fluxo de vendas: prioridade 1 = pessoal do vendedor, 2 = empresa
+    (async () => {
+      setScriptFluxo(null); setScriptPassos([]);
+      let fluxo = null;
+      if (user?.id) {
+        const { data: personal } = await supabase.from("fluxos_vendedor")
+          .select("*").eq("empresa_id", user.empresa_id).eq("usuario_id", user.id).eq("ativo", true)
+          .order("created_at", { ascending: false }).limit(1).maybeSingle();
+        fluxo = personal;
+      }
+      if (!fluxo) {
+        const { data: empresa } = await supabase.from("fluxos_vendedor")
+          .select("*").eq("empresa_id", user.empresa_id).is("usuario_id", null).eq("ativo", true)
+          .order("created_at", { ascending: false }).limit(1).maybeSingle();
+        fluxo = empresa;
+      }
+      if (fluxo) {
+        setScriptFluxo(fluxo);
+        const { data: passos } = await supabase.from("fluxos_passos")
+          .select("*").eq("fluxo_id", fluxo.id).order("ordem");
+        setScriptPassos(passos || []);
+      }
+    })();
   }, [activeConv?.id]);
 
   // ── realtime mensagens_agendadas (auto-atualiza aba Agendadas) ────────────
@@ -2067,6 +2095,7 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
                 { id: "etiquetas", label: "Tags"    },
                 { id: "agendadas", label: "Agenda"  },
                 { id: "log",       label: "Log"     },
+                { id: "script",    label: "Script"  },
               ].map(t => (
                 <button key={t.id} onClick={() => setRightTab(t.id)}
                   style={{ flex: 1, padding: "8px 2px", fontSize: 11, fontWeight: rightTab === t.id ? 700 : 400,
@@ -2259,6 +2288,98 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
                       {l.usuarios?.nome && <div style={{ fontSize: 10, color: L.t4, marginTop: 1 }}>por {l.usuarios.nome}</div>}
                     </div>
                   ))}
+                </div>
+              )}
+
+              {/* SCRIPT TAB */}
+              {rightTab === "script" && (
+                <div>
+                  {!scriptFluxo ? (
+                    <div style={{ textAlign: "center", padding: "28px 0" }}>
+                      <div style={{ fontSize: 26, marginBottom: 8 }}>📋</div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: L.t2, marginBottom: 6 }}>
+                        Nenhum script ativo
+                      </div>
+                      <div style={{ fontSize: 11, color: L.t4, lineHeight: 1.5 }}>
+                        Crie um fluxo de vendas em<br/>
+                        <strong>Scripts Vendas</strong> no menu lateral
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      {/* Cabeçalho do fluxo */}
+                      <div style={{ padding: "10px 12px", borderRadius: 9, marginBottom: 12,
+                        background: scriptFluxo.cor + "14", border: `1px solid ${scriptFluxo.cor}33` }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: L.t1 }}>{scriptFluxo.nome}</div>
+                        {scriptFluxo.descricao && (
+                          <div style={{ fontSize: 10.5, color: L.t3, marginTop: 2 }}>{scriptFluxo.descricao}</div>
+                        )}
+                        <div style={{ fontSize: 10, color: L.t4, marginTop: 4 }}>
+                          {scriptFluxo.usuario_id ? "📌 Seu script pessoal" : "🏢 Script da empresa"}
+                          {" · "}{scriptPassos.length} {scriptPassos.length === 1 ? "passo" : "passos"}
+                        </div>
+                      </div>
+
+                      {/* Passos */}
+                      {scriptPassos.length === 0 ? (
+                        <div style={{ fontSize: 11, color: L.t4, textAlign: "center", padding: "16px 0" }}>
+                          Este fluxo não tem passos ainda.
+                        </div>
+                      ) : scriptPassos.map((ps, i) => {
+                        const isSending = scriptSending === ps.id;
+                        const contact   = activeConv?.contato_nome || "";
+                        const phone     = activeConv?.contato_telefone || "";
+                        const empresa   = activeConv?.contato_empresa || "";
+                        const preview   = ps.mensagem
+                          .replace(/\{nome\}/g, contact || "{nome}")
+                          .replace(/\{telefone\}/g, phone || "{telefone}")
+                          .replace(/\{empresa\}/g, empresa || "{empresa}");
+                        return (
+                          <div key={ps.id} style={{ background: L.white, border: `1px solid ${L.line}`,
+                            borderRadius: 10, padding: "10px 12px", marginBottom: 8,
+                            boxShadow: "0 1px 4px rgba(0,0,0,0.04)", opacity: isSending ? 0.7 : 1,
+                            transition: "opacity .15s" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 6 }}>
+                              <div style={{ width: 20, height: 20, borderRadius: "50%", background: L.tealBg,
+                                border: `1px solid ${L.tealA2}`, display: "flex", alignItems: "center",
+                                justifyContent: "center", fontSize: 9, fontWeight: 700,
+                                color: L.teal, flexShrink: 0 }}>
+                                {i + 1}
+                              </div>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: L.t1, flex: 1,
+                                whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                {ps.titulo || `Passo ${i + 1}`}
+                              </div>
+                            </div>
+                            <div style={{ fontSize: 11, color: L.t2, lineHeight: 1.5, marginBottom: 8,
+                              padding: "6px 8px", background: L.surface, borderRadius: 6,
+                              wordBreak: "break-word", whiteSpace: "pre-wrap" }}>
+                              {preview}
+                            </div>
+                            <button
+                              disabled={isSending || !activeConv}
+                              onClick={async () => {
+                                setScriptSending(ps.id);
+                                await send(preview);
+                                setScriptSending(null);
+                              }}
+                              style={{ width: "100%", background: isSending ? L.surface : L.accent,
+                                color: isSending ? L.t3 : "white", border: "none", borderRadius: 7,
+                                padding: "6px 0", fontSize: 11, fontWeight: 600,
+                                cursor: isSending ? "wait" : "pointer", fontFamily: "inherit",
+                                transition: "all .12s" }}>
+                              {isSending ? "Enviando..." : "▶ Enviar esta mensagem"}
+                            </button>
+                          </div>
+                        );
+                      })}
+
+                      <div style={{ fontSize: 10, color: L.t4, textAlign: "center",
+                        marginTop: 8, lineHeight: 1.5 }}>
+                        As variáveis {"{nome}"}, {"{telefone}"} e {"{empresa}"} são substituídas automaticamente
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
