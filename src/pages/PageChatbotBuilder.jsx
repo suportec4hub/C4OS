@@ -65,7 +65,7 @@ const CONDICAO_TIPOS = [
 const NODE_W = 210;
 const NODE_H = 90; // approximate height for connection calc
 
-const VAZIO_FLUXO = { nome: "", descricao: "" };
+const VAZIO_FLUXO = { nome: "", descricao: "", usuario_id: null };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 const btn = (bg = L.surface, color = L.t2, extra = {}) => ({
@@ -703,9 +703,84 @@ function NodeEditPanel({ no, onSave, onClose }) {
 }
 
 // ─── Fluxo List (home screen) ─────────────────────────────────────────────────
-function FluxoList({ fluxos, fluxoAtivoId, onOpen, onUsar, onToggleAtivo, onDeletar, onNovo }) {
+function FluxoCard({ f, emUso, onOpen, onUsar, onToggleAtivo, onDeletar, vendedores }) {
+  const vendNome = f.usuario_id ? (vendedores.find(v => v.id === f.usuario_id)?.nome || "Vendedor") : null;
   return (
-    <div style={{ maxWidth: 800, margin: "0 auto" }}>
+    <div style={{ background: L.white, borderRadius: 12,
+      border: `2px solid ${emUso ? L.accent : L.line}`,
+      padding: 18, transition: "all .15s",
+      boxShadow: emUso ? `0 4px 20px ${L.accent}22` : "0 1px 4px rgba(0,0,0,.04)" }}>
+      <Row between mb={6}>
+        <span style={{ fontSize: 13.5, fontWeight: 700, color: L.t1,
+          flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginRight: 8 }}>
+          {f.nome}
+        </span>
+        <Row gap={5} style={{ flexShrink: 0 }}>
+          {emUso && (
+            <span style={{ fontSize: 10, background: L.accent, color: "white",
+              padding: "2px 8px", borderRadius: 10, fontWeight: 700 }}>🤖 Em uso</span>
+          )}
+          <span style={{ fontSize: 10,
+            background: f.ativo ? L.greenBg : L.surface,
+            color: f.ativo ? L.green : L.t4,
+            padding: "2px 8px", borderRadius: 10, fontWeight: 600,
+            border: `1px solid ${f.ativo ? L.green+"33" : L.line}` }}>
+            {f.ativo ? "● Ativo" : "Rascunho"}
+          </span>
+        </Row>
+      </Row>
+
+      {vendNome && (
+        <div style={{ fontSize: 10.5, color: L.teal, marginBottom: 6,
+          display: "flex", alignItems: "center", gap: 5 }}>
+          <span style={{ width: 14, height: 14, borderRadius: "50%", background: L.tealBg,
+            border: `1px solid ${L.tealA2}`, display: "inline-flex", alignItems: "center",
+            justifyContent: "center", fontSize: 8 }}>👤</span>
+          {vendNome}
+        </div>
+      )}
+
+      {f.descricao && (
+        <div style={{ fontSize: 11.5, color: L.t3, marginBottom: 8, lineHeight: 1.4 }}>{f.descricao}</div>
+      )}
+      <div style={{ fontSize: 10, color: L.t4, marginBottom: 14, fontFamily: "'JetBrains Mono',monospace" }}>
+        {new Date(f.created_at).toLocaleDateString("pt-BR")}
+        {f.nos?.length ? ` · ${f.nos.length} nós` : ""}
+      </div>
+      <Row gap={6}>
+        <button onClick={() => onOpen(f)}
+          style={btn(L.accent, "white", { flex: 1, fontSize: 11.5, fontWeight: 600 })}>
+          ✎ Editar
+        </button>
+        {!f.usuario_id && (
+          <button onClick={() => onUsar(f)} title={emUso ? "Remover do chatbot" : "Usar no chatbot"}
+            style={btn(emUso ? L.greenBg : L.surface, emUso ? L.green : L.t3,
+              { fontSize: 11, padding: "7px 11px", border: `1px solid ${emUso ? L.green+"55" : L.line}` })}>
+            {emUso ? "🤖 ✓" : "🤖"}
+          </button>
+        )}
+        <button onClick={() => onToggleAtivo(f)}
+          style={btn(f.ativo ? L.yellowBg : L.greenBg, f.ativo ? L.yellow : L.green,
+            { fontSize: 11, padding: "7px 11px" })}>
+          {f.ativo ? "⏸" : "▶"}
+        </button>
+        <button onClick={() => onDeletar(f.id)}
+          style={btn(L.redBg, L.red, { fontSize: 11, padding: "7px 11px" })}>✕</button>
+      </Row>
+    </div>
+  );
+}
+
+function FluxoList({ fluxos, fluxoAtivoId, vendedores, onOpen, onUsar, onToggleAtivo, onDeletar, onNovo }) {
+  const [tab, setTab] = useState("empresa"); // "empresa" | "vendedor"
+
+  const empresa  = fluxos.filter(f => !f.usuario_id);
+  const vendedor = fluxos.filter(f => !!f.usuario_id);
+  const lista    = tab === "empresa" ? empresa : vendedor;
+
+  return (
+    <div style={{ maxWidth: 860, margin: "0 auto" }}>
+      {/* Header */}
       <Row between mb={20}>
         <div>
           <div style={{ fontSize: 18, fontWeight: 700, color: L.t1, fontFamily: "'Outfit',sans-serif" }}>
@@ -715,72 +790,67 @@ function FluxoList({ fluxos, fluxoAtivoId, onOpen, onUsar, onToggleAtivo, onDele
             Crie fluxos de atendimento automático com arrastar e soltar
           </div>
         </div>
-        <button onClick={onNovo} style={btn(L.accent, "white", { fontWeight: 600 })}>+ Novo fluxo</button>
+        <button onClick={() => onNovo(tab)} style={btn(L.accent, "white", { fontWeight: 600 })}>+ Novo fluxo</button>
       </Row>
 
-      {fluxos.length === 0 ? (
-        <div style={{ textAlign: "center", padding: 80, color: L.t4,
-          background: L.white, borderRadius: 14, border: `1px solid ${L.line}` }}>
-          <div style={{ fontSize: 44, marginBottom: 14 }}>🤖</div>
-          <div style={{ fontSize: 14, fontWeight: 600, color: L.t2, marginBottom: 6 }}>Nenhum fluxo criado</div>
-          <div style={{ fontSize: 12, marginBottom: 22, color: L.t3 }}>
-            Crie fluxos visuais: menus, mensagens automáticas, transferências e muito mais.
+      {/* Tabs */}
+      <div style={{ display: "flex", gap: 0, marginBottom: 20, background: L.surface,
+        borderRadius: 10, padding: 4, border: `1px solid ${L.line}`, width: "fit-content" }}>
+        {[
+          { id: "empresa",  label: "🏢 Empresa",           count: empresa.length  },
+          { id: "vendedor", label: "👤 Por Vendedor",       count: vendedor.length },
+        ].map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            style={{ ...btn(tab === t.id ? L.white : "transparent",
+              tab === t.id ? L.t1 : L.t3,
+              { border: tab === t.id ? `1px solid ${L.line}` : "1px solid transparent",
+                borderRadius: 8, padding: "6px 16px", fontWeight: tab === t.id ? 600 : 400,
+                boxShadow: tab === t.id ? "0 1px 4px rgba(0,0,0,.08)" : "none",
+                display: "flex", alignItems: "center", gap: 7 }) }}>
+            {t.label}
+            <span style={{ fontSize: 10, background: tab === t.id ? L.tealBg : L.line,
+              color: tab === t.id ? L.teal : L.t4, borderRadius: 10,
+              padding: "1px 7px", fontWeight: 700 }}>{t.count}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* Descrição da aba */}
+      <div style={{ fontSize: 12, color: L.t4, marginBottom: 16, padding: "8px 12px",
+        background: tab === "empresa" ? L.yellowBg : L.tealBg, borderRadius: 8,
+        border: `1px solid ${tab === "empresa" ? L.yellowA : L.tealA2}`,
+        color: tab === "empresa" ? L.yellow : L.teal }}>
+        {tab === "empresa"
+          ? "🏢 Fluxos gerais da empresa — usados pelo chatbot automático para todos os contatos"
+          : "👤 Fluxos personalizados por vendedor — cada vendedor vê e usa o seu próprio fluxo no chat"}
+      </div>
+
+      {lista.length === 0 ? (
+        <div style={{ textAlign: "center", padding: 60, color: L.t4,
+          background: L.white, borderRadius: 14, border: `1px dashed ${L.line}` }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>
+            {tab === "empresa" ? "🤖" : "👤"}
           </div>
-          <button onClick={onNovo} style={btn(L.accent, "white", { fontWeight: 600 })}>+ Criar primeiro fluxo</button>
+          <div style={{ fontSize: 14, fontWeight: 600, color: L.t2, marginBottom: 6 }}>
+            {tab === "empresa" ? "Nenhum fluxo da empresa" : "Nenhum fluxo por vendedor"}
+          </div>
+          <div style={{ fontSize: 12, marginBottom: 20, color: L.t3, maxWidth: 340, margin: "0 auto 20px" }}>
+            {tab === "empresa"
+              ? "Crie fluxos de atendimento automático: menus, mensagens, transferências e mais."
+              : "Crie fluxos personalizados para vendedores específicos. Eles aparecerão na aba Script durante o atendimento no WhatsApp."}
+          </div>
+          <button onClick={() => onNovo(tab)} style={btn(L.accent, "white", { fontWeight: 600 })}>
+            + Criar primeiro fluxo
+          </button>
         </div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))", gap: 12 }}>
-          {fluxos.map(f => {
-            const emUso = fluxoAtivoId === f.id;
-            return (
-              <div key={f.id} style={{ background: L.white, borderRadius: 12,
-                border: `2px solid ${emUso ? "#111827" : L.line}`,
-                padding: 18, transition: "all .15s",
-                boxShadow: emUso ? "0 4px 20px rgba(0,0,0,.08)" : "0 1px 4px rgba(0,0,0,.04)" }}>
-                <Row between mb={8}>
-                  <span style={{ fontSize: 13.5, fontWeight: 600, color: L.t1 }}>{f.nome}</span>
-                  <Row gap={5}>
-                    {emUso && (
-                      <span style={{ fontSize: 10, background: L.accent, color: "white",
-                        padding: "2px 8px", borderRadius: 10, fontWeight: 700 }}>🤖 Em uso</span>
-                    )}
-                    <span style={{ fontSize: 10,
-                      background: f.ativo ? L.greenBg : L.surface,
-                      color: f.ativo ? L.green : L.t4,
-                      padding: "2px 8px", borderRadius: 10, fontWeight: 600,
-                      border: `1px solid ${f.ativo ? L.green+"33" : L.line}` }}>
-                      {f.ativo ? "● Ativo" : "Rascunho"}
-                    </span>
-                  </Row>
-                </Row>
-                {f.descricao && (
-                  <div style={{ fontSize: 11.5, color: L.t3, marginBottom: 10, lineHeight: 1.4 }}>{f.descricao}</div>
-                )}
-                <div style={{ fontSize: 10, color: L.t4, marginBottom: 14, fontFamily: "'JetBrains Mono',monospace" }}>
-                  {new Date(f.created_at).toLocaleDateString("pt-BR")}
-                  {f.nos?.length ? ` · ${f.nos.length} nós` : ""}
-                </div>
-                <Row gap={6}>
-                  <button onClick={() => onOpen(f)}
-                    style={btn(L.accent, "white", { flex: 1, fontSize: 11.5, fontWeight: 600 })}>
-                    ✎ Editar
-                  </button>
-                  <button onClick={() => onUsar(f)} title={emUso ? "Remover do chatbot" : "Usar no chatbot"}
-                    style={btn(emUso ? "#f0fdf4" : L.surface, emUso ? L.green : L.t3,
-                      { fontSize: 11, padding: "7px 11px", border: `1px solid ${emUso ? L.green+"55" : L.line}` })}>
-                    {emUso ? "🤖 ✓" : "🤖"}
-                  </button>
-                  <button onClick={() => onToggleAtivo(f)}
-                    style={btn(f.ativo ? L.yellowBg : L.greenBg, f.ativo ? L.yellow : L.green,
-                      { fontSize: 11, padding: "7px 11px" })}>
-                    {f.ativo ? "⏸" : "▶"}
-                  </button>
-                  <button onClick={() => onDeletar(f.id)}
-                    style={btn(L.redBg, L.red, { fontSize: 11, padding: "7px 11px" })}>✕</button>
-                </Row>
-              </div>
-            );
-          })}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(300px,1fr))", gap: 12 }}>
+          {lista.map(f => (
+            <FluxoCard key={f.id} f={f} emUso={fluxoAtivoId === f.id}
+              vendedores={vendedores}
+              onOpen={onOpen} onUsar={onUsar}
+              onToggleAtivo={onToggleAtivo} onDeletar={onDeletar} />
+          ))}
         </div>
       )}
     </div>
@@ -790,6 +860,7 @@ function FluxoList({ fluxos, fluxoAtivoId, onOpen, onUsar, onToggleAtivo, onDele
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function PageChatbotBuilder({ user }) {
   const [fluxos,       setFluxos]       = useState([]);
+  const [vendedores,   setVendedores]   = useState([]);
   const [activeFluxo,  setActiveFluxo]  = useState(null);
   const [nos,          setNos]          = useState([]);
   const [conexoes,     setConexoes]     = useState([]);
@@ -812,13 +883,16 @@ export default function PageChatbotBuilder({ user }) {
   useEffect(() => {
     if (!user?.empresa_id) return;
     supabase.from("chatbot_fluxos")
-      .select("id, nome, descricao, ativo, created_at, nos")
+      .select("id, nome, descricao, ativo, usuario_id, created_at, nos")
       .eq("empresa_id", user.empresa_id)
       .order("created_at", { ascending: false })
       .then(({ data }) => setFluxos(data || []));
     supabase.from("chatbot_config")
       .select("fluxo_ativo_id").eq("empresa_id", user.empresa_id).single()
       .then(({ data }) => { if (data) setFluxoAtivoId(data.fluxo_ativo_id); });
+    supabase.from("usuarios")
+      .select("id, nome, cargo").eq("empresa_id", user.empresa_id).eq("ativo", true).order("nome")
+      .then(({ data }) => setVendedores(data || []));
   }, [user?.empresa_id]);
 
   // ── Abrir fluxo ──
@@ -855,6 +929,7 @@ export default function PageChatbotBuilder({ user }) {
     const { data, error } = await supabase.from("chatbot_fluxos").insert({
       empresa_id: user.empresa_id, nome: novaForm.nome.trim(),
       descricao: novaForm.descricao.trim(), ativo: false,
+      usuario_id: novaForm.usuario_id || null,
       nos: [initNo], conexoes: [],
     }).select().single();
     if (!error && data) {
@@ -988,13 +1063,25 @@ export default function PageChatbotBuilder({ user }) {
         <FluxoList
           fluxos={fluxos}
           fluxoAtivoId={fluxoAtivoId}
+          vendedores={vendedores}
           onOpen={openFluxo}
           onUsar={usarNoChatbot}
           onToggleAtivo={toggleAtivo}
           onDeletar={deletarFluxo}
-          onNovo={() => setNovaModal(true)}
+          onNovo={(tab) => {
+            setNovaForm({ ...VAZIO_FLUXO, usuario_id: null });
+            setNovaModal(tab);
+          }}
         />
-        {novaModal && <NovaFluxoModal form={novaForm} setForm={setNovaForm} onSave={criarFluxo} onClose={() => { setNovaModal(false); setNovaForm(VAZIO_FLUXO); }}/>}
+        {novaModal && (
+          <NovaFluxoModal
+            form={novaForm}
+            setForm={setNovaForm}
+            vendedores={novaModal === "vendedor" ? vendedores : []}
+            onSave={criarFluxo}
+            onClose={() => { setNovaModal(false); setNovaForm(VAZIO_FLUXO); }}
+          />
+        )}
       </>
     );
   }
@@ -1013,11 +1100,22 @@ export default function PageChatbotBuilder({ user }) {
         <button onClick={() => { setActiveFluxo(null); setNos([]); setConexoes([]); setEditingNo(null); setConnecting(null); }}
           style={btn(L.surface, L.t2, { padding: "5px 12px", fontSize: 11.5 })}>← Voltar</button>
 
-        <div style={{ fontSize: 13, fontWeight: 700, color: L.t1, display: "flex", alignItems: "center", gap: 8, flex: 1 }}>
-          {activeFluxo.nome}
+        <div style={{ fontSize: 13, fontWeight: 700, color: L.t1, display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{activeFluxo.nome}</span>
+          {activeFluxo.usuario_id ? (
+            <span style={{ fontSize: 10, background: L.tealBg, color: L.teal,
+              padding: "2px 8px", borderRadius: 10, fontWeight: 700, flexShrink: 0,
+              border: `1px solid ${L.tealA2}` }}>
+              👤 {vendedores.find(v => v.id === activeFluxo.usuario_id)?.nome || "Vendedor"}
+            </span>
+          ) : (
+            <span style={{ fontSize: 10, background: L.yellowBg, color: L.yellow,
+              padding: "2px 8px", borderRadius: 10, fontWeight: 700, flexShrink: 0,
+              border: `1px solid ${L.yellowA}` }}>🏢 Empresa</span>
+          )}
           {emUso && (
             <span style={{ fontSize: 10, background: L.accent, color: "white",
-              padding: "2px 8px", borderRadius: 10, fontWeight: 700 }}>🤖 Em uso no chatbot</span>
+              padding: "2px 8px", borderRadius: 10, fontWeight: 700, flexShrink: 0 }}>🤖 Em uso no chatbot</span>
           )}
           {connecting && (
             <span style={{ fontSize: 11, background: "#eff6ff", color: L.blue,
@@ -1205,35 +1303,76 @@ export default function PageChatbotBuilder({ user }) {
 }
 
 // ─── Modal: novo fluxo ────────────────────────────────────────────────────────
-function NovaFluxoModal({ form, setForm, onSave, onClose }) {
+function NovaFluxoModal({ form, setForm, vendedores, onSave, onClose }) {
+  const inpS = { width: "100%", border: `1.5px solid ${L.line}`, borderRadius: 9,
+    padding: "9px 12px", fontSize: 12.5, color: L.t1, outline: "none",
+    fontFamily: "inherit", boxSizing: "border-box", background: L.surface };
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 200,
       display: "flex", alignItems: "center", justifyContent: "center" }}
       onClick={onClose}>
       <div onClick={e => e.stopPropagation()}
-        style={{ background: L.white, borderRadius: 14, padding: 28, width: 420,
+        style={{ background: L.white, borderRadius: 14, padding: 28, width: 460,
           boxShadow: "0 12px 48px rgba(0,0,0,.18)" }}>
-        <div style={{ fontSize: 15, fontWeight: 700, color: L.t1, marginBottom: 20,
-          fontFamily: "'Outfit',sans-serif" }}>Novo fluxo</div>
-        {[
-          { label: "Nome do fluxo *", key: "nome", placeholder: "Ex: Atendimento Inicial" },
-          { label: "Descrição",        key: "descricao", placeholder: "Para que serve este fluxo?" },
-        ].map(f => (
-          <div key={f.key} style={{ marginBottom: 14 }}>
-            <label style={{ fontSize: 10, color: L.t3, display: "block", marginBottom: 5,
-              fontWeight: 700, textTransform: "uppercase", letterSpacing: "1px",
-              fontFamily: "'JetBrains Mono',monospace" }}>{f.label}</label>
-            <input value={form[f.key]} onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))}
-              placeholder={f.placeholder} onKeyDown={e => e.key === "Enter" && onSave()}
-              style={{ width: "100%", border: `1.5px solid ${L.line}`, borderRadius: 9,
-                padding: "9px 12px", fontSize: 12.5, color: L.t1, outline: "none",
-                fontFamily: "inherit", boxSizing: "border-box", background: L.surface }}
-              onFocus={e => e.target.style.borderColor = L.t1}
-              onBlur={e => e.target.style.borderColor = L.line}
-            />
+
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
+          <div style={{ width: 36, height: 36, borderRadius: 10, background: L.tealBg,
+            display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>
+            {form.usuario_id ? "👤" : "🤖"}
           </div>
-        ))}
-        <Row gap={8} style={{ justifyContent: "flex-end", marginTop: 6 }}>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: L.t1, fontFamily: "'Outfit',sans-serif" }}>
+              Novo fluxo {form.usuario_id ? "por vendedor" : "da empresa"}
+            </div>
+            <div style={{ fontSize: 11, color: L.t3 }}>Configure o fluxo de atendimento visual</div>
+          </div>
+        </div>
+
+        {/* Nome */}
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ fontSize: 10, color: L.t3, display: "block", marginBottom: 5,
+            fontWeight: 700, textTransform: "uppercase", letterSpacing: "1px",
+            fontFamily: "'JetBrains Mono',monospace" }}>Nome do fluxo *</label>
+          <input value={form.nome} onChange={e => setForm(p => ({ ...p, nome: e.target.value }))}
+            placeholder="Ex: Atendimento Inicial" onKeyDown={e => e.key === "Enter" && onSave()}
+            style={inpS}
+            onFocus={e => e.target.style.borderColor = L.t1}
+            onBlur={e => e.target.style.borderColor = L.line} />
+        </div>
+
+        {/* Descrição */}
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ fontSize: 10, color: L.t3, display: "block", marginBottom: 5,
+            fontWeight: 700, textTransform: "uppercase", letterSpacing: "1px",
+            fontFamily: "'JetBrains Mono',monospace" }}>Descrição</label>
+          <input value={form.descricao} onChange={e => setForm(p => ({ ...p, descricao: e.target.value }))}
+            placeholder="Para que serve este fluxo?"
+            style={inpS}
+            onFocus={e => e.target.style.borderColor = L.t1}
+            onBlur={e => e.target.style.borderColor = L.line} />
+        </div>
+
+        {/* Atribuir a */}
+        <div style={{ marginBottom: 18 }}>
+          <label style={{ fontSize: 10, color: L.t3, display: "block", marginBottom: 5,
+            fontWeight: 700, textTransform: "uppercase", letterSpacing: "1px",
+            fontFamily: "'JetBrains Mono',monospace" }}>Atribuir a</label>
+          <select value={form.usuario_id || ""}
+            onChange={e => setForm(p => ({ ...p, usuario_id: e.target.value || null }))}
+            style={{ ...inpS, cursor: "pointer" }}>
+            <option value="">🏢 Empresa (fluxo geral — todos os atendimentos)</option>
+            {vendedores.map(v => (
+              <option key={v.id} value={v.id}>👤 {v.nome}{v.cargo ? ` · ${v.cargo}` : ""}</option>
+            ))}
+          </select>
+          <div style={{ fontSize: 10, color: L.t4, marginTop: 4, lineHeight: 1.5 }}>
+            {form.usuario_id
+              ? "Este fluxo aparece na aba Script do vendedor selecionado durante o atendimento no WhatsApp."
+              : "Este fluxo é usado pelo chatbot automático e aparece para todos os vendedores sem fluxo próprio."}
+          </div>
+        </div>
+
+        <Row gap={8} style={{ justifyContent: "flex-end" }}>
           <button onClick={onClose} style={btn()}>Cancelar</button>
           <button onClick={onSave} style={btn(L.accent, "white", { fontWeight: 600 })}>Criar fluxo</button>
         </Row>

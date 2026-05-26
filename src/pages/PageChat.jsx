@@ -825,27 +825,46 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
       .order("agendado_para", { ascending: false })
       .limit(20)
       .then(({ data }) => setAgendadas(data || []));
-    // fluxo de vendas: prioridade 1 = pessoal do vendedor, 2 = empresa
+    // fluxo de vendas: prioridade 1 = fluxo do vendedor, 2 = fluxo da empresa
     (async () => {
       setScriptFluxo(null); setScriptPassos([]);
       let fluxo = null;
       if (user?.id) {
-        const { data: personal } = await supabase.from("fluxos_vendedor")
-          .select("*").eq("empresa_id", user.empresa_id).eq("usuario_id", user.id).eq("ativo", true)
+        const { data: personal } = await supabase.from("chatbot_fluxos")
+          .select("id, nome, descricao, ativo, usuario_id, nos, conexoes")
+          .eq("empresa_id", user.empresa_id).eq("usuario_id", user.id).eq("ativo", true)
           .order("created_at", { ascending: false }).limit(1).maybeSingle();
         fluxo = personal;
       }
       if (!fluxo) {
-        const { data: empresa } = await supabase.from("fluxos_vendedor")
-          .select("*").eq("empresa_id", user.empresa_id).is("usuario_id", null).eq("ativo", true)
+        const { data: empresa } = await supabase.from("chatbot_fluxos")
+          .select("id, nome, descricao, ativo, usuario_id, nos, conexoes")
+          .eq("empresa_id", user.empresa_id).is("usuario_id", null).eq("ativo", true)
           .order("created_at", { ascending: false }).limit(1).maybeSingle();
         fluxo = empresa;
       }
       if (fluxo) {
         setScriptFluxo(fluxo);
-        const { data: passos } = await supabase.from("fluxos_passos")
-          .select("*").eq("fluxo_id", fluxo.id).order("ordem");
-        setScriptPassos(passos || []);
+        // Extrai nós de mensagem em ordem topológica a partir do nó "inicio"
+        const ns = fluxo.nos || [];
+        const cs = fluxo.conexoes || [];
+        const ordered = [];
+        const visited = new Set();
+        const walk = (id) => {
+          if (visited.has(id)) return;
+          visited.add(id);
+          const no = ns.find(n => n.id === id);
+          if (no && ["mensagem","respostas","lista"].includes(no.tipo) && no.mensagem?.trim()) {
+            ordered.push(no);
+          }
+          cs.filter(c => c.de === id).forEach(c => walk(c.para));
+        };
+        const inicio = ns.find(n => n.tipo === "inicio");
+        if (inicio) walk(inicio.id);
+        // Passos sem conexão ao início também incluídos
+        ns.filter(n => ["mensagem","respostas","lista"].includes(n.tipo) && !visited.has(n.id) && n.mensagem?.trim())
+          .forEach(n => ordered.push(n));
+        setScriptPassos(ordered);
       }
     })();
   }, [activeConv?.id]);
@@ -2322,44 +2341,51 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
 
                       {/* Passos */}
                       {scriptPassos.length === 0 ? (
-                        <div style={{ fontSize: 11, color: L.t4, textAlign: "center", padding: "16px 0" }}>
-                          Este fluxo não tem passos ainda.
+                        <div style={{ textAlign: "center", padding: "20px 0" }}>
+                          <div style={{ fontSize: 11, color: L.t4, marginBottom: 6 }}>
+                            Este fluxo não tem nós de mensagem ainda.
+                          </div>
+                          <div style={{ fontSize: 10.5, color: L.t4 }}>
+                            Adicione nós do tipo "Mensagem" no editor visual.
+                          </div>
                         </div>
-                      ) : scriptPassos.map((ps, i) => {
-                        const isSending = scriptSending === ps.id;
+                      ) : scriptPassos.map((no, i) => {
+                        const isSending = scriptSending === no.id;
                         const contact   = activeConv?.contato_nome || "";
                         const phone     = activeConv?.contato_telefone || "";
-                        const empresa   = activeConv?.contato_empresa || "";
-                        const preview   = ps.mensagem
+                        const emp       = activeConv?.contato_empresa || "";
+                        const preview   = (no.mensagem || "")
                           .replace(/\{nome\}/g, contact || "{nome}")
                           .replace(/\{telefone\}/g, phone || "{telefone}")
-                          .replace(/\{empresa\}/g, empresa || "{empresa}");
+                          .replace(/\{empresa\}/g, emp || "{empresa}");
+                        const nCfg = { mensagem: { ico: "💬", cor: "#2563eb" }, respostas: { ico: "🔘", cor: "#2563eb" }, lista: { ico: "☰", cor: "#059669" } }[no.tipo] || { ico: "💬", cor: L.teal };
                         return (
-                          <div key={ps.id} style={{ background: L.white, border: `1px solid ${L.line}`,
+                          <div key={no.id} style={{ background: L.white, border: `1px solid ${L.line}`,
                             borderRadius: 10, padding: "10px 12px", marginBottom: 8,
                             boxShadow: "0 1px 4px rgba(0,0,0,0.04)", opacity: isSending ? 0.7 : 1,
                             transition: "opacity .15s" }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 6 }}>
-                              <div style={{ width: 20, height: 20, borderRadius: "50%", background: L.tealBg,
-                                border: `1px solid ${L.tealA2}`, display: "flex", alignItems: "center",
-                                justifyContent: "center", fontSize: 9, fontWeight: 700,
-                                color: L.teal, flexShrink: 0 }}>
-                                {i + 1}
+                              <div style={{ width: 20, height: 20, borderRadius: 5, background: nCfg.cor + "18",
+                                border: `1px solid ${nCfg.cor}33`, display: "flex", alignItems: "center",
+                                justifyContent: "center", fontSize: 10, flexShrink: 0 }}>
+                                {nCfg.ico}
                               </div>
                               <div style={{ fontSize: 11, fontWeight: 700, color: L.t1, flex: 1,
                                 whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                                {ps.titulo || `Passo ${i + 1}`}
+                                {no.nome || `Mensagem ${i + 1}`}
                               </div>
+                              <span style={{ fontSize: 9, color: L.t4, flexShrink: 0 }}>#{i + 1}</span>
                             </div>
                             <div style={{ fontSize: 11, color: L.t2, lineHeight: 1.5, marginBottom: 8,
                               padding: "6px 8px", background: L.surface, borderRadius: 6,
-                              wordBreak: "break-word", whiteSpace: "pre-wrap" }}>
+                              wordBreak: "break-word", whiteSpace: "pre-wrap", maxHeight: 100,
+                              overflowY: "auto" }}>
                               {preview}
                             </div>
                             <button
                               disabled={isSending || !activeConv}
                               onClick={async () => {
-                                setScriptSending(ps.id);
+                                setScriptSending(no.id);
                                 await send(preview);
                                 setScriptSending(null);
                               }}
