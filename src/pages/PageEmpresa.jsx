@@ -550,6 +550,7 @@ export default function PageEmpresa({ empresa, user }) {
 
       {/* Configurações tab */}
       {tab==="configurações" && (
+        <div style={{display:"flex",flexDirection:"column",gap:14}}>
         <Card title="Configurações da Empresa">
           {succ && <div style={{padding:"8px 12px",background:L.greenBg,borderRadius:8,fontSize:12,color:L.green,marginBottom:14}}>{succ}</div>}
           <Grid cols={2} gap={14} responsive>
@@ -564,6 +565,42 @@ export default function PageEmpresa({ empresa, user }) {
           </Grid>
           <PBtn onClick={saveInfo}>{saving?"Salvando...":"Salvar Alterações"}</PBtn>
         </Card>
+
+        {/* CSAT */}
+        <Card title="Pesquisa de Satisfação (CSAT)">
+          <div style={{fontSize:12,color:L.t3,marginBottom:14,lineHeight:1.6}}>
+            Ao marcar uma conversa como <b>Resolvida</b>, o sistema envia automaticamente uma mensagem pedindo avaliação de 1 a 5. As respostas ficam visíveis no Dashboard.
+          </div>
+          <label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",marginBottom:14}}>
+            <div onClick={async()=>{
+              const novo = !empData.csat_ativo;
+              await update(empData.id,{csat_ativo:novo});
+              refetchEmpresas();
+            }} style={{width:36,height:20,borderRadius:10,background:empData.csat_ativo?L.teal:L.line,
+              position:"relative",cursor:"pointer",transition:"background .15s",flexShrink:0}}>
+              <div style={{position:"absolute",top:2,left:empData.csat_ativo?18:2,width:16,height:16,
+                borderRadius:"50%",background:"white",transition:"left .15s",boxShadow:"0 1px 3px rgba(0,0,0,.2)"}}/>
+            </div>
+            <span style={{fontSize:12,color:L.t1,fontWeight:600}}>
+              {empData.csat_ativo ? "CSAT ativado" : "CSAT desativado"}
+            </span>
+          </label>
+          <div style={{marginBottom:6}}>
+            <label style={{fontSize:10,fontWeight:700,color:L.t3,textTransform:"uppercase",letterSpacing:"1.2px",display:"block",marginBottom:5,fontFamily:"'JetBrains Mono',monospace"}}>Mensagem enviada ao cliente</label>
+            <textarea defaultValue={empData.csat_mensagem||"Como você avalia nosso atendimento? Responda com um número de 1 a 5 (1 = péssimo, 5 = ótimo)"}
+              rows={3} onChange={e=>setInfoForm(p=>({...p,csat_mensagem:e.target.value}))}
+              style={{width:"100%",background:L.surface,border:`1.5px solid ${L.line}`,borderRadius:9,padding:"9px 12px",
+                color:L.t1,fontSize:12,fontFamily:"inherit",outline:"none",resize:"vertical"}}
+              onFocus={e=>e.target.style.borderColor=L.teal} onBlur={e=>e.target.style.borderColor=L.line}/>
+          </div>
+          <PBtn onClick={async()=>{
+            if(infoForm.csat_mensagem!==undefined) {
+              await update(empData.id,{csat_mensagem:infoForm.csat_mensagem});
+              refetchEmpresas();
+            }
+          }}>Salvar mensagem CSAT</PBtn>
+        </Card>
+        </div>
       )}
 
       {/* Integrações tab */}

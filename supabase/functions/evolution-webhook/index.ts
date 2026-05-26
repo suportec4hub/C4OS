@@ -51,15 +51,36 @@ Deno.serve(async (req) => {
     const event = body.event || body.eventString || body.Event || "";
     const data  = body.data  || body.Data  || body;
 
-    // Saída rápida para eventos de alta frequência que não processamos — evita queries desnecessárias ao banco
+    // Saída rápida para eventos de alta frequência que não precisam consultar o banco
     const SKIP_EVENTS = [
-      "presence.update", "PRESENCE", "CHAT_PRESENCE",
       "chats.update", "CHATS_UPDATE", "CHATS_UPSERT", "CHATS_SET", "CHATS_DELETE",
       "contacts.update", "CONTACTS_UPDATE", "CONTACTS_UPSERT", "CONTACTS_SET",
       "message.ack", "READ_RECEIPT",
       "labels.edit", "LABELS_EDIT", "labels.association", "LABELS_ASSOCIATION",
     ];
     if (SKIP_EVENTS.includes(event)) return new Response("OK");
+
+    // Presença / "digitando..." — 1 query leve para empresa_id, depois Realtime broadcast
+    if (["presence.update", "PRESENCE", "CHAT_PRESENCE"].includes(event)) {
+      try {
+        const token = body.apikey || body.instance?.apikey || body.instance?.token || tokenFromUrl || "";
+        if (token) {
+          const { data: emp } = await supabase.from("empresas").select("id").eq("evolution_instance_token", token).maybeSingle();
+          if (emp?.id) {
+            const presences = Array.isArray(data) ? data : [data];
+            for (const p of presences) {
+              const phone = (p?.id || p?.remoteJid || "").split("@")[0];
+              const presence = p?.presence || p?.lastKnownPresence || "";
+              if (!phone || !["composing", "recording"].includes(presence)) continue;
+              supabase.channel(`typing:${emp.id}`)
+                .send({ type: "broadcast", event: "typing", payload: { phone } })
+                .catch(() => {});
+            }
+          }
+        }
+      } catch (_) {}
+      return new Response("OK");
+    }
 
     console.log("[webhook] event:", event, "| keys:", Object.keys(body).join(","));
 
@@ -157,6 +178,34 @@ Deno.serve(async (req) => {
       });
       const msgs = Array.isArray(data) ? data : [data];
       await processMessages(msgs, empresa_id, supabase, GLOBAL_URL, now, false);
+
+      // ── CSAT: verifica se alguma mensagem recebida é resposta de satisfação ──
+      for (const msg of msgs) {
+        try {
+          const fromMe = msg?.key?.fromMe || msg?.fromMe;
+          if (fromMe) continue;
+          const text = (msg?.message?.conversation || msg?.message?.extendedTextMessage?.text || "").trim();
+          const nota = parseInt(text, 10);
+          if (nota < 1 || nota > 5) continue;
+          const phone = (msg?.key?.remoteJid || "").split("@")[0];
+          if (!phone) continue;
+          const { data: conv } = await supabase.from("conversas")
+            .select("id, csat_enviado, status")
+            .eq("empresa_id", empresa_id)
+            .eq("contato_telefone", `${phone}@s.whatsapp.net`)
+            .eq("status", "resolvida")
+            .eq("csat_enviado", true)
+            .is("csat_nota", null)
+            .maybeSingle();
+          if (conv?.id) {
+            await supabase.from("conversas").update({
+              csat_nota: nota,
+              csat_respondido_em: now,
+            }).eq("id", conv.id);
+          }
+        } catch (_) {}
+      }
+
       return new Response("OK");
     }
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { L } from "../constants/theme";
 import { Av, Row, IBtn } from "../components/ui";
 import { supabase } from "../lib/supabase";
@@ -527,7 +527,22 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
 
   // ── profile photos cache (phone → url) ───────────────────────────────────
   const [profilePhotos, setProfilePhotos] = useState({});
-  const fetchedPhonesRef = useRef(new Set());
+  const fetchedPhonesRef = useRef(new Set()); // guarda phones JÁ BUSCADOS com sucesso ou null
+  const failedPhonesRef  = useRef(new Set()); // phones que retornaram null (não retry em sessão)
+
+  // ── presence / digitando ──────────────────────────────────────────────────
+  const [typingMap, setTypingMap] = useState({}); // { phone: expiresAt }
+
+  // ── etiqueta filter ───────────────────────────────────────────────────────
+  const [etiquetaFiltro,  setEtiquetaFiltro]  = useState(null); // etiqueta.id | null
+  const [convEtiquetasMap,setConvEtiquetasMap] = useState({}); // { conversa_id: [etiqueta_id,...] }
+
+  // ── audio recording ───────────────────────────────────────────────────────
+  const [recording,     setRecording]     = useState(false);
+  const [recSeconds,    setRecSeconds]    = useState(0);
+  const mediaRecorderRef = useRef(null);
+  const recChunksRef     = useRef([]);
+  const recTimerRef      = useRef(null);
 
   // ── lightbox ──────────────────────────────────────────────────────────────
   const [lightboxImg, setLightboxImg] = useState(null);
@@ -605,18 +620,24 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
     if (!conversas.length || !user?.empresa_id) return;
     const missing = conversas
       .map(c => c.contato_telefone)
-      .filter(p => p && !profilePhotos[p] && !fetchedPhonesRef.current.has(p));
+      .filter(p => p && !profilePhotos[p] && !fetchedPhonesRef.current.has(p) && !failedPhonesRef.current.has(p));
     if (!missing.length) return;
-    missing.forEach(p => fetchedPhonesRef.current.add(p));
-    // Busca até 40 por lote com espaçamento de 300ms para não sobrecarregar
+    // Marca como em busca ANTES de chamar — evita duplicatas concorrentes
+    missing.slice(0, 40).forEach(p => fetchedPhonesRef.current.add(p));
     missing.slice(0, 40).forEach((phone, i) => {
       setTimeout(() => {
         supabase.functions.invoke("evolution-action", {
           body: { action: "fetchProfilePhoto", empresa_id: user.empresa_id, phone },
         }).then(({ data }) => {
-          if (data?.photoUrl) setProfilePhotos(prev => ({ ...prev, [phone]: data.photoUrl }));
-        }).catch(() => {});
-      }, i * 300);
+          if (data?.photoUrl) {
+            setProfilePhotos(prev => ({ ...prev, [phone]: data.photoUrl }));
+          } else {
+            // Sem foto: remove do "buscando" e coloca em "falhou" para não tentar de novo na sessão
+            fetchedPhonesRef.current.delete(phone);
+            failedPhonesRef.current.add(phone);
+          }
+        }).catch(() => { fetchedPhonesRef.current.delete(phone); });
+      }, i * 350);
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversas.length, user?.empresa_id]);
@@ -638,6 +659,42 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
       .subscribe();
     return () => supabase.removeChannel(ch);
   }, [user?.id]);
+
+  // ── presença / "digitando..." via Realtime broadcast ─────────────────────
+  useEffect(() => {
+    if (!user?.empresa_id) return;
+    const ch = supabase.channel(`typing:${user.empresa_id}`)
+      .on("broadcast", { event: "typing" }, ({ payload }) => {
+        if (!payload?.phone) return;
+        const exp = Date.now() + 4000;
+        setTypingMap(prev => ({ ...prev, [payload.phone]: exp }));
+        setTimeout(() => {
+          setTypingMap(prev => {
+            const next = { ...prev };
+            if (next[payload.phone] <= Date.now()) delete next[payload.phone];
+            return next;
+          });
+        }, 4200);
+      })
+      .subscribe();
+    return () => supabase.removeChannel(ch);
+  }, [user?.empresa_id]);
+
+  // ── carregar mapa de etiquetas de todas as conversas ─────────────────────
+  useEffect(() => {
+    if (!user?.empresa_id) return;
+    supabase.from("conversa_etiquetas")
+      .select("conversa_id, etiqueta_id")
+      .then(({ data }) => {
+        if (!data) return;
+        const map = {};
+        data.forEach(({ conversa_id, etiqueta_id }) => {
+          if (!map[conversa_id]) map[conversa_id] = [];
+          map[conversa_id].push(etiqueta_id);
+        });
+        setConvEtiquetasMap(map);
+      });
+  }, [user?.empresa_id]);
 
   // ── load conversations ────────────────────────────────────────────────────
   const loadConversas = useCallback(async (silent = false) => {
@@ -839,6 +896,21 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
     logAtendimento(user.empresa_id, activeConv.id, user.id,
       status === "resolvida" ? "resolveu" : status === "em_atendimento" ? "reabriu" : "status_alterado",
       `Status: ${status}`);
+
+    // CSAT: ao resolver, envia pesquisa de satisfação se habilitado e conversa tem telefone
+    if (status === "resolvida" && activeConv.contato_telefone && !activeConv.csat_enviado) {
+      const { data: emp } = await supabase.from("empresas")
+        .select("csat_ativo, csat_mensagem, evolution_instance_id, evolution_instance_token")
+        .eq("id", user.empresa_id).single();
+      if (emp?.csat_ativo && emp?.evolution_instance_token) {
+        const msg = emp.csat_mensagem || "Como você avalia nosso atendimento? Responda com um número de 1 a 5 (1 = péssimo, 5 = ótimo)";
+        supabase.functions.invoke("evolution-action", {
+          body: { action: "sendText", empresa_id: user.empresa_id, phone: activeConv.contato_telefone, text: msg },
+        }).then(() => {
+          supabase.from("conversas").update({ csat_enviado: true }).eq("id", activeConv.id);
+        }).catch(() => {});
+      }
+    }
   };
 
   // Assume uma conversa da fila diretamente pelo id (sem precisar ser a ativa)
@@ -1082,6 +1154,53 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 200);
   };
 
+  // ── gravar áudio ─────────────────────────────────────────────────────────
+  const startRecording = async () => {
+    if (recording || !activeConv) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mr = new MediaRecorder(stream, { mimeType: MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "audio/webm" });
+      recChunksRef.current = [];
+      mr.ondataavailable = e => { if (e.data.size > 0) recChunksRef.current.push(e.data); };
+      mr.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop());
+        clearInterval(recTimerRef.current);
+        setRecSeconds(0);
+        const blob = new Blob(recChunksRef.current, { type: mr.mimeType });
+        const ext  = mr.mimeType.includes("webm") ? "webm" : "ogg";
+        const file = new File([blob], `audio_${Date.now()}.${ext}`, { type: mr.mimeType });
+        await sendMedia(file);
+        setRecording(false);
+      };
+      mr.start(250);
+      mediaRecorderRef.current = mr;
+      setRecording(true);
+      setRecSeconds(0);
+      recTimerRef.current = setInterval(() => setRecSeconds(s => s + 1), 1000);
+    } catch (e) {
+      setSendErr("Microfone não disponível: " + e.message);
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && recording) {
+      mediaRecorderRef.current.stop();
+    }
+  };
+
+  const cancelRecording = () => {
+    if (mediaRecorderRef.current && recording) {
+      mediaRecorderRef.current.ondataavailable = null;
+      mediaRecorderRef.current.onstop = () => {
+        mediaRecorderRef.current.stream?.getTracks().forEach(t => t.stop());
+        clearInterval(recTimerRef.current);
+        setRecSeconds(0);
+        setRecording(false);
+      };
+      mediaRecorderRef.current.stop();
+    }
+  };
+
   const criarConversa = async () => {
     setNovaErr("");
     const nome = novaForm.nome.trim();
@@ -1238,7 +1357,7 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
   };
 
   // ── filters ───────────────────────────────────────────────────────────────
-  const filtradas = conversas.filter(c => {
+  const filtradas = useMemo(() => conversas.filter(c => {
     const matchSearch = !busca ||
       c.contato_nome?.toLowerCase().includes(busca.toLowerCase()) ||
       c.contato_empresa?.toLowerCase().includes(busca.toLowerCase()) ||
@@ -1248,8 +1367,10 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
     const matchTipo  = tipoFiltro === "todos"    ? true
                      : tipoFiltro === "grupos"   ? !!isGrpC
                      : /* contatos */              !isGrpC;
-    return matchSearch && matchSetor && matchTipo;
-  });
+    const matchEtiqueta = !etiquetaFiltro ||
+      (convEtiquetasMap[c.id] || []).includes(etiquetaFiltro);
+    return matchSearch && matchSetor && matchTipo && matchEtiqueta;
+  }), [conversas, busca, setorFiltro, tipoFiltro, etiquetaFiltro, convEtiquetasMap]);
 
   const filteredQuick = quickReplies.filter(r =>
     r.titulo?.toLowerCase().includes(quickFilter) ||
@@ -1422,6 +1543,27 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
               )}
             </div>
 
+            {/* Filtro por etiqueta */}
+            {sidebarTab === "conversas" && etiquetas.length > 0 && (
+              <div style={{ padding: "4px 10px 6px", display: "flex", gap: 4, flexWrap: "wrap", borderBottom: `1px solid ${L.lineSoft}` }}>
+                <button onClick={() => setEtiquetaFiltro(null)}
+                  style={{ fontSize: 9, padding: "2px 7px", borderRadius: 8, cursor: "pointer", border: "none",
+                    background: !etiquetaFiltro ? L.accent : L.surface, color: !etiquetaFiltro ? "white" : L.t3,
+                    fontWeight: !etiquetaFiltro ? 700 : 400, fontFamily: "inherit" }}>
+                  Todas
+                </button>
+                {etiquetas.map(e => (
+                  <button key={e.id} onClick={() => setEtiquetaFiltro(etiquetaFiltro === e.id ? null : e.id)}
+                    style={{ fontSize: 9, padding: "2px 7px", borderRadius: 8, cursor: "pointer",
+                      border: `1px solid ${e.cor}44`, fontFamily: "inherit", fontWeight: 600,
+                      background: etiquetaFiltro === e.id ? e.cor : e.cor + "22",
+                      color: etiquetaFiltro === e.id ? "white" : e.cor }}>
+                    {e.nome}
+                  </button>
+                ))}
+              </div>
+            )}
+
             {/* Lista Conversas */}
             {sidebarTab === "conversas" && (
             <div style={{ flex: 1, overflowY: "auto" }}>
@@ -1473,7 +1615,9 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
                         </Row>
                         <div style={{ fontSize: 11, color: L.t3, overflow: "hidden", textOverflow: "ellipsis",
                           whiteSpace: "nowrap", marginTop: 1 }}>
-                          {c.ultima_mensagem || "Sem mensagens"}
+                          {typingMap[c.contato_telefone] && typingMap[c.contato_telefone] > Date.now()
+                            ? <span style={{ color: L.teal, fontStyle: "italic" }}>digitando...</span>
+                            : (c.ultima_mensagem || "Sem mensagens")}
                         </div>
                         <Row gap={4} style={{ marginTop: 3, flexWrap: "wrap" }}>
                           <span style={{ fontSize: 9, background: st.bg, color: st.c, padding: "1px 5px", borderRadius: 4, fontWeight: 600 }}>
@@ -1790,57 +1934,87 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
               <input ref={fileRef} type="file" accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.zip"
                 style={{ display:"none" }} onChange={e => { if (e.target.files?.[0]) sendMedia(e.target.files[0]); e.target.value = ""; }}/>
 
-              <Row gap={8}>
-                {/* Note toggle */}
-                <button onClick={() => {
-                  if (input.startsWith("/nota ")) setInput(input.slice(6));
-                  else setInput("/nota " + input);
-                }}
-                  title="Nota interna (/nota texto)"
-                  style={{ ...btnStyle(input.startsWith("/nota") ? L.yellowBg : L.surface, input.startsWith("/nota") ? L.yellow : L.t3), flexShrink: 0, padding: "7px 10px" }}>
-                  📝
-                </button>
+              {recording ? (
+                /* Modo de gravação */
+                <Row gap={8} style={{ background: L.redBg, borderRadius: 10, padding: "8px 12px",
+                  border: `1px solid ${L.red}33`, alignItems: "center" }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: L.red,
+                    animation: "pulse 1s infinite", flexShrink: 0 }} />
+                  <span style={{ fontSize: 12, color: L.red, fontWeight: 600, flex: 1 }}>
+                    Gravando... {Math.floor(recSeconds / 60).toString().padStart(2, "0")}:{(recSeconds % 60).toString().padStart(2, "0")}
+                  </span>
+                  <button onClick={cancelRecording}
+                    style={{ ...btnStyle(L.surface, L.t3), padding: "5px 10px", fontSize: 11 }}>
+                    ✕ Cancelar
+                  </button>
+                  <button onClick={stopRecording}
+                    style={{ background: L.red, color: "white", border: "none", borderRadius: 8,
+                      padding: "6px 12px", cursor: "pointer", fontSize: 12, fontWeight: 600, fontFamily: "inherit" }}>
+                    ⏹ Enviar
+                  </button>
+                </Row>
+              ) : (
+                <Row gap={8}>
+                  {/* Note toggle */}
+                  <button onClick={() => {
+                    if (input.startsWith("/nota ")) setInput(input.slice(6));
+                    else setInput("/nota " + input);
+                  }}
+                    title="Nota interna (/nota texto)"
+                    style={{ ...btnStyle(input.startsWith("/nota") ? L.yellowBg : L.surface, input.startsWith("/nota") ? L.yellow : L.t3), flexShrink: 0, padding: "7px 10px" }}>
+                    📝
+                  </button>
 
-                {/* Media upload */}
-                <button onClick={() => fileRef.current?.click()} disabled={uploadingMedia}
-                  title="Enviar imagem / áudio / arquivo"
-                  style={{ ...btnStyle(L.surface, uploadingMedia ? L.t4 : L.t3), flexShrink: 0, padding: "7px 10px", opacity: uploadingMedia ? 0.5 : 1 }}>
-                  {uploadingMedia ? "⟳" : "📎"}
-                </button>
+                  {/* Media upload */}
+                  <button onClick={() => fileRef.current?.click()} disabled={uploadingMedia}
+                    title="Enviar imagem / áudio / arquivo"
+                    style={{ ...btnStyle(L.surface, uploadingMedia ? L.t4 : L.t3), flexShrink: 0, padding: "7px 10px", opacity: uploadingMedia ? 0.5 : 1 }}>
+                    {uploadingMedia ? "⟳" : "📎"}
+                  </button>
 
-                <div style={{ flex: 1, position: "relative" }}>
-                  <textarea
-                    ref={inputRef}
-                    value={input}
-                    onChange={handleInputChange}
-                    onKeyDown={handleKeyDown}
-                    placeholder={input.startsWith("/nota") ? "Nota interna (não enviada ao contato)..." : "Digite / para respostas rápidas · Enter para enviar · Shift+Enter nova linha"}
-                    rows={1}
-                    style={{ width: "100%", border: `1px solid ${input.startsWith("/nota") ? L.yellow : "transparent"}`,
-                      borderRadius: 9, padding: "8px 12px", fontSize: 13, color: L.t1,
-                      background: input.startsWith("/nota") ? L.yellowBg : L.white,
-                      outline: "none", fontFamily: "inherit", resize: "none",
-                      maxHeight: 100, overflowY: "auto", boxSizing: "border-box", lineHeight: 1.5 }}
-                  />
-                </div>
+                  <div style={{ flex: 1, position: "relative" }}>
+                    <textarea
+                      ref={inputRef}
+                      value={input}
+                      onChange={handleInputChange}
+                      onKeyDown={handleKeyDown}
+                      placeholder={input.startsWith("/nota") ? "Nota interna (não enviada ao contato)..." : "Digite / para respostas rápidas · Enter para enviar · Shift+Enter nova linha"}
+                      rows={1}
+                      style={{ width: "100%", border: `1px solid ${input.startsWith("/nota") ? L.yellow : "transparent"}`,
+                        borderRadius: 9, padding: "8px 12px", fontSize: 13, color: L.t1,
+                        background: input.startsWith("/nota") ? L.yellowBg : L.white,
+                        outline: "none", fontFamily: "inherit", resize: "none",
+                        maxHeight: 100, overflowY: "auto", boxSizing: "border-box", lineHeight: 1.5 }}
+                    />
+                  </div>
 
-                <button onClick={() => {
-                  if (input.startsWith("/nota ")) {
-                    sendNote(input.slice(6));
-                    setInput("");
-                  } else {
-                    send();
-                  }
-                }} disabled={!input.trim() || sending}
-                  style={{ background: L.accent, color: "white", border: "none",
-                    borderRadius: "50%", width: 40, height: 40, flexShrink: 0, cursor: "pointer",
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    fontSize: 16, transition: "all .15s",
-                    opacity: (!input.trim() || sending) ? .4 : 1,
-                    boxShadow: "0 2px 6px rgba(0,0,0,0.2)" }}>
-                  {sending ? "⟳" : "➤"}
-                </button>
-              </Row>
+                  {/* Gravar áudio */}
+                  {!input.trim() && (
+                    <button onClick={startRecording} disabled={uploadingMedia}
+                      title="Gravar mensagem de voz"
+                      style={{ ...btnStyle(L.surface, L.t3), flexShrink: 0, padding: "7px 10px" }}>
+                      🎙
+                    </button>
+                  )}
+
+                  <button onClick={() => {
+                    if (input.startsWith("/nota ")) {
+                      sendNote(input.slice(6));
+                      setInput("");
+                    } else {
+                      send();
+                    }
+                  }} disabled={!input.trim() || sending}
+                    style={{ background: L.accent, color: "white", border: "none",
+                      borderRadius: "50%", width: 40, height: 40, flexShrink: 0, cursor: "pointer",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      fontSize: 16, transition: "all .15s",
+                      opacity: (!input.trim() || sending) ? .4 : 1,
+                      boxShadow: "0 2px 6px rgba(0,0,0,0.2)" }}>
+                    {sending ? "⟳" : "➤"}
+                  </button>
+                </Row>
+              )}
               <div style={{ fontSize: 10, color: L.t4, marginTop: 4, paddingLeft: 2 }}>
                 Digite <b>/</b> para respostas rápidas · <b>/nota texto</b> para nota interna
               </div>

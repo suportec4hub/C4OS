@@ -113,20 +113,22 @@ export default function PageDashboard({ user }) {
       { data: leads },
       { data: deals },
       { data: usuarios },
+      { data: conversas },
     ] = await Promise.all([
       supabase.from("empresas").select("mrr, nome").eq("id", empresa_id).single(),
       supabase.from("leads").select("id, status, origem, valor_estimado, created_at").eq("empresa_id", empresa_id),
       supabase.from("deals").select("id, valor, etapa, created_at, updated_at").eq("empresa_id", empresa_id),
       supabase.from("usuarios").select("nome, cargo, leads, fechados, conv").eq("empresa_id", empresa_id).eq("ativo", true),
+      supabase.from("conversas").select("id, status, csat_nota, csat_respondido_em, created_at, ultima_hora").eq("empresa_id", empresa_id),
     ]);
-    setRaw({ empresa, leads: leads || [], deals: deals || [], usuarios: usuarios || [] });
+    setRaw({ empresa, leads: leads || [], deals: deals || [], usuarios: usuarios || [], conversas: conversas || [] });
     setLoading(false);
   }
 
   /* ── compute derived data whenever range or raw changes ── */
   const dados = useMemo(() => {
     if (!raw) return null;
-    const { empresa, leads: leadsAll, deals: dealsAll, usuarios: usersArr } = raw;
+    const { empresa, leads: leadsAll, deals: dealsAll, usuarios: usersArr, conversas: convsAll } = raw;
     const mrr = empresa?.mrr || 0;
 
     /* date bounds */
@@ -212,10 +214,21 @@ export default function PageDashboard({ user }) {
       radarData = ["Prospecção","Qualificação","Fechamento","Follow-up"].map(s => ({ s, A: 0 }));
     }
 
+    /* ── WhatsApp / Atendimento ── */
+    const convsIn = (convsAll || []).filter(c => {
+      const d = new Date(c.ultima_hora || c.created_at);
+      return d >= from && d <= to;
+    });
+    const convsAtivas      = convsAll.filter(c => c.status !== "resolvida").length;
+    const convsResolvidas  = convsIn.filter(c => c.status === "resolvida").length;
+    const csatNotas        = convsAll.filter(c => c.csat_nota != null).map(c => c.csat_nota);
+    const csatMedia        = csatNotas.length ? (csatNotas.reduce((s, n) => s + n, 0) / csatNotas.length).toFixed(1) : null;
+
     return {
       mrr, novosLeads, faturamento, ticketMedio, pipeline,
       totalLeads, totalFechados,
       receitaData, leadsData, canaisComPct, funilData, radarData, usersArr,
+      convsAtivas, convsResolvidas, csatMedia, csatNotas: csatNotas.length,
     };
   }, [raw, range, customStart, customEnd]);
 
@@ -257,6 +270,16 @@ export default function PageDashboard({ user }) {
       l: "Equipe Ativa",v: String(dados.usersArr.length),
       d: `${dados.usersArr.filter(u => (u.fechados || 0) > 0).length} com vendas`,
       up: true, s: "membros", c: L.yellow, bg: L.yellowBg,
+    },
+    {
+      l: "Conversas Ativas", v: String(dados.convsAtivas),
+      d: `${dados.convsResolvidas} resolvidas no período`,
+      up: dados.convsAtivas >= 0, s: "WhatsApp", c: L.green, bg: L.greenBg,
+    },
+    {
+      l: "CSAT Médio", v: dados.csatMedia ? `${dados.csatMedia}/5` : "—",
+      d: dados.csatNotas ? `${dados.csatNotas} avaliações` : "Ative CSAT em Empresa",
+      up: dados.csatMedia >= 4, s: "satisfação", c: dados.csatMedia >= 4 ? L.green : dados.csatMedia >= 3 ? L.yellow : L.copper, bg: dados.csatMedia >= 4 ? L.greenBg : dados.csatMedia >= 3 ? L.yellowBg : L.copperBg,
     },
   ] : [];
 
