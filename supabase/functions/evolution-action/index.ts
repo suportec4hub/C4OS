@@ -649,43 +649,76 @@ Deno.serve(async (req) => {
         return false;
       };
 
-      const sendMedia = async (num: string, mediatype: string, mediaUrl: string, caption: string): Promise<boolean> => {
-        const basePayload = { number: num, mediatype, media: mediaUrl, mediaUrl, caption, fileName: caption || undefined };
+      const getMimetype = (url: string, type: string): string => {
+        const ext = url.split("?")[0].split(".").pop()?.toLowerCase() || "";
+        const mm: Record<string, string> = {
+          jpg:"image/jpeg", jpeg:"image/jpeg", png:"image/png", gif:"image/gif", webp:"image/webp",
+          mp4:"video/mp4", mov:"video/quicktime", webm:"video/webm",
+          mp3:"audio/mpeg", ogg:"audio/ogg", wav:"audio/wav", m4a:"audio/mp4",
+          pdf:"application/pdf", doc:"application/msword",
+          docx:"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        };
+        return mm[ext] || (type==="image"?"image/jpeg":type==="video"?"video/mp4":type==="audio"?"audio/mpeg":"application/octet-stream");
+      };
 
-        // Tentativa 1: POST /message/sendMedia/{instanceName} — Evolution API v2
-        const r1 = await iFetch(`/message/sendMedia/${instName}`, {
-          method: "POST", body: JSON.stringify(basePayload),
-        }).catch(() => null);
-        if (r1?.ok) { console.log("[broadcast] sendMedia v2 ok"); return true; }
+      const sendMedia = async (num: string, mediatype: string, mediaUrl: string, caption: string): Promise<{ ok: boolean; err: string }> => {
+        const fileName = decodeURIComponent(mediaUrl.split("?")[0].split("/").pop() || "file");
+        const mimetype = getMimetype(mediaUrl, mediatype);
 
-        // Tentativa 2: endpoint específico por tipo (sendImage / sendVideo / sendAudio / sendDocument)
-        const typeEndpointMap: Record<string, string> = { image: "sendImage", video: "sendVideo", audio: "sendAudio", document: "sendDocument" };
-        const specificEndpoint = typeEndpointMap[mediatype];
-        if (specificEndpoint) {
-          const r2 = await iFetch(`/message/${specificEndpoint}/${instName}`, {
-            method: "POST", body: JSON.stringify(basePayload),
-          }).catch(() => null);
-          if (r2?.ok) { console.log("[broadcast] sendMedia specific ok:", specificEndpoint); return true; }
+        // Áudio: Evolution API Baileys usa /message/sendWhatsAppAudio (converte para ogg/opus automaticamente)
+        if (mediatype === "audio") {
+          try {
+            const r1 = await iFetch(`/message/sendWhatsAppAudio/${instName}`, {
+              method: "POST",
+              body: JSON.stringify({ number: num, audio: mediaUrl, encoding: true }),
+            });
+            const d1 = await r1.json().catch(() => ({}));
+            console.log("[broadcast] sendWhatsAppAudio status:", r1.status, JSON.stringify(d1).slice(0, 200));
+            if (r1.ok) return { ok: true, err: "" };
+            // Tentativa 2: sendMedia com audio
+            const r2 = await iFetch(`/message/sendMedia/${instName}`, {
+              method: "POST",
+              body: JSON.stringify({ number: num, mediatype: "audio", mimetype, media: mediaUrl }),
+            });
+            const d2 = await r2.json().catch(() => ({}));
+            console.log("[broadcast] sendMedia audio status:", r2.status, JSON.stringify(d2).slice(0, 200));
+            if (r2.ok) return { ok: true, err: "" };
+            return { ok: false, err: JSON.stringify(d2 || d1).slice(0, 300) };
+          } catch (e) { return { ok: false, err: (e as Error).message }; }
         }
 
-        // Tentativa 3: formato Evolution GO /send/media
-        const r3 = await iFetch("/send/media", {
-          method: "POST",
-          body: JSON.stringify({ instanceName: instName, id: instName, ...basePayload }),
-        }).catch(() => null);
-        if (r3?.ok) { console.log("[broadcast] sendMedia go ok"); return true; }
+        // Imagem, vídeo, documento
+        const payload = { number: num, mediatype, mimetype, media: mediaUrl, caption, fileName };
 
-        // Tentativa 4: formato mediaMessage aninhado (algumas versões v2)
-        const r4 = await iFetch(`/message/sendMedia/${instName}`, {
-          method: "POST",
-          body: JSON.stringify({ number: num, options: { delay: 1200 }, mediaMessage: { mediatype, media: mediaUrl, caption } }),
-        }).catch(() => null);
-        if (r4?.ok) { console.log("[broadcast] sendMedia nested ok"); return true; }
+        // Tentativa 1: /message/sendMedia v2 com mimetype
+        try {
+          const r1 = await iFetch(`/message/sendMedia/${instName}`, {
+            method: "POST", body: JSON.stringify(payload),
+          });
+          const d1 = await r1.json().catch(() => ({}));
+          console.log("[broadcast] sendMedia v2 status:", r1.status, JSON.stringify(d1).slice(0, 200));
+          if (r1.ok) return { ok: true, err: "" };
 
-        // Fallback: envia URL como texto com legenda
-        console.log("[broadcast] sendMedia all failed, fallback to text");
-        const textoFallback = caption ? `${caption}\n${mediaUrl}` : mediaUrl;
-        return sendMsg(num, textoFallback);
+          // Tentativa 2: com options/delay
+          const r2 = await iFetch(`/message/sendMedia/${instName}`, {
+            method: "POST",
+            body: JSON.stringify({ number: num, options: { delay: 1200, presence: "composing" }, ...payload }),
+          });
+          const d2 = await r2.json().catch(() => ({}));
+          console.log("[broadcast] sendMedia v2+opts status:", r2.status, JSON.stringify(d2).slice(0, 200));
+          if (r2.ok) return { ok: true, err: "" };
+
+          // Tentativa 3: mediaMessage aninhado
+          const r3 = await iFetch(`/message/sendMedia/${instName}`, {
+            method: "POST",
+            body: JSON.stringify({ number: num, mediaMessage: { mediatype, mimetype, media: mediaUrl, caption, fileName } }),
+          });
+          const d3 = await r3.json().catch(() => ({}));
+          console.log("[broadcast] sendMedia nested status:", r3.status, JSON.stringify(d3).slice(0, 200));
+          if (r3.ok) return { ok: true, err: "" };
+
+          return { ok: false, err: (JSON.stringify(d3 || d2 || d1)).slice(0, 300) };
+        } catch (e) { return { ok: false, err: (e as Error).message }; }
       };
 
       for (const contato of contatos) {
@@ -709,7 +742,16 @@ Deno.serve(async (req) => {
             // Mídia (imagem, vídeo, áudio, documento)
             const mediatype = mediaTypeMap[tipoMidia] || "image";
             const caption   = interpolate((camp.caption as string) || mensagem);
-            sent = await sendMedia(num, mediatype, camp.url_midia as string, caption);
+            const mResult   = await sendMedia(num, mediatype, camp.url_midia as string, caption);
+            sent = mResult.ok;
+            if (!mResult.ok) {
+              await supabase.from("transmissao_contatos")
+                .update({ status: "falhou", erro_msg: mResult.err || "Falha ao enviar mídia" }).eq("id", contato.id);
+              await supabase.from("campanhas").update({ enviados }).eq("id", campanha_id);
+              const delay2 = minMs + Math.random() * (maxMs - minMs);
+              await new Promise(r => setTimeout(r, delay2));
+              continue;
+            }
 
           } else {
             // Texto simples
@@ -958,44 +1000,77 @@ Deno.serve(async (req) => {
       const mediatype = mediaTypeMap[tipo as string] || "image";
       const cap = (caption as string) || "";
 
-      // Tentativa 1: /message/sendMedia/{instanceName}
+      const getExt = (url: string) => url.split("?")[0].split(".").pop()?.toLowerCase() || "";
+      const getMime = (url: string, type: string): string => {
+        const mm: Record<string, string> = {
+          jpg:"image/jpeg", jpeg:"image/jpeg", png:"image/png", gif:"image/gif", webp:"image/webp",
+          mp4:"video/mp4", mov:"video/quicktime", webm:"video/webm",
+          mp3:"audio/mpeg", ogg:"audio/ogg", wav:"audio/wav", m4a:"audio/mp4",
+          pdf:"application/pdf", doc:"application/msword",
+          docx:"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        };
+        return mm[getExt(url)] || (type==="image"?"image/jpeg":type==="video"?"video/mp4":type==="audio"?"audio/mpeg":"application/octet-stream");
+      };
+      const mimetype = getMime(mediaUrl, mediatype);
+      const fileName = decodeURIComponent(mediaUrl.split("?")[0].split("/").pop() || "file");
+
+      // Áudio: endpoint dedicado sendWhatsAppAudio (converte para ogg/opus)
+      if (mediatype === "audio") {
+        try {
+          const r1 = await iFetch(`/message/sendWhatsAppAudio/${instName}`, {
+            method: "POST",
+            body: JSON.stringify({ number: cleanPhone, audio: mediaUrl, encoding: true }),
+          });
+          const d1 = await r1.json().catch(() => ({}));
+          console.log("[sendMedia] sendWhatsAppAudio status:", r1.status, JSON.stringify(d1).slice(0, 200));
+          if (r1.ok) return json(d1);
+        } catch (e) { console.log("[sendMedia] sendWhatsAppAudio err:", (e as Error).message); }
+
+        // Fallback: sendMedia com audio
+        try {
+          const r2 = await iFetch(`/message/sendMedia/${instName}`, {
+            method: "POST",
+            body: JSON.stringify({ number: cleanPhone, mediatype: "audio", mimetype, media: mediaUrl }),
+          });
+          const d2 = await r2.json().catch(() => ({}));
+          console.log("[sendMedia] sendMedia audio status:", r2.status, JSON.stringify(d2).slice(0, 200));
+          if (r2.ok) return json(d2);
+          return json({ error: JSON.stringify(d2).slice(0, 200) }, 400);
+        } catch (e) { return json({ error: (e as Error).message }, 400); }
+      }
+
+      // Imagem, vídeo, documento
+      const payload = { number: cleanPhone, mediatype, mimetype, media: mediaUrl, caption: cap, fileName };
+
+      // Tentativa 1: /message/sendMedia v2 com mimetype
       try {
         const r1 = await iFetch(`/message/sendMedia/${instName}`, {
-          method: "POST",
-          body: JSON.stringify({ number: cleanPhone, mediatype, media: mediaUrl, caption: cap, fileName: cap }),
+          method: "POST", body: JSON.stringify(payload),
         });
         const d1 = await r1.json().catch(() => ({}));
         console.log("[sendMedia] v2 status:", r1.status, JSON.stringify(d1).slice(0, 200));
         if (r1.ok) return json(d1);
-      } catch (e) { console.log("[sendMedia] v2 err:", (e as Error).message); }
 
-      // Tentativa 2: endpoint específico por tipo
-      const typeEndpointMap: Record<string, string> = { image: "sendImage", video: "sendVideo", audio: "sendAudio", document: "sendDocument" };
-      const specificEp = typeEndpointMap[mediatype];
-      if (specificEp) {
-        try {
-          const r2 = await iFetch(`/message/${specificEp}/${instName}`, {
-            method: "POST",
-            body: JSON.stringify({ number: cleanPhone, mediatype, media: mediaUrl, caption: cap }),
-          });
-          const d2 = await r2.json().catch(() => ({}));
-          console.log("[sendMedia] specific status:", r2.status);
-          if (r2.ok) return json(d2);
-        } catch (e) { console.log("[sendMedia] specific err:", (e as Error).message); }
-      }
-
-      // Tentativa 3: formato Evolution GO
-      try {
-        const r3 = await iFetch("/send/media", {
+        // Tentativa 2: com options
+        const r2 = await iFetch(`/message/sendMedia/${instName}`, {
           method: "POST",
-          body: JSON.stringify({ instanceName: instName, id: instName, number: cleanPhone, mediatype, media: mediaUrl, caption: cap }),
+          body: JSON.stringify({ ...payload, options: { delay: 1200, presence: "composing" } }),
+        });
+        const d2 = await r2.json().catch(() => ({}));
+        console.log("[sendMedia] v2+opts status:", r2.status, JSON.stringify(d2).slice(0, 200));
+        if (r2.ok) return json(d2);
+
+        // Tentativa 3: mediaMessage aninhado
+        const r3 = await iFetch(`/message/sendMedia/${instName}`, {
+          method: "POST",
+          body: JSON.stringify({ number: cleanPhone, mediaMessage: { mediatype, mimetype, media: mediaUrl, caption: cap, fileName } }),
         });
         const d3 = await r3.json().catch(() => ({}));
-        console.log("[sendMedia] go status:", r3.status);
+        console.log("[sendMedia] nested status:", r3.status, JSON.stringify(d3).slice(0, 200));
         if (r3.ok) return json(d3);
-      } catch (e) { console.log("[sendMedia] go err:", (e as Error).message); }
 
-      return json({ error: "Falha ao enviar mídia — verifique conexão WhatsApp" }, 400);
+        return json({ error: JSON.stringify(d3 || d2 || d1).slice(0, 200) }, 400);
+      } catch (e) { return json({ error: (e as Error).message }, 400); }
     }
 
     // ────────────────────────────────────────────────────────────────────────
