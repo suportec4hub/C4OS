@@ -817,7 +817,7 @@ function FluxoList({ fluxos, fluxoAtivoId, vendedores, onOpen, onUsar, onToggleA
       </div>
 
       {/* Descrição da aba */}
-      <div style={{ fontSize: 12, color: L.t4, marginBottom: 16, padding: "8px 12px",
+      <div style={{ fontSize: 12, marginBottom: 16, padding: "8px 12px",
         background: tab === "empresa" ? L.yellowBg : L.tealBg, borderRadius: 8,
         border: `1px solid ${tab === "empresa" ? L.yellowA : L.tealA2}`,
         color: tab === "empresa" ? L.yellow : L.teal }}>
