@@ -565,7 +565,7 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
   const statusTabRef   = useRef("todas");
   const inputRef       = useRef(null);
   const fileRef        = useRef(null);
-  const { isMobile }   = useBreakpoint();
+  const { isMobile, isTablet } = useBreakpoint();
 
   useEffect(() => { activeConvRef.current = activeConv; }, [activeConv]);
   useEffect(() => { statusTabRef.current  = statusTab;  }, [statusTab]);
@@ -1425,51 +1425,51 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
   );
 
   const totalNaoLidas = conversas.reduce((s, c) => s + (c.nao_lidas || 0), 0);
-  const showRightPanel = showRight && !isMobile && activeConv;
+  const showRightPanel = showRight && !isMobile && !isTablet && activeConv;
 
   // ─── render ───────────────────────────────────────────────────────────────
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
       {/* Banner status WhatsApp */}
       {evoConnected === false && (
-        <div style={{ padding: "8px 16px", background: L.yellowBg, border: `1px solid ${L.yellowA2}`,
-          borderRadius: 10, marginBottom: 10, fontSize: 12, color: L.t1 }}>
-          ⚠️ <b>WhatsApp desconectado.</b> Conecte em <b>Minha Empresa → Integrações</b>.
+        <div style={{ padding: isMobile ? "6px 10px" : "8px 16px", background: L.yellowBg, border: `1px solid ${L.yellowA2}`,
+          borderRadius: 10, marginBottom: 10, fontSize: isMobile ? 11 : 12, color: L.t1 }}>
+          ⚠️ <b>WhatsApp desconectado.</b>{!isMobile && <> Conecte em <b>Minha Empresa → Integrações</b>.</>}
         </div>
       )}
       {evoConnected === true && (
-        <div style={{ padding: "6px 16px", background: L.greenBg, border: `1px solid ${L.green}33`,
-          borderRadius: 10, marginBottom: 10, display: "flex", alignItems: "center", gap: 8, fontSize: 11, flexWrap: "wrap" }}>
+        <div style={{ padding: isMobile ? "5px 10px" : "6px 16px", background: L.greenBg, border: `1px solid ${L.green}33`,
+          borderRadius: 10, marginBottom: 10, display: "flex", alignItems: "center", gap: 6, fontSize: 11, flexWrap: "wrap" }}>
           <span style={{ width: 7, height: 7, borderRadius: "50%", background: L.green, display: "inline-block", flexShrink: 0 }} />
-          <span style={{ color: L.green, fontWeight: 600 }}>WhatsApp conectado</span>
-          <span style={{ color: L.t3 }}>· Evolution GO</span>
-          <span style={{ marginLeft: "auto", display: "flex", gap: 6, alignItems: "center" }}>
-            {importInfo && (
+          <span style={{ color: L.green, fontWeight: 600 }}>WhatsApp</span>
+          {!isMobile && <span style={{ color: L.t3 }}>· Evolution GO</span>}
+          <span style={{ marginLeft: "auto", display: "flex", gap: 5, alignItems: "center" }}>
+            {importInfo && !isMobile && (
               <span style={{ color: importInfo.error ? L.red : L.t3, fontSize: 10 }}>
                 {importing
                   ? `⏳ Sincronizando… ${importInfo.imported || 0}`
                   : importInfo.error
                     ? importInfo.error
                     : importInfo.isGroups
-                      ? `✅ ${importInfo.total || 0} grupos sincronizados`
-                      : `✅ ${importInfo.imported || 0} msgs importadas`}
+                      ? `✅ ${importInfo.total || 0} grupos`
+                      : `✅ ${importInfo.imported || 0} msgs`}
               </span>
             )}
             <button onClick={() => syncGroups()} disabled={importing}
               style={{ ...btnStyle(importing ? L.surface : L.blue, importing ? L.t4 : "white"),
-                fontSize: 10, padding: "3px 9px", opacity: importing ? 0.6 : 1 }}>
-              {importing ? "Sincronizando…" : "👥 Grupos"}
+                fontSize: 10, padding: "3px 8px", opacity: importing ? 0.6 : 1 }}>
+              {importing ? "⟳" : "👥"}
             </button>
             <button onClick={() => importHistory(1)} disabled={importing}
               style={{ ...btnStyle(importing ? L.surface : L.accent, importing ? L.t4 : "white"),
-                fontSize: 10, padding: "3px 9px", opacity: importing ? 0.6 : 1 }}>
-              {importing ? "Importando…" : "⬇ Histórico"}
+                fontSize: 10, padding: "3px 8px", opacity: importing ? 0.6 : 1 }}>
+              {importing ? "⟳" : "⬇"}
             </button>
           </span>
         </div>
       )}
 
-      <div style={{ display: "flex", height: isMobile ? "calc(100dvh - 130px)" : "calc(100vh - 162px)",
+      <div style={{ display: "flex", height: isMobile ? "calc(100dvh - 130px)" : isTablet ? "calc(100dvh - 150px)" : "calc(100dvh - 162px)",
         background: L.white, borderRadius: 12, border: `1px solid ${L.line}`,
         overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
 
@@ -2025,7 +2025,7 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
                       value={input}
                       onChange={handleInputChange}
                       onKeyDown={handleKeyDown}
-                      placeholder={input.startsWith("/nota") ? "Nota interna (não enviada ao contato)..." : "Digite / para respostas rápidas · Enter para enviar · Shift+Enter nova linha"}
+                      placeholder={input.startsWith("/nota") ? "Nota interna (não enviada ao contato)..." : isMobile ? "Digite uma mensagem…" : "Digite / para respostas rápidas · Enter para enviar · Shift+Enter nova linha"}
                       rows={1}
                       style={{ width: "100%", border: `1px solid ${input.startsWith("/nota") ? L.yellow : "transparent"}`,
                         borderRadius: 9, padding: "8px 12px", fontSize: 13, color: L.t1,
@@ -2520,7 +2520,7 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
       {/* ── Toast de notificação ── */}
       {toast && (
         <div style={{
-          position: "fixed", bottom: 24, right: 24, zIndex: 9999,
+          position: "fixed", bottom: "max(24px, calc(env(safe-area-inset-bottom) + 76px))", right: isMobile ? 12 : 24, zIndex: 9999,
           background: L.accent, color: "white", padding: "12px 18px",
           borderRadius: 12, boxShadow: "0 6px 24px rgba(0,0,0,.28)",
           fontSize: 12.5, maxWidth: 320, animation: "up .2s ease",
