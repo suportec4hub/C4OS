@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { L } from "../constants/theme";
 import { supabase } from "../lib/supabase";
 import { Row } from "../components/ui";
+import { useBreakpoint } from "../hooks/useBreakpoint";
 
 // ─── Tipos de gatilho do nó Início ──────────────────────────────────────────
 export const GATILHO_TIPOS = [
@@ -874,6 +875,8 @@ export default function PageChatbotBuilder({ user }) {
   const [fluxoAtivoId, setFluxoAtivoId] = useState(null);
   const [connLabel,    setConnLabel]    = useState("");     // label da conexão em criação
 
+  const { isMobile } = useBreakpoint();
+
   // Drag state (ref para não re-render no mousemove)
   const draggingRef  = useRef(null);
   const dragOffRef   = useRef({ x: 0, y: 0 });
@@ -960,7 +963,12 @@ export default function PageChatbotBuilder({ user }) {
     setFluxoAtivoId(novoId);
     if (!isJaAtivo) {
       await supabase.from("chatbot_fluxos").update({ ativo: true }).eq("id", f.id);
-      setFluxos(p => p.map(x => ({ ...x, ativo: x.id === f.id })));
+      // Only flip ativo on other company-level flows (usuario_id IS NULL), never touch vendor flows
+      setFluxos(p => p.map(x => {
+        if (x.id === f.id) return { ...x, ativo: true };
+        if (!x.usuario_id) return { ...x, ativo: false }; // company flows: only one active at a time
+        return x; // vendor flows: untouched
+      }));
     }
   };
 
@@ -1089,20 +1097,23 @@ export default function PageChatbotBuilder({ user }) {
   // ── EDITOR view ──
   const emUso = fluxoAtivoId === activeFluxo.id;
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 110px)",
-      borderRadius: 12, border: `1px solid ${L.line}`, overflow: "hidden",
+    <div style={{ display: "flex", flexDirection: "column", height: isMobile ? "calc(100vh - 80px)" : "calc(100vh - 110px)",
+      borderRadius: isMobile ? 8 : 12, border: `1px solid ${L.line}`, overflow: "hidden",
       background: L.white, boxShadow: "0 1px 4px rgba(0,0,0,.06)" }}>
 
       {/* ── Toolbar ── */}
-      <div style={{ padding: "0 16px", background: L.white, borderBottom: `1px solid ${L.line}`,
-        display: "flex", alignItems: "center", gap: 10, height: 52, flexShrink: 0 }}>
+      <div style={{ padding: isMobile ? "0 10px" : "0 16px", background: L.white,
+        borderBottom: `1px solid ${L.line}`,
+        display: "flex", alignItems: "center", gap: 8,
+        height: isMobile ? 48 : 52, flexShrink: 0, overflow: "hidden" }}>
 
         <button onClick={() => { setActiveFluxo(null); setNos([]); setConexoes([]); setEditingNo(null); setConnecting(null); }}
-          style={btn(L.surface, L.t2, { padding: "5px 12px", fontSize: 11.5 })}>← Voltar</button>
+          style={btn(L.surface, L.t2, { padding: "5px 10px", fontSize: isMobile ? 11 : 11.5, flexShrink: 0 })}>← Voltar</button>
 
-        <div style={{ fontSize: 13, fontWeight: 700, color: L.t1, display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: isMobile ? 11 : 13, fontWeight: 700, color: L.t1,
+          display: "flex", alignItems: "center", gap: 6, flex: 1, minWidth: 0, overflow: "hidden" }}>
           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{activeFluxo.nome}</span>
-          {activeFluxo.usuario_id ? (
+          {!isMobile && (activeFluxo.usuario_id ? (
             <span style={{ fontSize: 10, background: L.tealBg, color: L.teal,
               padding: "2px 8px", borderRadius: 10, fontWeight: 700, flexShrink: 0,
               border: `1px solid ${L.tealA2}` }}>
@@ -1112,12 +1123,12 @@ export default function PageChatbotBuilder({ user }) {
             <span style={{ fontSize: 10, background: L.yellowBg, color: L.yellow,
               padding: "2px 8px", borderRadius: 10, fontWeight: 700, flexShrink: 0,
               border: `1px solid ${L.yellowA}` }}>🏢 Empresa</span>
-          )}
-          {emUso && (
+          ))}
+          {emUso && !isMobile && (
             <span style={{ fontSize: 10, background: L.accent, color: "white",
-              padding: "2px 8px", borderRadius: 10, fontWeight: 700, flexShrink: 0 }}>🤖 Em uso no chatbot</span>
+              padding: "2px 8px", borderRadius: 10, fontWeight: 700, flexShrink: 0 }}>🤖 Em uso</span>
           )}
-          {connecting && (
+          {connecting && !isMobile && (
             <span style={{ fontSize: 11, background: "#eff6ff", color: L.blue,
               padding: "4px 10px", borderRadius: 8, border: `1px solid ${L.blue}33`, fontWeight: 400 }}>
               Clique no nó de destino para conectar
@@ -1125,24 +1136,27 @@ export default function PageChatbotBuilder({ user }) {
           )}
         </div>
 
-        {/* Node type buttons */}
-        <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-          {Object.entries(NODE_TYPES).filter(([k]) => k !== "inicio").map(([k, v]) => (
-            <button key={k} onClick={() => addNo(k)}
-              style={{ background: v.cor + "0e", color: v.cor, border: `1px solid ${v.cor}33`,
-                borderRadius: 7, padding: "4px 10px", fontSize: 11, cursor: "pointer",
-                fontFamily: "inherit", fontWeight: 500, transition: "all .1s" }}
-              onMouseEnter={e => { e.currentTarget.style.background = v.cor + "22"; }}
-              onMouseLeave={e => { e.currentTarget.style.background = v.cor + "0e"; }}>
-              {v.icone} {v.label}
-            </button>
-          ))}
-        </div>
+        {/* Node type buttons — hidden on mobile (use + menu instead) */}
+        {!isMobile && (
+          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+            {Object.entries(NODE_TYPES).filter(([k]) => k !== "inicio").map(([k, v]) => (
+              <button key={k} onClick={() => addNo(k)}
+                style={{ background: v.cor + "0e", color: v.cor, border: `1px solid ${v.cor}33`,
+                  borderRadius: 7, padding: "4px 10px", fontSize: 11, cursor: "pointer",
+                  fontFamily: "inherit", fontWeight: 500, transition: "all .1s" }}
+                onMouseEnter={e => { e.currentTarget.style.background = v.cor + "22"; }}
+                onMouseLeave={e => { e.currentTarget.style.background = v.cor + "0e"; }}>
+                {v.icone} {v.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         <button onClick={saveFluxo} disabled={saving}
           style={btn(saving ? L.surface : L.green, "white",
-            { fontSize: 11.5, fontWeight: 600, border: "none", padding: "6px 14px" })}>
-          {saving ? "Salvando..." : "💾 Salvar"}
+            { fontSize: isMobile ? 11 : 11.5, fontWeight: 600, border: "none",
+              padding: isMobile ? "5px 10px" : "6px 14px", flexShrink: 0 })}>
+          {saving ? "..." : "💾 Salvar"}
         </button>
 
         <button onClick={() => toggleAtivo(activeFluxo)}
@@ -1151,6 +1165,22 @@ export default function PageChatbotBuilder({ user }) {
           {activeFluxo.ativo ? "⏸ Pausar" : "▶ Ativar"}
         </button>
       </div>
+
+      {/* ── Mobile node quick-add bar ── */}
+      {isMobile && (
+        <div style={{ display: "flex", gap: 6, overflowX: "auto", padding: "6px 10px",
+          background: L.surface, borderBottom: `1px solid ${L.line}`, flexShrink: 0,
+          WebkitOverflowScrolling: "touch" }}>
+          {Object.entries(NODE_TYPES).filter(([k]) => k !== "inicio").map(([k, v]) => (
+            <button key={k} onClick={() => addNo(k)}
+              style={{ background: v.cor + "12", color: v.cor, border: `1px solid ${v.cor}33`,
+                borderRadius: 6, padding: "4px 8px", fontSize: 10, cursor: "pointer",
+                fontFamily: "inherit", fontWeight: 500, whiteSpace: "nowrap", flexShrink: 0 }}>
+              {v.icone} {v.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
         {/* ── Canvas ── */}
@@ -1164,7 +1194,8 @@ export default function PageChatbotBuilder({ user }) {
             backgroundImage: "radial-gradient(circle, #d1d5db 1px, transparent 1px)",
             backgroundSize: "22px 22px",
             cursor: draggingRef.current ? "grabbing" : connecting ? "crosshair" : "default",
-            minHeight: 500, minWidth: 600 }}
+            minHeight: 400, minWidth: "min(600px, 100%)",
+            WebkitOverflowScrolling: "touch" }}
         >
           {/* SVG Connections */}
           <svg style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%",

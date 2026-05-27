@@ -41,7 +41,6 @@ const PageDisparos         = lazy(() => import("../pages/PageDisparos"));
 const PageRelatoriosAtend  = lazy(() => import("../pages/PageRelatoriosAtend"));
 const PageMeta             = lazy(() => import("../pages/PageMeta"));
 const PageCheckoutAdmin    = lazy(() => import("../pages/PageCheckoutAdmin"));
-const PageFluxosVendedor   = lazy(() => import("../pages/PageFluxosVendedor"));
 
 const NAV_ITEMS = [
   {id:"dashboard",  label:"Dashboard",      ico:"▦", g:"principal"},

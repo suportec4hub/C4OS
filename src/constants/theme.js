@@ -177,19 +177,26 @@ export const globalCSS = `
   .sidebar-drawer{animation:slideIn .22s ease}
   /* Form grid (2 cols → 1 col on mobile) */
   .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:0 14px}
+  /* XS < 375px (tiny phones) */
+  @media(max-width:374px){
+    body{font-size:12px}
+    .modal-box{width:calc(100vw - 16px)!important;max-width:100%!important;margin:8px!important;max-height:92dvh;overflow-y:auto}
+  }
   /* Mobile < 640px */
   @media(max-width:639px){
     .form-grid{grid-template-columns:1fr!important}
     .rg-auto{grid-template-columns:1fr!important}
     .hide-mobile{display:none!important}
     .show-mobile{display:flex!important}
-    .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
-    .table-scroll table{min-width:580px}
+    .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;scroll-snap-type:x mandatory}
+    .table-scroll table{min-width:480px}
     .stack-mobile{flex-direction:column!important;align-items:stretch!important;gap:8px!important}
     .wrap-mobile{flex-wrap:wrap!important}
     .modal-box{width:calc(100vw - 32px)!important;max-width:100%!important;margin:16px!important;max-height:90dvh;overflow-y:auto}
     .kanban-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:12px}
     .action-row{flex-wrap:wrap!important;gap:6px!important}
+    /* Padding respects safe-area on iPhone */
+    .safe-pad{padding-left:max(12px,env(safe-area-inset-left));padding-right:max(12px,env(safe-area-inset-right))}
   }
   /* Tablet 640–1023px */
   @media(min-width:640px) and (max-width:1023px){
