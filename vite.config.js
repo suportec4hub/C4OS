@@ -16,13 +16,15 @@ export default defineConfig({
         background_color: '#ffffff',
         display: 'standalone',
         orientation: 'portrait-primary',
-        start_url: '/c4os/',
-        scope: '/c4os/',
+        // 1. URL inicial e escopo ajustados para a raiz
+        start_url: '/',
+        scope: '/',
         lang: 'pt-BR',
         icons: [
-          { src: '/c4os/favicon.png',  sizes: '64x64',   type: 'image/png' },
-          { src: '/c4os/logo.png',     sizes: '192x192', type: 'image/png' },
-          { src: '/c4os/logo.png',     sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
+          // 2. Caminhos dos ícones ajustados para a raiz
+          { src: '/favicon.png',  sizes: '64x64',   type: 'image/png' },
+          { src: '/logo.png',     sizes: '192x192', type: 'image/png' },
+          { src: '/logo.png',     sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
         ],
         categories: ['business', 'productivity'],
       },
@@ -51,5 +53,6 @@ export default defineConfig({
       devOptions: { enabled: false },
     }),
   ],
-  base: '/c4os/',
+  // 3. Base path do Vite ajustado para a raiz
+  base: '/',
 });
