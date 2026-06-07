@@ -658,6 +658,7 @@ async function processMessages(
       }
 
       // ── Round-robin: distribui novo cliente para o próximo vendedor ──────────
+      // Ativo por padrão — só desliga se dist.ativo === false explicitamente
       if (!fromMe && conv?.id) {
         try {
           const { data: dist } = await supabase
@@ -666,30 +667,38 @@ async function processMessages(
             .eq("empresa_id", empresa_id)
             .maybeSingle();
 
-          if (dist?.ativo) {
+          const roundRobinAtivo = !dist || dist.ativo !== false;
+
+          if (roundRobinAtivo) {
             let sellersQuery = supabase
               .from("usuarios")
               .select("id, nome")
               .eq("empresa_id", empresa_id)
               .eq("ativo", true);
 
-            if (dist.vendedores_ids?.length) {
+            if (dist?.vendedores_ids?.length) {
               sellersQuery = sellersQuery.in("id", dist.vendedores_ids);
             }
 
             const { data: sellers } = await sellersQuery.order("created_at");
 
             if (sellers?.length) {
-              const idx = (dist.proximo_indice ?? 0) % sellers.length;
+              const idx = (dist?.proximo_indice ?? 0) % sellers.length;
               const assignedSeller = sellers[idx];
 
               await supabase.from("conversas")
                 .update({ atendente_id: assignedSeller.id })
                 .eq("id", conv.id);
 
-              await supabase.from("distribuicao_atendimento")
-                .update({ proximo_indice: (dist.proximo_indice ?? 0) + 1, updated_at: new Date().toISOString() })
-                .eq("id", dist.id);
+              if (dist?.id) {
+                await supabase.from("distribuicao_atendimento")
+                  .update({ proximo_indice: (dist.proximo_indice ?? 0) + 1, updated_at: new Date().toISOString() })
+                  .eq("id", dist.id);
+              } else {
+                // Cria o registro de controle automaticamente na primeira vez
+                await supabase.from("distribuicao_atendimento")
+                  .insert({ empresa_id, ativo: true, vendedores_ids: [], proximo_indice: 1 });
+              }
 
               console.log(`[round-robin] Conversa ${conv.id} → ${assignedSeller.nome} (idx ${idx})`);
             }

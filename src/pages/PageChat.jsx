@@ -510,12 +510,49 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
   const [convEtiquetas,setConvEtiquetas]= useState([]);
 
   // ── script / fluxo vendedor ───────────────────────────────────────────────
-  const [scriptFluxo,  setScriptFluxo]  = useState(null);  // fluxo ativo
-  const [scriptPassos, setScriptPassos] = useState([]);    // passos ordenados
-  const [scriptSending,setScriptSending]= useState(null);  // id do passo sendo enviado
+  const [scriptFluxo,  setScriptFluxo]  = useState(null);
+  const [scriptPassos, setScriptPassos] = useState([]);
+  const [scriptSending,setScriptSending]= useState(null);
   const [logsAtend,    setLogsAtend]    = useState([]);
   const [agendadas,    setAgendadas]    = useState([]);
   const [showRight,    setShowRight]    = useState(true);
+
+  // ── distribuição de atendentes (round-robin) ──────────────────────────────
+  const [distModal,    setDistModal]    = useState(false);
+  const [distCfg,      setDistCfg]      = useState(null);
+  const [distVendedores, setDistVendedores] = useState([]);
+  const [distSaving,   setDistSaving]   = useState(false);
+  const [distMsg,      setDistMsg]      = useState("");
+
+  useEffect(() => {
+    if (!user?.empresa_id) return;
+    supabase.from("distribuicao_atendimento").select("*").eq("empresa_id", user.empresa_id).maybeSingle()
+      .then(({ data }) => setDistCfg(data));
+    supabase.from("usuarios").select("id, nome, foto_url, ativo, cargo").eq("empresa_id", user.empresa_id).eq("ativo", true).order("nome")
+      .then(({ data }) => setDistVendedores(data || []));
+  }, [user?.empresa_id]);
+
+  const saveDistCfg = async (patch) => {
+    setDistSaving(true); setDistMsg("");
+    const next = { ...(distCfg || {}), ...patch, empresa_id: user.empresa_id };
+    if (distCfg?.id) {
+      await supabase.from("distribuicao_atendimento").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", distCfg.id);
+    } else {
+      const { data } = await supabase.from("distribuicao_atendimento")
+        .insert({ empresa_id: user.empresa_id, ativo: true, vendedores_ids: [], proximo_indice: 0, ...patch })
+        .select().single();
+      if (data) next.id = data.id;
+    }
+    setDistCfg(next);
+    setDistMsg("Salvo!"); setTimeout(() => setDistMsg(""), 2000);
+    setDistSaving(false);
+  };
+
+  const toggleDistVendedor = (id) => {
+    const ids = distCfg?.vendedores_ids || [];
+    const next = ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id];
+    setDistCfg(p => ({ ...p, vendedores_ids: next }));
+  };
 
   // ── modals / panels ───────────────────────────────────────────────────────
   const [novaModal,    setNovaModal]    = useState(false);
@@ -1500,6 +1537,8 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
                     {syncing ? "⟳" : "🔄"}
                   </button>
                   <button onClick={() => loadConversas()} title="Atualizar" style={btnStyle()}>⟳</button>
+                  <button onClick={() => setDistModal(true)} title="Distribuição de atendentes"
+                    style={btnStyle(distCfg?.ativo === false ? L.surface : L.tealBg, distCfg?.ativo === false ? L.t3 : L.teal)}>⇄</button>
                   <button onClick={() => setNovaModal(true)} style={btnStyle(L.accent, "white")}>+ Nova</button>
                 </Row>
               </Row>
@@ -2582,6 +2621,112 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
             <button onClick={() => setNotifPerm(true) /* esconde banner */}
               style={{ background: "none", border: "none", cursor: "pointer", color: L.t4, fontSize: 16, padding: 2 }}>×</button>
           )}
+        </div>
+      )}
+
+      {/* ── Modal: Distribuição de Atendentes (Round-Robin) ── */}
+      {distModal && (
+        <div style={{ position:"fixed",inset:0,zIndex:9900,background:"rgba(0,0,0,.45)",
+          display:"flex",alignItems:"center",justifyContent:"center",padding:16 }}
+          onClick={() => setDistModal(false)}>
+          <div style={{ background:L.white,borderRadius:16,width:"100%",maxWidth:460,
+            boxShadow:"0 8px 40px rgba(0,0,0,.22)",overflow:"hidden" }}
+            onClick={e => e.stopPropagation()}>
+
+            {/* Header */}
+            <div style={{ padding:"18px 20px",borderBottom:`1px solid ${L.lineSoft}`,
+              display:"flex",alignItems:"center",justifyContent:"space-between" }}>
+              <div style={{ display:"flex",alignItems:"center",gap:10 }}>
+                <span style={{ fontSize:22 }}>⇄</span>
+                <div>
+                  <div style={{ fontSize:14,fontWeight:700,color:L.t1 }}>Distribuição de Atendentes</div>
+                  <div style={{ fontSize:11,color:L.t3 }}>
+                    {distCfg?.ativo === false ? "Desativado — atribuição manual" : "Ativo — novos clientes distribuídos automaticamente"}
+                  </div>
+                </div>
+              </div>
+              <button onClick={() => setDistModal(false)}
+                style={{ background:"none",border:"none",cursor:"pointer",color:L.t4,fontSize:20,lineHeight:1,padding:4 }}>×</button>
+            </div>
+
+            <div style={{ padding:"18px 20px" }}>
+              {/* Toggle */}
+              <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18 }}>
+                <div>
+                  <div style={{ fontSize:13,fontWeight:600,color:L.t1 }}>Round-robin automático</div>
+                  <div style={{ fontSize:11,color:L.t3,marginTop:2 }}>Cada novo cliente vai para o próximo atendente na fila</div>
+                </div>
+                <button onClick={() => saveDistCfg({ ativo: distCfg?.ativo === false ? true : false })}
+                  disabled={distSaving}
+                  style={{ display:"flex",alignItems:"center",gap:8,
+                    background: distCfg?.ativo === false ? L.surface : L.tealBg,
+                    border:`1px solid ${distCfg?.ativo === false ? L.line : L.tealA2}`,
+                    borderRadius:20,padding:"7px 14px",cursor:"pointer",fontSize:12,
+                    fontWeight:600,color:distCfg?.ativo === false ? L.t3 : L.teal,fontFamily:"inherit" }}>
+                  <span style={{ width:14,height:14,borderRadius:"50%",
+                    background: distCfg?.ativo === false ? L.t4 : L.teal,
+                    display:"inline-block",transition:"background .15s" }}/>
+                  {distCfg?.ativo === false ? "Desativado" : "Ativado"}
+                </button>
+              </div>
+
+              {/* Seleção de atendentes */}
+              {distCfg?.ativo !== false && (
+                <>
+                  <div style={{ fontSize:11,color:L.t3,fontWeight:600,letterSpacing:"1px",
+                    textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",marginBottom:10 }}>
+                    Atendentes na fila — {!distCfg?.vendedores_ids?.length ? "todos ativos" : `${distCfg.vendedores_ids.length} selecionado(s)`}
+                  </div>
+                  <div style={{ display:"flex",flexWrap:"wrap",gap:8,marginBottom:16 }}>
+                    {distVendedores.map(v => {
+                      const ids = distCfg?.vendedores_ids || [];
+                      const sel = !ids.length || ids.includes(v.id);
+                      const eff = ids.length ? ids : distVendedores.map(x => x.id);
+                      const isNext = eff[(distCfg?.proximo_indice || 0) % eff.length] === v.id;
+                      return (
+                        <button key={v.id} onClick={() => toggleDistVendedor(v.id)}
+                          style={{ display:"flex",alignItems:"center",gap:7,padding:"6px 12px",
+                            borderRadius:20,border:`1.5px solid ${sel?L.tealA2:L.line}`,
+                            background:sel?L.tealBg:L.surface,cursor:"pointer",
+                            color:sel?L.teal:L.t3,fontSize:12,fontWeight:sel?600:400,
+                            fontFamily:"inherit",transition:"all .12s" }}>
+                          <span style={{ width:22,height:22,borderRadius:"50%",background:sel?L.tealA2:L.surface,
+                            border:`1px solid ${sel?L.tealA2:L.line}`,display:"flex",alignItems:"center",
+                            justifyContent:"center",fontSize:11,fontWeight:700,color:sel?L.teal:L.t4,flexShrink:0 }}>
+                            {v.nome[0]}
+                          </span>
+                          {v.nome.split(" ")[0]}
+                          {isNext && sel && (
+                            <span style={{ background:L.teal,color:"white",borderRadius:8,
+                              padding:"1px 6px",fontSize:9,fontWeight:700 }}>próximo</span>
+                          )}
+                        </button>
+                      );
+                    })}
+                    {distVendedores.length === 0 && (
+                      <span style={{ color:L.t4,fontSize:12 }}>Nenhum atendente ativo encontrado.</span>
+                    )}
+                  </div>
+
+                  {/* Ações */}
+                  <div style={{ display:"flex",alignItems:"center",gap:10,flexWrap:"wrap" }}>
+                    <button onClick={() => saveDistCfg({ vendedores_ids: distCfg?.vendedores_ids || [], proximo_indice: 0 })}
+                      disabled={distSaving}
+                      style={{ ...btnStyle(), fontSize:12 }}>
+                      ⟳ Reiniciar fila
+                    </button>
+                    <button onClick={() => saveDistCfg({ vendedores_ids: distCfg?.vendedores_ids || [] })}
+                      disabled={distSaving}
+                      style={{ background:L.teal,border:"none",borderRadius:8,padding:"7px 18px",
+                        cursor:"pointer",fontSize:12,color:"white",fontFamily:"inherit",fontWeight:600 }}>
+                      {distSaving ? "Salvando…" : "💾 Salvar"}
+                    </button>
+                    {distMsg && <span style={{ fontSize:12,color:L.green,fontWeight:600 }}>{distMsg}</span>}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
