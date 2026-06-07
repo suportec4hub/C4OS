@@ -143,6 +143,18 @@ function AppInner() {
     </div>
   );
 
+  // Páginas públicas não precisam esperar auth — renderizar imediatamente
+  if (["landing", "blog", "docs", "obrigado"].includes(publicPage) && !user) {
+    return (
+      <Suspense fallback={publicFallback}>
+        {publicPage === "landing"  && <PageLanding  onNavigate={goPublic} />}
+        {publicPage === "blog"     && <PageBlog     onNavigate={goPublic} />}
+        {publicPage === "docs"     && <PageDocs     onNavigate={goPublic} />}
+        {publicPage === "obrigado" && <PageObrigado onNavigate={goPublic} />}
+      </Suspense>
+    );
+  }
+
   if (!ready) {
     return (
       <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"var(--c-bg)"}}>
