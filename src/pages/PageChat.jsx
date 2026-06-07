@@ -42,8 +42,23 @@ const btnStyle = (bg = L.surface, color = L.t2, extra = {}) => ({
 
 // ─── Notification helpers ────────────────────────────────────────────────────
 let _waAudio = null;
+let _audioUnlocked = false;
+
+// Call once after any user gesture to unlock browser autoplay policy
+function unlockAudio() {
+  if (_audioUnlocked) return;
+  _audioUnlocked = true;
+  try {
+    if (!_waAudio) {
+      _waAudio = new Audio("/wa-notify.wav");
+      _waAudio.volume = 0.7;
+    }
+    const p = _waAudio.play();
+    if (p) p.then(() => { _waAudio.pause(); _waAudio.currentTime = 0; }).catch(() => {});
+  } catch (_) {}
+}
+
 function playNotificationSound() {
-  // Tenta tocar o arquivo de som real primeiro
   try {
     if (!_waAudio) {
       _waAudio = new Audio("/wa-notify.wav");
@@ -591,6 +606,7 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
 
   // ── notifications ─────────────────────────────────────────────────────────
   const [toast, setToast]         = useState(null); // { msg, tipo }
+  const [notifBannerDismissed, setNotifBannerDismissed] = useState(false);
   // Lê permissão sincronamente para evitar flash do banner
   const [notifPerm, setNotifPerm] = useState(
     typeof Notification !== "undefined" && Notification.permission === "granted"
@@ -643,11 +659,26 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
       .then(({ data }) => setQuickReplies(data || []));
   }, [user?.empresa_id]);
 
-  // ── permissão de notificação — não auto-solicita (browser bloqueia sem gesto)
-  // O banner com botão "Ativar" é exibido quando não está granted
+  // ── permissão de notificação + desbloqueio de áudio no primeiro gesto ────
   useEffect(() => {
-    if (typeof Notification === "undefined") return;
-    setNotifPerm(Notification.permission === "granted");
+    if (typeof Notification !== "undefined") {
+      setNotifPerm(Notification.permission === "granted");
+    }
+    // Desbloqueia autoplay de áudio na primeira interação do usuário
+    const onFirstGesture = () => {
+      unlockAudio();
+      document.removeEventListener("click", onFirstGesture, true);
+      document.removeEventListener("keydown", onFirstGesture, true);
+      document.removeEventListener("touchstart", onFirstGesture, true);
+    };
+    document.addEventListener("click", onFirstGesture, true);
+    document.addEventListener("keydown", onFirstGesture, true);
+    document.addEventListener("touchstart", onFirstGesture, true);
+    return () => {
+      document.removeEventListener("click", onFirstGesture, true);
+      document.removeEventListener("keydown", onFirstGesture, true);
+      document.removeEventListener("touchstart", onFirstGesture, true);
+    };
   }, []);
 
   // ── badge no título da aba ────────────────────────────────────────────────
@@ -2584,7 +2615,7 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
       )}
 
       {/* Aviso se notificações do browser não foram permitidas */}
-      {!notifPerm && typeof Notification !== "undefined" && (
+      {!notifPerm && !notifBannerDismissed && typeof Notification !== "undefined" && (
         <div style={{
           position: "fixed", bottom: 24, left: 24, zIndex: 9998,
           background: L.white, border: `1px solid ${L.line}`,
@@ -2603,25 +2634,25 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
             </div>
             <div style={{ color: L.t3, lineHeight: 1.4 }}>
               {Notification.permission === "denied"
-                ? "Desbloqueie nas configurações do navegador."
-                : "Receba alertas de novas mensagens no WhatsApp."}
+                ? "Desbloqueie nas configurações do navegador e recarregue."
+                : "Receba alertas sonoros e pop-ups de novas mensagens."}
             </div>
           </div>
           {Notification.permission !== "denied" && (
-            <button onClick={() =>
+            <button onClick={() => {
+              unlockAudio();
               Notification.requestPermission().then(p => {
                 setNotifPerm(p === "granted");
-                if (p === "granted") playNotificationSound();
-              })
-            }
+                if (p === "granted") setTimeout(playNotificationSound, 300);
+                if (p === "denied") setNotifBannerDismissed(true);
+              });
+            }}
               style={{ ...btnStyle(L.accent, "white"), fontSize: 10.5, padding: "5px 12px", flexShrink: 0 }}>
               Ativar
             </button>
           )}
-          {Notification.permission === "denied" && (
-            <button onClick={() => setNotifPerm(true) /* esconde banner */}
-              style={{ background: "none", border: "none", cursor: "pointer", color: L.t4, fontSize: 16, padding: 2 }}>×</button>
-          )}
+          <button onClick={() => setNotifBannerDismissed(true)}
+            style={{ background: "none", border: "none", cursor: "pointer", color: L.t4, fontSize: 16, padding: 2, flexShrink: 0 }}>×</button>
         </div>
       )}
 

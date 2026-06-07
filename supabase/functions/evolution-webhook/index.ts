@@ -353,7 +353,9 @@ async function executarFluxo(
 
   if (!deveDisparar) return false;
 
-  if (noInicioRaw.intervalo_reativacao && noInicioRaw.intervalo_reativacao > 0) {
+  // intervalo_reativacao only applies to non-mensagem_recebida triggers
+  // "mensagem_recebida" must always fire on every message
+  if (gatilhoTipo !== "mensagem_recebida" && noInicioRaw.intervalo_reativacao && noInicioRaw.intervalo_reativacao > 0) {
     const ultimaHora = conv.ultima_hora as string | null;
     if (ultimaHora && !estado) {
       const diffMinutes = (Date.now() - new Date(ultimaHora).getTime()) / 60000;
