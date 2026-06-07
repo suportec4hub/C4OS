@@ -304,17 +304,28 @@ async function executarFluxo(
   if (estado && estado.fluxo_id === fluxoId) {
     const noAtual = nos.find(n => n.id === estado!.no_atual_id);
     if (noAtual) {
-      if (noAtual.tipo === "aguardar" && noAtual.variavel) {
-        estado.variaveis[noAtual.variavel] = texto;
-      }
-      if (noAtual.tipo === "opcoes") {
-        const num = parseInt(texto.trim(), 10);
-        if (!isNaN(num) && num > 0) {
-          estado.variaveis["_opcao"] = String(num);
+      // Only interactive nodes legitimately pause waiting for user input
+      const isInteractive = ["opcoes", "aguardar", "respostas", "lista"].includes(noAtual.tipo);
+      if (!isInteractive) {
+        // Stuck estado at non-interactive node — clear and restart flow fresh
+        await supabase.from("conversas").update({ fluxo_estado: null }).eq("id", convId);
+        estado = null;
+        // Fall through to trigger restart below
+      } else {
+        // Process user's response based on node type
+        estado.variaveis["_ultima_msg"] = texto;
+        if (noAtual.tipo === "aguardar" && noAtual.variavel) {
+          estado.variaveis[noAtual.variavel] = texto;
         }
+        if (["opcoes", "respostas", "lista"].includes(noAtual.tipo)) {
+          const num = parseInt(texto.trim(), 10);
+          if (!isNaN(num) && num > 0) {
+            estado.variaveis["_opcao"] = String(num);
+          }
+        }
+        await executarNosSequencialmente(noAtual.id, nos, conexoes, estado, convId, empresa_id, senderPhone, senderName, isNew, supabase, sendBot);
+        return true;
       }
-      await executarNosSequencialmente(noAtual.id, nos, conexoes, estado, convId, empresa_id, senderPhone, senderName, isNew, supabase, sendBot);
-      return true;
     }
   }
 
@@ -409,7 +420,6 @@ async function executarNosSequencialmente(
       if (proximoNo.mensagem?.trim()) {
         await sendBot(interpolarVariaveis(proximoNo.mensagem, estado.variaveis));
       }
-      await supabase.from("conversas").update({ fluxo_estado: estado }).eq("id", convId);
       await executarNosSequencialmente(proximoNo.id, nos, conexoes, estado, convId, empresa_id, senderPhone, senderName, isNew, supabase, sendBot, profundidade + 1);
       break;
     }
@@ -509,7 +519,6 @@ async function executarNosSequencialmente(
           { url: proximoNo.media_url },
         );
       }
-      await supabase.from("conversas").update({ fluxo_estado: estado }).eq("id", convId);
       await executarNosSequencialmente(proximoNo.id, nos, conexoes, estado, convId, empresa_id, senderPhone, senderName, isNew, supabase, sendBot, profundidade + 1);
       break;
     }
@@ -674,7 +683,8 @@ async function processMessages(
               .from("usuarios")
               .select("id, nome")
               .eq("empresa_id", empresa_id)
-              .eq("ativo", true);
+              .eq("ativo", true)
+              .ilike("cargo", "%vendedor%");
 
             if (dist?.vendedores_ids?.length) {
               sellersQuery = sellersQuery.in("id", dist.vendedores_ids);
@@ -714,6 +724,46 @@ async function processMessages(
         nao_lidas: (conv.nao_lidas || 0) + 1,
         contato_nome: senderName || conv.contato_nome,
       }).eq("id", conv.id);
+
+      // Re-assign via round-robin when conversation is re-opened (resolved + no atendente)
+      if (!conv.atendente_id && conv.status === "resolvida") {
+        try {
+          const { data: dist } = await supabase
+            .from("distribuicao_atendimento")
+            .select("id, ativo, vendedores_ids, proximo_indice")
+            .eq("empresa_id", empresa_id)
+            .maybeSingle();
+
+          const roundRobinAtivo = !dist || dist.ativo !== false;
+          if (roundRobinAtivo) {
+            let rrQuery = supabase
+              .from("usuarios")
+              .select("id, nome")
+              .eq("empresa_id", empresa_id)
+              .eq("ativo", true)
+              .ilike("cargo", "%vendedor%");
+            if (dist?.vendedores_ids?.length) {
+              rrQuery = rrQuery.in("id", dist.vendedores_ids);
+            }
+            const { data: sellers } = await rrQuery.order("created_at");
+            if (sellers?.length) {
+              const idx = (dist?.proximo_indice ?? 0) % sellers.length;
+              const assignedSeller = sellers[idx];
+              await supabase.from("conversas")
+                .update({ atendente_id: assignedSeller.id })
+                .eq("id", conv.id);
+              if (dist?.id) {
+                await supabase.from("distribuicao_atendimento")
+                  .update({ proximo_indice: (dist.proximo_indice ?? 0) + 1, updated_at: new Date().toISOString() })
+                  .eq("id", dist.id);
+              }
+              console.log(`[round-robin] Re-open: conversa ${conv.id} → ${assignedSeller.nome}`);
+            }
+          }
+        } catch (rrErr) {
+          console.error("[round-robin] re-open erro:", (rrErr as Error).message);
+        }
+      }
     }
 
     if (!conv?.id) continue;

@@ -974,9 +974,10 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
 
   const updateConvStatus = async (status) => {
     if (!activeConv) return;
-    await supabase.from("conversas").update({ status }).eq("id", activeConv.id);
-    setActiveConv(p => ({ ...p, status }));
-    setConversas(p => p.map(c => c.id === activeConv.id ? { ...c, status } : c));
+    const extra = status === "resolvida" ? { atendente_id: null, fluxo_estado: null } : {};
+    await supabase.from("conversas").update({ status, ...extra }).eq("id", activeConv.id);
+    setActiveConv(p => ({ ...p, status, ...extra }));
+    setConversas(p => p.map(c => c.id === activeConv.id ? { ...c, status, ...extra } : c));
     logAtendimento(user.empresa_id, activeConv.id, user.id,
       status === "resolvida" ? "resolveu" : status === "em_atendimento" ? "reabriu" : "status_alterado",
       `Status: ${status}`);
