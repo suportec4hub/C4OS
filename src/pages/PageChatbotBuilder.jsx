@@ -875,13 +875,20 @@ export default function PageChatbotBuilder({ user }) {
   const [fluxoAtivoId, setFluxoAtivoId] = useState(null);
   const [connLabel,    setConnLabel]    = useState("");     // label da conexão em criação
   const [unsavedChanges, setUnsavedChanges] = useState(false);
+  const [toast,        setToast]        = useState(null);  // { msg, ok }
 
   const { isMobile } = useBreakpoint();
 
   // Drag state (ref para não re-render no mousemove)
-  const draggingRef  = useRef(null);
-  const dragOffRef   = useRef({ x: 0, y: 0 });
-  const canvasRef    = useRef(null);
+  const draggingRef    = useRef(null);
+  const dragOffRef     = useRef({ x: 0, y: 0 });
+  const canvasRef      = useRef(null);
+  const justLoadedRef  = useRef(false); // suprime unsavedChanges após carregamento de fluxo
+
+  const showToast = (msg, ok = true) => {
+    setToast({ msg, ok });
+    setTimeout(() => setToast(null), 2500);
+  };
 
   // ── Load ──
   useEffect(() => {
@@ -899,19 +906,26 @@ export default function PageChatbotBuilder({ user }) {
       .then(({ data }) => setVendedores(data || []));
   }, [user?.empresa_id]);
 
-  // ── Unsaved changes tracker ──
+  // ── Unsaved changes tracker (justLoadedRef evita marcar dirty ao carregar fluxo) ──
   useEffect(() => {
-    if (activeFluxo) setUnsavedChanges(true);
+    if (!activeFluxo) return;
+    if (justLoadedRef.current) { justLoadedRef.current = false; return; }
+    setUnsavedChanges(true);
   }, [nos, conexoes]);
 
   // ── Abrir fluxo ──
   const openFluxo = async (f) => {
-    const { data } = await supabase.from("chatbot_fluxos")
+    const { data, error } = await supabase.from("chatbot_fluxos")
       .select("nos, conexoes").eq("id", f.id).single();
+    if (error) {
+      showToast("Erro ao carregar fluxo: " + (error.message || "tente novamente."), false);
+      return;
+    }
     const initNos = data?.nos?.length
       ? data.nos
       : [{ id: "inicio", tipo: "inicio", nome: "Início", gatilho_tipo: "mensagem_recebida",
            mensagem: "", x: 60, y: 80 }];
+    justLoadedRef.current = true; // suprime unsavedChanges no próximo efeito
     setNos(initNos);
     setConexoes(data?.conexoes || []);
     setActiveFluxo(f);
@@ -925,11 +939,16 @@ export default function PageChatbotBuilder({ user }) {
   const saveFluxo = async () => {
     if (!activeFluxo) return;
     setSaving(true);
-    await supabase.from("chatbot_fluxos")
+    const { error } = await supabase.from("chatbot_fluxos")
       .update({ nos, conexoes, updated_at: new Date().toISOString() })
       .eq("id", activeFluxo.id);
     setSaving(false);
+    if (error) {
+      showToast("Erro ao salvar: " + (error.message || "tente novamente."), false);
+      return;
+    }
     setUnsavedChanges(false);
+    showToast("Fluxo salvo com sucesso!");
   };
 
   // ── Criar fluxo ──
@@ -943,7 +962,9 @@ export default function PageChatbotBuilder({ user }) {
       usuario_id: novaForm.usuario_id || null,
       nos: [initNo], conexoes: [],
     }).select().single();
-    if (!error && data) {
+    if (error) {
+      showToast("Erro ao criar fluxo: " + (error.message || "tente novamente."), false);
+    } else if (data) {
       setFluxos(p => [data, ...p]);
       setNovaModal(false);
       setNovaForm(VAZIO_FLUXO);
@@ -994,9 +1015,11 @@ export default function PageChatbotBuilder({ user }) {
 
   const deletarFluxo = async (id) => {
     if (!window.confirm("Remover este fluxo permanentemente?")) return;
-    await supabase.from("chatbot_fluxos").delete().eq("id", id);
+    const { error } = await supabase.from("chatbot_fluxos").delete().eq("id", id);
+    if (error) { showToast("Erro ao remover: " + error.message, false); return; }
     setFluxos(p => p.filter(x => x.id !== id));
     if (activeFluxo?.id === id) setActiveFluxo(null);
+    showToast("Fluxo removido.");
   };
 
   // ── Nós ──
@@ -1107,6 +1130,17 @@ export default function PageChatbotBuilder({ user }) {
 
   const handleTouchEnd = useCallback(() => { draggingRef.current = null; }, []);
 
+  // ── Toast overlay (shared between list and editor views) ──
+  const toastEl = toast && (
+    <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)",
+      background: toast.ok ? "#111827" : L.red, color: "white", borderRadius: 10,
+      padding: "10px 20px", fontSize: 12.5, fontWeight: 600, zIndex: 9999,
+      boxShadow: "0 4px 20px rgba(0,0,0,.25)", pointerEvents: "none",
+      animation: "fadeIn .2s ease" }}>
+      {toast.ok ? "✓ " : "⚠ "}{toast.msg}
+    </div>
+  );
+
   // ── LIST view ──
   if (!activeFluxo) {
     return (
@@ -1133,6 +1167,7 @@ export default function PageChatbotBuilder({ user }) {
             onClose={() => { setNovaModal(false); setNovaForm(VAZIO_FLUXO); }}
           />
         )}
+        {toastEl}
       </>
     );
   }
@@ -1360,6 +1395,7 @@ export default function PageChatbotBuilder({ user }) {
           onClose={() => setTriggerModal(null)}
         />
       )}
+      {toastEl}
 
       {/* Status bar */}
       <div style={{ height: 28, borderTop: `1px solid ${L.lineSoft}`, background: L.surface,
