@@ -656,6 +656,49 @@ async function processMessages(
           origem: "WhatsApp", status: "novo", score: 20, ultima_atividade: hora,
         });
       }
+
+      // ── Round-robin: distribui novo cliente para o próximo vendedor ──────────
+      if (!fromMe && conv?.id) {
+        try {
+          const { data: dist } = await supabase
+            .from("distribuicao_atendimento")
+            .select("id, ativo, vendedores_ids, proximo_indice")
+            .eq("empresa_id", empresa_id)
+            .maybeSingle();
+
+          if (dist?.ativo) {
+            let sellersQuery = supabase
+              .from("usuarios")
+              .select("id, nome")
+              .eq("empresa_id", empresa_id)
+              .eq("ativo", true);
+
+            if (dist.vendedores_ids?.length) {
+              sellersQuery = sellersQuery.in("id", dist.vendedores_ids);
+            }
+
+            const { data: sellers } = await sellersQuery.order("created_at");
+
+            if (sellers?.length) {
+              const idx = (dist.proximo_indice ?? 0) % sellers.length;
+              const assignedSeller = sellers[idx];
+
+              await supabase.from("conversas")
+                .update({ atendente_id: assignedSeller.id })
+                .eq("id", conv.id);
+
+              await supabase.from("distribuicao_atendimento")
+                .update({ proximo_indice: (dist.proximo_indice ?? 0) + 1, updated_at: new Date().toISOString() })
+                .eq("id", dist.id);
+
+              console.log(`[round-robin] Conversa ${conv.id} → ${assignedSeller.nome} (idx ${idx})`);
+            }
+          }
+        } catch (rrErr) {
+          console.error("[round-robin] erro:", (rrErr as Error).message);
+        }
+      }
+
     } else if (!fromMe && !isHistory) {
       await supabase.from("conversas").update({
         ultima_mensagem: texto, ultima_hora: hora,

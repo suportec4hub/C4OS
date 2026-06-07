@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { L } from "../constants/theme";
 import { useTable, criarUsuario } from "../hooks/useData";
 import { supabase } from "../lib/supabase";
@@ -77,6 +77,40 @@ export default function PageEquipe({ user }) {
   const [succ,          setSucc]          = useState("");
   const [confirmDelete, setConfirmDelete] = useState(null); // usuário a excluir
   const [deleting,      setDeleting]      = useState(false);
+
+  // ── Distribuição automática (round-robin) ────────────────────────────────
+  const [dist,        setDist]        = useState(null);   // config da DB
+  const [distSaving,  setDistSaving]  = useState(false);
+  const [distMsg,     setDistMsg]     = useState("");
+
+  useEffect(() => {
+    if (!user?.empresa_id) return;
+    supabase.from("distribuicao_atendimento")
+      .select("*").eq("empresa_id", user.empresa_id).maybeSingle()
+      .then(({ data }) => setDist(data || { ativo: false, vendedores_ids: [], proximo_indice: 0 }));
+  }, [user?.empresa_id]);
+
+  const saveDist = async (patch) => {
+    setDistSaving(true); setDistMsg("");
+    const next = { ...dist, ...patch };
+    if (dist?.id) {
+      await supabase.from("distribuicao_atendimento").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", dist.id);
+    } else {
+      const { data } = await supabase.from("distribuicao_atendimento")
+        .insert({ empresa_id: user.empresa_id, ...next }).select().single();
+      if (data) next.id = data.id;
+    }
+    setDist(next);
+    setDistMsg("Salvo!");
+    setTimeout(() => setDistMsg(""), 2000);
+    setDistSaving(false);
+  };
+
+  const toggleVendedor = (id) => {
+    const ids = dist?.vendedores_ids || [];
+    const next = ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id];
+    setDist(p => ({ ...p, vendedores_ids: next }));
+  };
 
   const filtered = usuarios.filter(m => {
     if (filtro === "Todos")   return true;
@@ -183,6 +217,78 @@ export default function PageEquipe({ user }) {
           </div>
         ))}
       </Grid>
+
+      {/* ── Card: Distribuição Automática de Leads ── */}
+      {isAdmin && dist !== null && (
+        <div style={{background:L.white,borderRadius:12,border:`1px solid ${L.line}`,
+          padding:"18px 20px",marginBottom:16,boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10,marginBottom:14}}>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <div style={{width:36,height:36,borderRadius:9,background:dist?.ativo?L.tealBg:L.surface,
+                border:`1px solid ${dist?.ativo?L.tealA2:L.line}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>
+                🔄
+              </div>
+              <div>
+                <div style={{fontSize:13,fontWeight:700,color:L.t1}}>Distribuição Automática de Leads</div>
+                <div style={{fontSize:11,color:L.t3}}>Round-robin — novos clientes são distribuídos automaticamente entre os vendedores</div>
+              </div>
+            </div>
+            {/* Toggle ativo */}
+            <button onClick={() => saveDist({ ativo: !dist?.ativo })} disabled={distSaving}
+              style={{display:"flex",alignItems:"center",gap:8,background:dist?.ativo?L.tealBg:L.surface,
+                border:`1px solid ${dist?.ativo?L.tealA2:L.line}`,borderRadius:20,padding:"7px 14px",
+                cursor:"pointer",fontSize:12,fontWeight:600,color:dist?.ativo?L.teal:L.t3,fontFamily:"inherit",transition:"all .15s"}}>
+              <span style={{width:16,height:16,borderRadius:"50%",background:dist?.ativo?L.teal:L.t4,display:"inline-block",flexShrink:0,transition:"background .15s"}}/>
+              {dist?.ativo ? "Ativado" : "Desativado"}
+            </button>
+          </div>
+
+          {dist?.ativo && (
+            <>
+              <div style={{fontSize:11,color:L.t3,marginBottom:10,fontWeight:600,letterSpacing:"1px",textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace"}}>
+                Vendedores na fila — {(dist.vendedores_ids?.length || 0) === 0 ? "todos ativos" : `${dist.vendedores_ids.length} selecionado(s)`}
+              </div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:14}}>
+                {usuarios.filter(m => m.ativo).map((m, i) => {
+                  const inFila = !dist.vendedores_ids?.length || dist.vendedores_ids.includes(m.id);
+                  const isNext = dist.vendedores_ids?.length
+                    ? dist.vendedores_ids[(dist.proximo_indice || 0) % dist.vendedores_ids.length] === m.id
+                    : usuarios.filter(x => x.ativo)[(dist.proximo_indice || 0) % usuarios.filter(x => x.ativo).length]?.id === m.id;
+                  return (
+                    <button key={m.id} onClick={() => toggleVendedor(m.id)}
+                      style={{display:"flex",alignItems:"center",gap:7,padding:"6px 12px",borderRadius:20,
+                        border:`1.5px solid ${inFila?L.tealA2:L.line}`,
+                        background:inFila?L.tealBg:L.surface,cursor:"pointer",
+                        color:inFila?L.teal:L.t3,fontSize:12,fontWeight:inFila?600:400,fontFamily:"inherit",
+                        transition:"all .12s",position:"relative"}}>
+                      <Av name={m.nome} size={18} color={rc[m.role]||L.t3}/>
+                      {m.nome.split(" ")[0]}
+                      {isNext && inFila && (
+                        <span style={{background:L.teal,color:"white",borderRadius:10,padding:"1px 6px",fontSize:9,fontWeight:700,marginLeft:2}}>próximo</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                <button onClick={() => saveDist({ vendedores_ids: dist.vendedores_ids, proximo_indice: 0 })}
+                  disabled={distSaving}
+                  style={{background:L.surface,border:`1px solid ${L.line}`,borderRadius:8,padding:"7px 14px",
+                    cursor:"pointer",fontSize:12,color:L.t2,fontFamily:"inherit",fontWeight:500,transition:"all .12s"}}>
+                  ⟳ Reiniciar fila
+                </button>
+                <button onClick={() => saveDist({ vendedores_ids: dist.vendedores_ids })}
+                  disabled={distSaving}
+                  style={{background:L.teal,border:"none",borderRadius:8,padding:"7px 18px",
+                    cursor:"pointer",fontSize:12,color:"white",fontFamily:"inherit",fontWeight:600,transition:"all .12s"}}>
+                  {distSaving ? "Salvando…" : "💾 Salvar seleção"}
+                </button>
+                {distMsg && <span style={{fontSize:12,color:L.green,fontWeight:600}}>{distMsg}</span>}
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {loading ? (
         <div style={{textAlign:"center",padding:40,color:L.t4}}>Carregando equipe...</div>

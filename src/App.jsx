@@ -1,10 +1,41 @@
-import { useState, useEffect, lazy, Suspense } from "react";
+import { useState, useEffect, lazy, Suspense, Component } from "react";
 import Login from "./components/Login";
 import Shell from "./components/Shell";
 import ChangePasswordScreen from "./components/ChangePasswordScreen";
 import { globalCSS, L } from "./constants/theme";
 import { ThemeProvider, useTheme } from "./context/ThemeContext";
 import { supabase } from "./lib/supabase";
+
+class ErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(e) { return { error: e }; }
+  componentDidCatch(e, info) { console.error("[C4OS] Crash:", e, info); }
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <div style={{ minHeight:"100dvh", display:"flex", flexDirection:"column", alignItems:"center",
+        justifyContent:"center", background:"#f9fafb", padding:24, fontFamily:"sans-serif" }}>
+        <div style={{ maxWidth:480, width:"100%", background:"#fff", borderRadius:16,
+          border:"1px solid #e5e7eb", padding:32, boxShadow:"0 4px 24px rgba(0,0,0,.08)" }}>
+          <div style={{ fontSize:32, marginBottom:12 }}>⚠️</div>
+          <h2 style={{ margin:"0 0 8px", fontSize:18, color:"#111827" }}>Algo deu errado</h2>
+          <p style={{ margin:"0 0 20px", fontSize:13, color:"#6b7280", lineHeight:1.6 }}>
+            Ocorreu um erro inesperado. Tente recarregar a página.
+          </p>
+          <pre style={{ background:"#f3f4f6", borderRadius:8, padding:"10px 14px",
+            fontSize:11, color:"#dc2626", overflow:"auto", maxHeight:180, margin:"0 0 20px" }}>
+            {this.state.error?.message}
+          </pre>
+          <button onClick={() => window.location.reload()}
+            style={{ background:"#0f9490", color:"#fff", border:"none", borderRadius:9,
+              padding:"10px 24px", fontSize:13, fontWeight:600, cursor:"pointer" }}>
+            Recarregar
+          </button>
+        </div>
+      </div>
+    );
+  }
+}
 
 const PageLanding  = lazy(() => import("./pages/PageLanding"));
 const PageBlog     = lazy(() => import("./pages/PageBlog"));
@@ -163,8 +194,10 @@ function AppInner() {
 
 export default function App() {
   return (
-    <ThemeProvider>
-      <AppInner />
-    </ThemeProvider>
+    <ErrorBoundary>
+      <ThemeProvider>
+        <AppInner />
+      </ThemeProvider>
+    </ErrorBoundary>
   );
 }
