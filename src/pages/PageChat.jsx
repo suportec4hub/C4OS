@@ -2693,9 +2693,9 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
                           <span style={{ width:22,height:22,borderRadius:"50%",background:sel?L.tealA2:L.surface,
                             border:`1px solid ${sel?L.tealA2:L.line}`,display:"flex",alignItems:"center",
                             justifyContent:"center",fontSize:11,fontWeight:700,color:sel?L.teal:L.t4,flexShrink:0 }}>
-                            {v.nome[0]}
+                            {(v.nome || "?")[0]}
                           </span>
-                          {v.nome.split(" ")[0]}
+                          {(v.nome || "Atendente").split(" ")[0]}
                           {isNext && sel && (
                             <span style={{ background:L.teal,color:"white",borderRadius:8,
                               padding:"1px 6px",fontSize:9,fontWeight:700 }}>próximo</span>

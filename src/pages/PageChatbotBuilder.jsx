@@ -874,6 +874,7 @@ export default function PageChatbotBuilder({ user }) {
   const [novaForm,     setNovaForm]     = useState(VAZIO_FLUXO);
   const [fluxoAtivoId, setFluxoAtivoId] = useState(null);
   const [connLabel,    setConnLabel]    = useState("");     // label da conexão em criação
+  const [unsavedChanges, setUnsavedChanges] = useState(false);
 
   const { isMobile } = useBreakpoint();
 
@@ -898,6 +899,11 @@ export default function PageChatbotBuilder({ user }) {
       .then(({ data }) => setVendedores(data || []));
   }, [user?.empresa_id]);
 
+  // ── Unsaved changes tracker ──
+  useEffect(() => {
+    if (activeFluxo) setUnsavedChanges(true);
+  }, [nos, conexoes]);
+
   // ── Abrir fluxo ──
   const openFluxo = async (f) => {
     const { data } = await supabase.from("chatbot_fluxos")
@@ -912,6 +918,7 @@ export default function PageChatbotBuilder({ user }) {
     setSelectedNo(null);
     setEditingNo(null);
     setConnecting(null);
+    setUnsavedChanges(false);
   };
 
   // ── Salvar fluxo ──
@@ -922,6 +929,7 @@ export default function PageChatbotBuilder({ user }) {
       .update({ nos, conexoes, updated_at: new Date().toISOString() })
       .eq("id", activeFluxo.id);
     setSaving(false);
+    setUnsavedChanges(false);
   };
 
   // ── Criar fluxo ──
@@ -963,6 +971,12 @@ export default function PageChatbotBuilder({ user }) {
     setFluxoAtivoId(novoId);
     if (!isJaAtivo) {
       await supabase.from("chatbot_fluxos").update({ ativo: true }).eq("id", f.id);
+      // Deactivate all other company-level flows in DB
+      await supabase.from("chatbot_fluxos")
+        .update({ ativo: false })
+        .eq("empresa_id", user.empresa_id)
+        .is("usuario_id", null)
+        .neq("id", f.id);
       // Only flip ativo on other company-level flows (usuario_id IS NULL), never touch vendor flows
       setFluxos(p => p.map(x => {
         if (x.id === f.id) return { ...x, ativo: true };
@@ -1046,7 +1060,8 @@ export default function PageChatbotBuilder({ user }) {
   const handleMouseDown = useCallback((e, noId) => {
     if (e.button !== 0) return;
     e.stopPropagation();
-    const rect = canvasRef.current.getBoundingClientRect();
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
     const no = nos.find(n => n.id === noId);
     if (!no) return;
     draggingRef.current = noId;
@@ -1056,13 +1071,41 @@ export default function PageChatbotBuilder({ user }) {
 
   const handleMouseMove = useCallback((e) => {
     if (!draggingRef.current) return;
-    const rect = canvasRef.current.getBoundingClientRect();
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
     const x = Math.max(0, e.clientX - rect.left - dragOffRef.current.x);
     const y = Math.max(0, e.clientY - rect.top - dragOffRef.current.y);
     setNos(p => p.map(n => n.id === draggingRef.current ? { ...n, x, y } : n));
   }, []);
 
   const handleMouseUp = useCallback(() => { draggingRef.current = null; }, []);
+
+  // ── Touch drag ──
+  const handleTouchStart = useCallback((e) => {
+    const touch = e.touches[0];
+    const target = e.target.closest('[data-nodeid]');
+    if (!target) return;
+    const noId = target.dataset.nodeid;
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const no = nos.find(n => n.id === noId);
+    if (!no) return;
+    draggingRef.current = noId;
+    dragOffRef.current = { x: touch.clientX - rect.left - no.x, y: touch.clientY - rect.top - no.y };
+  }, [nos]);
+
+  const handleTouchMove = useCallback((e) => {
+    if (!draggingRef.current) return;
+    e.preventDefault();
+    const touch = e.touches[0];
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const x = Math.max(0, touch.clientX - rect.left - dragOffRef.current.x);
+    const y = Math.max(0, touch.clientY - rect.top - dragOffRef.current.y);
+    setNos(p => p.map(n => n.id === draggingRef.current ? { ...n, x, y } : n));
+  }, []);
+
+  const handleTouchEnd = useCallback(() => { draggingRef.current = null; }, []);
 
   // ── LIST view ──
   if (!activeFluxo) {
@@ -1097,7 +1140,7 @@ export default function PageChatbotBuilder({ user }) {
   // ── EDITOR view ──
   const emUso = fluxoAtivoId === activeFluxo.id;
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: isMobile ? "calc(100vh - 80px)" : "calc(100vh - 110px)",
+    <div style={{ display: "flex", flexDirection: "column", height: isMobile ? "calc(100dvh - 80px)" : "calc(100dvh - 110px)",
       borderRadius: isMobile ? 8 : 12, border: `1px solid ${L.line}`, overflow: "hidden",
       background: L.white, boxShadow: "0 1px 4px rgba(0,0,0,.06)" }}>
 
@@ -1153,10 +1196,10 @@ export default function PageChatbotBuilder({ user }) {
         )}
 
         <button onClick={saveFluxo} disabled={saving}
-          style={btn(saving ? L.surface : L.green, "white",
+          style={btn(saving ? L.surface : unsavedChanges ? L.green : L.teal, "white",
             { fontSize: isMobile ? 11 : 11.5, fontWeight: 600, border: "none",
               padding: isMobile ? "5px 10px" : "6px 14px", flexShrink: 0 })}>
-          {saving ? "..." : "💾 Salvar"}
+          {saving ? "..." : unsavedChanges ? "💾 Salvar*" : "💾 Salvar"}
         </button>
 
         <button onClick={() => toggleAtivo(activeFluxo)}
@@ -1188,6 +1231,9 @@ export default function PageChatbotBuilder({ user }) {
           ref={canvasRef}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
           onClick={() => { setSelectedNo(null); if (connecting) setConnecting(null); }}
           style={{ flex: 1, position: "relative", overflow: "auto",
             background: "#f9fafb",
@@ -1256,6 +1302,7 @@ export default function PageChatbotBuilder({ user }) {
           {nos.map(no => (
             <div
               key={no.id}
+              data-nodeid={no.id}
               onMouseDown={e => handleMouseDown(e, no.id)}
               style={{ position: "absolute", left: no.x, top: no.y, cursor: "grab" }}
             >
