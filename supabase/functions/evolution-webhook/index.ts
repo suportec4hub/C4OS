@@ -770,10 +770,16 @@ async function processMessages(
 
     if (!conv?.id) continue;
 
-    // ── Dedup ────────────────────────────────────────────────────────────────
-    const { data: existing } = await supabase.from("mensagens")
-      .select("id").eq("conversa_id", conv.id).eq("hora", hora).eq("texto", texto).maybeSingle();
-    if (existing) { console.log("[webhook] dedup: msg já existe"); continue; }
+    // ── Dedup — wamid first, fallback to hora+texto ──────────────────────────
+    if (wamid) {
+      const { data: existWa } = await supabase.from("mensagens")
+        .select("id").eq("wamid", wamid).maybeSingle();
+      if (existWa) { console.log("[webhook] dedup: wamid já existe"); continue; }
+    } else {
+      const { data: existing } = await supabase.from("mensagens")
+        .select("id").eq("conversa_id", conv.id).eq("hora", hora).eq("texto", texto).maybeSingle();
+      if (existing) { console.log("[webhook] dedup: msg já existe"); continue; }
+    }
 
     // ── Re-hospedar mídia recebida no Supabase Storage ───────────────────────
     let storedMediaUrl = mediaUrl;
@@ -814,13 +820,16 @@ async function processMessages(
     }
 
     // ── Chatbot ──────────────────────────────────────────────────────────────
-    if (!fromMe && !isHistory && conv.status !== "em_atendimento") {
+    if (!fromMe && !isHistory && conv.status !== "em_atendimento" && conv.bot_ativo !== false) {
       try {
         const { data: cfg } = await supabase.from("chatbot_config").select("*").eq("empresa_id", empresa_id).maybeSingle();
         if (!cfg?.ativo) continue;
 
         if (isGroup && !cfg.responder_grupos) continue;
-        if (cfg.nao_responder_aberta && conv.status === "aberta") continue;
+        // nao_responder_aberta only silences the bot for conversations with no active flow —
+        // an ongoing flow must always continue even if status is "aberta"
+        const hasActiveFlow = !!(conv.fluxo_estado as { fluxo_id?: string } | null)?.fluxo_id;
+        if (cfg.nao_responder_aberta && conv.status === "aberta" && !hasActiveFlow) continue;
 
         const { data: empData } = await supabase.from("empresas")
           .select("evolution_instance_id, evolution_instance_token, evolution_api_url")

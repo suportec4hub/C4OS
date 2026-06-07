@@ -757,7 +757,8 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
   useEffect(() => {
     if (!user?.empresa_id) return;
     supabase.from("conversa_etiquetas")
-      .select("conversa_id, etiqueta_id")
+      .select("conversa_id, etiqueta_id, conversas!inner(empresa_id)")
+      .eq("conversas.empresa_id", user.empresa_id)
       .then(({ data }) => {
         if (!data) return;
         const map = {};
@@ -819,7 +820,7 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
   // ── realtime conversas ────────────────────────────────────────────────────
   useEffect(() => {
     if (!user?.empresa_id) return;
-    const ch = supabase.channel(`conv:${user.empresa_id}:${Date.now()}`)
+    const ch = supabase.channel(`conv:${user.empresa_id}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "conversas",
         filter: `empresa_id=eq.${user.empresa_id}` }, () => loadConversas(true))
       .subscribe();
@@ -846,7 +847,8 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
     if (!activeConv?.id) return;
     loadMensagens(activeConv.id);
     const convId = activeConv.id;
-    const ch = supabase.channel(`msgs:${convId}:${Date.now()}`)
+    // Stable channel name (no Date.now()) — cleanup removes it before new one is created
+    const ch = supabase.channel(`msgs:${convId}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "mensagens",
         filter: `conversa_id=eq.${convId}` }, (payload) => {
         setMensagens(p => {
