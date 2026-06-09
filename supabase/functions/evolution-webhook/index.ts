@@ -689,11 +689,17 @@ async function processMessages(
 
     if (!conv) {
       isNew = true;
+
+      // Busca o setor "Vendas" da empresa para atribuir automaticamente
+      const { data: setorVendas } = await supabase.from("setores")
+        .select("id").eq("empresa_id", empresa_id).ilike("nome", "%Vendas%").maybeSingle();
+
       const { data: nova } = await supabase.from("conversas").insert({
         empresa_id, contato_nome: senderName, contato_telefone: senderPhone,
         ultima_mensagem: texto, ultima_hora: hora,
         nao_lidas: fromMe ? 0 : 1, status: "aberta", bot_ativo: false,
         whatsapp_numero: senderPhone, fluxo_estado: null,
+        ...(setorVendas?.id ? { setor_id: setorVendas.id } : {}),
       }).select("id, nao_lidas, contato_nome, status, bot_ativo, ultima_hora, fluxo_estado").single();
       conv = nova;
 
@@ -776,6 +782,10 @@ async function processMessages(
         reopenFields.status = "aberta";
         reopenFields.atendente_id = null;
         reopenFields.fluxo_estado = null;
+        // Reaplica o setor Vendas ao reabrir
+        const { data: setorV } = await supabase.from("setores")
+          .select("id").eq("empresa_id", empresa_id).ilike("nome", "%Vendas%").maybeSingle();
+        if (setorV?.id) reopenFields.setor_id = setorV.id;
       }
       await supabase.from("conversas").update(reopenFields).eq("id", conv.id);
 
