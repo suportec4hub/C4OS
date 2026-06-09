@@ -721,14 +721,21 @@ async function processMessages(
       }
 
     } else if (!fromMe && !isHistory) {
-      await supabase.from("conversas").update({
+      const reopenFields: Record<string, unknown> = {
         ultima_mensagem: texto, ultima_hora: hora,
         nao_lidas: (conv.nao_lidas || 0) + 1,
         contato_nome: senderName || conv.contato_nome,
-      }).eq("id", conv.id);
+      };
+      // Reabre conversa resolvida automaticamente quando cliente envia nova mensagem
+      if (conv.status === "resolvida") {
+        reopenFields.status = "aberta";
+        reopenFields.atendente_id = null;
+        reopenFields.fluxo_estado = null;
+      }
+      await supabase.from("conversas").update(reopenFields).eq("id", conv.id);
 
       // Re-assign via round-robin when conversation is re-opened (resolved + no atendente)
-      if (!conv.atendente_id && conv.status === "resolvida") {
+      if (conv.status === "resolvida") {
         try {
           const { data: dist } = await supabase
             .from("distribuicao_atendimento")
