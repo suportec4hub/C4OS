@@ -686,7 +686,7 @@ async function processMessages(
               .select("id, nome")
               .eq("empresa_id", empresa_id)
               .eq("ativo", true)
-              .ilike("cargo", "%vendedor%");
+              .ilike("cargo", "%SDR%");
 
             if (dist?.vendedores_ids?.length) {
               sellersQuery = sellersQuery.in("id", dist.vendedores_ids);
@@ -743,7 +743,7 @@ async function processMessages(
               .select("id, nome")
               .eq("empresa_id", empresa_id)
               .eq("ativo", true)
-              .ilike("cargo", "%vendedor%");
+              .ilike("cargo", "%SDR%");
             if (dist?.vendedores_ids?.length) {
               rrQuery = rrQuery.in("id", dist.vendedores_ids);
             }
