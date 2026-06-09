@@ -58,7 +58,7 @@ export default function PageFollowUp({ user, onGoToChat }) {
     if (!user?.empresa_id) return;
     supabase
       .from("mensagens")
-      .select("conversa_id, created_at, remetente, conversas!inner(telefone, empresa_id)")
+      .select("conversa_id, created_at, remetente, conversas!inner(contato_telefone, empresa_id)")
       .eq("conversas.empresa_id", user.empresa_id)
       .in("remetente", ["lead", "cliente", "contato"])
       .order("created_at", { ascending: false })
@@ -67,7 +67,7 @@ export default function PageFollowUp({ user, onGoToChat }) {
         if (!data) return;
         const map = {};
         data.forEach(m => {
-          const tel = m.conversas?.telefone;
+          const tel = m.conversas?.contato_telefone;
           if (tel && !map[tel]) map[tel] = m.created_at;
         });
         setUltimasMensagens(map);

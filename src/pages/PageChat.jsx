@@ -718,7 +718,7 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
   // ── subscription a notificações pessoais (transferências / atribuições) ───
   useEffect(() => {
     if (!user?.id) return;
-    const ch = supabase.channel(`notif:${user.id}:${Date.now()}`)
+    const ch = supabase.channel(`notif:${user.id}`)
       .on("postgres_changes", {
         event: "INSERT", schema: "public", table: "notificacoes",
         filter: `usuario_id=eq.${user.id}`,
@@ -950,7 +950,7 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
         .limit(20)
         .then(({ data }) => setAgendadas(data || []));
 
-    const ch = supabase.channel(`agend:${convId}:${Date.now()}`)
+    const ch = supabase.channel(`agend:${convId}`)
       .on("postgres_changes", {
         event: "*", schema: "public", table: "mensagens_agendadas",
         filter: `conversa_id=eq.${convId}`,

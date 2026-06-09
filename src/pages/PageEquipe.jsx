@@ -146,10 +146,12 @@ export default function PageEquipe({ user }) {
     if (!confirmDelete) return;
     setDeleting(true);
     const { error } = await supabase.functions.invoke("excluir-usuario", { body: { id: confirmDelete.id } });
-    if (!error) {
+    if (error) {
+      alert("Erro ao excluir usuário: " + (error.message || "tente novamente."));
+    } else {
       refetch();
+      setConfirmDelete(null);
     }
-    setConfirmDelete(null);
     setDeleting(false);
   };
 

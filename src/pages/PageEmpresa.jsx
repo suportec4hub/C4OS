@@ -463,8 +463,10 @@ export default function PageEmpresa({ empresa, user }) {
 
   const saveInfo = async () => {
     setSaving(true); setSucc("");
-    await update(user?.empresa_id, infoForm);
-    setSucc("Alterações salvas com sucesso!"); setSaving(false);
+    const { error } = await update(user?.empresa_id, infoForm);
+    if (error) setSucc("Erro ao salvar: " + (error.message || "tente novamente."));
+    else setSucc("Alterações salvas com sucesso!");
+    setSaving(false);
   };
 
   const saveWaba = async () => {

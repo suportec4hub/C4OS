@@ -899,7 +899,7 @@ export default function PageChatbotBuilder({ user }) {
       .order("created_at", { ascending: false })
       .then(({ data }) => setFluxos(data || []));
     supabase.from("chatbot_config")
-      .select("fluxo_ativo_id").eq("empresa_id", user.empresa_id).single()
+      .select("fluxo_ativo_id").eq("empresa_id", user.empresa_id).maybeSingle()
       .then(({ data }) => { if (data) setFluxoAtivoId(data.fluxo_ativo_id); });
     supabase.from("usuarios")
       .select("id, nome, cargo").eq("empresa_id", user.empresa_id).eq("ativo", true).order("nome")
@@ -977,7 +977,7 @@ export default function PageChatbotBuilder({ user }) {
     const isJaAtivo = fluxoAtivoId === f.id;
     const novoId = isJaAtivo ? null : f.id;
     const { data: cfgExist } = await supabase.from("chatbot_config")
-      .select("id").eq("empresa_id", user.empresa_id).single();
+      .select("id").eq("empresa_id", user.empresa_id).maybeSingle();
     if (cfgExist) {
       await supabase.from("chatbot_config").update({ fluxo_ativo_id: novoId }).eq("id", cfgExist.id);
     } else {
