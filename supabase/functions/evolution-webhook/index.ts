@@ -54,11 +54,48 @@ Deno.serve(async (req) => {
     // Saída rápida para eventos de alta frequência que não precisam consultar o banco
     const SKIP_EVENTS = [
       "chats.update", "CHATS_UPDATE", "CHATS_UPSERT", "CHATS_SET", "CHATS_DELETE",
-      "contacts.update", "CONTACTS_UPDATE", "CONTACTS_UPSERT", "CONTACTS_SET",
+      "contacts.update", "CONTACTS_UPDATE", "CONTACTS_SET",
       "message.ack", "READ_RECEIPT",
       "labels.edit", "LABELS_EDIT", "labels.association", "LABELS_ASSOCIATION",
     ];
     if (SKIP_EVENTS.includes(event)) return new Response("OK");
+
+    // CONTACTS_UPSERT — mapeia LID → telefone real para corrigir conversas @lid
+    if (["contacts.upsert", "CONTACTS_UPSERT"].includes(event)) {
+      if (empresa_id) {
+        const contacts = Array.isArray(data) ? data : (data?.contacts ? data.contacts : [data]);
+        for (const contact of contacts) {
+          try {
+            const lidJid   = (contact?.id || contact?.jid || "") as string;
+            const phoneJid = (contact?.remoteJid || contact?.phone || contact?.number || "") as string;
+            if (!lidJid.includes("@lid")) continue;
+            const phoneNum = phoneJid.replace(/@s\.whatsapp\.net$/, "").replace(/:.*$/, "");
+            if (!phoneNum || phoneNum.length < 8 || phoneNum.includes("@")) continue;
+
+            // Se já existe conversa com o número real: migrar mensagens da @lid e deletar
+            const { data: existPhone } = await supabase.from("conversas")
+              .select("id").eq("empresa_id", empresa_id).eq("contato_telefone", phoneNum).maybeSingle();
+
+            if (!existPhone) {
+              // Não existe conversa com o número real — atualizar a conversa @lid para usar o número
+              await supabase.from("conversas")
+                .update({ contato_telefone: phoneNum })
+                .eq("empresa_id", empresa_id)
+                .eq("contato_telefone", lidJid);
+            } else {
+              // Já existe conversa com o número real — migrar mensagens da @lid e deletar duplicata
+              const { data: lidConv } = await supabase.from("conversas")
+                .select("id").eq("empresa_id", empresa_id).eq("contato_telefone", lidJid).maybeSingle();
+              if (lidConv?.id && lidConv.id !== existPhone.id) {
+                await supabase.from("mensagens").update({ conversa_id: existPhone.id }).eq("conversa_id", lidConv.id);
+                await supabase.from("conversas").delete().eq("id", lidConv.id);
+              }
+            }
+          } catch (_) { /* nunca propaga */ }
+        }
+      }
+      return new Response("OK");
+    }
 
     // Presença / "digitando..." — 1 query leve para empresa_id, depois Realtime broadcast
     if (["presence.update", "PRESENCE", "CHAT_PRESENCE"].includes(event)) {
@@ -586,9 +623,17 @@ async function processMessages(
     if (remoteJid.endsWith("@broadcast")) continue;
 
     const isGroup   = remoteJid.endsWith("@g.us");
-    const senderPhone = isGroup
+    // Para @lid: tentar pegar o número real de campos alternativos do payload
+    const participantJid = (key.participant || info.Sender || m.participant || "") as string;
+    const resolvedPhone = participantJid
+      ? participantJid.replace(/@s\.whatsapp\.net$/, "").replace(/:.*$/, "")
+      : "";
+    const rawPhone = isGroup
       ? remoteJid
       : remoteJid.replace(/@s\.whatsapp\.net$/, "").replace(/:.*$/, "");
+    const senderPhone = (rawPhone.endsWith("@lid") && resolvedPhone && !resolvedPhone.includes("@"))
+      ? resolvedPhone
+      : rawPhone;
     if (!senderPhone) continue;
 
     const senderName = ((info.PushName || m.pushName || m.PushName || (isGroup ? "Grupo" : senderPhone)) as string);
