@@ -139,8 +139,8 @@ Deno.serve(async (req) => {
       if (emp) empresa_id = emp.id;
     }
     if (!empresa_id) {
-      console.error("[webhook] empresa nao encontrada | token:", instanceToken.slice(0, 8), "| instanceName:", instanceName);
-      return new Response("Instance not found", { status: 404 });
+      // Retorna 200 para não disparar retry loop na Evolution API
+      return new Response("OK", { status: 200 });
     }
 
     const now = new Date().toISOString();
