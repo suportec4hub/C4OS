@@ -3,6 +3,7 @@ import { useBreakpoint } from "../hooks/useBreakpoint";
 import Logo from "./Logo";
 import { Av, Chip } from "./ui";
 import ModalPerfil from "./ModalPerfil";
+import NotificacoesBell from "./NotificacoesBell";
 import { L } from "../constants/theme";
 import { supabase } from "../lib/supabase";
 import { injectMetaPixel, injectGA4 } from "../lib/analytics";
@@ -40,7 +41,8 @@ const PageChatbotBuilder   = lazy(() => import("../pages/PageChatbotBuilder"));
 const PageDisparos         = lazy(() => import("../pages/PageDisparos"));
 const PageRelatoriosAtend  = lazy(() => import("../pages/PageRelatoriosAtend"));
 const PageMeta             = lazy(() => import("../pages/PageMeta"));
-const PageCheckoutAdmin    = lazy(() => import("../pages/PageCheckoutAdmin"));
+const PageCheckoutAdmin        = lazy(() => import("../pages/PageCheckoutAdmin"));
+const PageNotificacoesAdmin    = lazy(() => import("../pages/PageNotificacoesAdmin"));
 
 const NAV_ITEMS = [
   {id:"dashboard",  label:"Dashboard",      ico:"▦", g:"principal"},
@@ -72,18 +74,19 @@ const NAV_ITEMS = [
 ];
 
 const ADMIN_ITEMS = [
-  {id:"clientes",   label:"Clientes",    ico:"⊞", g:"c4hub"},
-  {id:"logs",       label:"Logs",        ico:"≡", g:"c4hub"},
-  {id:"suporte",    label:"Suporte",     ico:"⊙", g:"c4hub"},
-  {id:"users",      label:"Usuários",    ico:"◉", g:"c4hub"},
-  {id:"planos",     label:"Planos",      ico:"★", g:"c4hub"},
-  {id:"checkout",   label:"Pg. Checkout",ico:"✓", g:"c4hub"},
+  {id:"clientes",      label:"Clientes",       ico:"⊞", g:"c4hub"},
+  {id:"logs",          label:"Logs",           ico:"≡", g:"c4hub"},
+  {id:"suporte",       label:"Suporte",        ico:"⊙", g:"c4hub"},
+  {id:"users",         label:"Usuários",       ico:"◉", g:"c4hub"},
+  {id:"planos",        label:"Planos",         ico:"★", g:"c4hub"},
+  {id:"checkout",      label:"Pg. Checkout",   ico:"✓", g:"c4hub"},
+  {id:"notificacoes",  label:"Notificações",   ico:"🔔", g:"c4hub"},
 ];
 
 import { hasFullAccess, hasPageAccess } from "../lib/auth";
 
 // Visível somente para c4hub_admin
-const STRICT_ADMIN_ONLY = new Set(["logs","users","planos","checkout"]);
+const STRICT_ADMIN_ONLY = new Set(["logs","users","planos","checkout","notificacoes"]);
 // Visível para c4hub_admin E c4hub_vendedor
 const C4HUB_TEAM_ONLY   = new Set(["clientes","suporte","reports","meta","relatoriosatend"]);
 const ADMIN_ONLY = new Set([...STRICT_ADMIN_ONLY, ...C4HUB_TEAM_ONLY]);
@@ -387,6 +390,8 @@ export default function Shell({user,onLogout,onProfileUpdate,theme,toggleTheme})
                 {theme === "dark" ? "☀" : "☽"}
               </button>
             )}
+            {/* Notification bell — visible for all */}
+            <NotificacoesBell user={user} />
             {/* Avatar on mobile */}
             {isMobile && (
               <button onClick={()=>setPerfilOpen(true)}
@@ -451,7 +456,8 @@ export default function Shell({user,onLogout,onProfileUpdate,theme,toggleTheme})
           {safe==="logs"      && isC4HubAdmin && <PageLogs           user={user}/>}
           {safe==="users"     && isC4HubAdmin && <PageUsers          user={user}/>}
           {safe==="planos"    && isC4HubAdmin && <PagePlanos         user={user}/>}
-          {safe==="checkout"  && isC4HubAdmin && <PageCheckoutAdmin  user={user}/>}
+          {safe==="checkout"      && isC4HubAdmin && <PageCheckoutAdmin      user={user}/>}
+          {safe==="notificacoes"  && isC4HubAdmin && <PageNotificacoesAdmin  user={user}/>}
           </Suspense>
         </div>
       </div>
