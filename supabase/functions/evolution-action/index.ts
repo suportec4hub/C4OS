@@ -59,8 +59,8 @@ Deno.serve(async (req) => {
 
   // Credenciais do servidor Evolution API — altere aqui se mudar o servidor.
   // Não lê variável de ambiente para evitar sobrescrever com valor inválido de sessão anterior.
-  const GLOBAL_KEY = "pangAbOM4AI1yo0LlSFAGtclhwQAt31B";
-  const GLOBAL_URL = "https://evolution-api-xrrw.srv1583408.hstgr.cloud";
+  const GLOBAL_KEY = "C4@Hub123#@#";
+  const GLOBAL_URL = "http://18.230.11.58:8080";
   const SUPA_URL   = Deno.env.get("SUPABASE_URL") || "";
 
   try {

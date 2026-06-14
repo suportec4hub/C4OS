@@ -2,7 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const SUPA_URL       = Deno.env.get("SUPABASE_URL")!;
 const SUPA_KEY       = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const GLOBAL_EVO_URL = "https://evolution-api-xrrw.srv1583408.hstgr.cloud";
+const GLOBAL_EVO_URL = "http://18.230.11.58:8080";
 const CRON_TOKEN     = "c4os-cron-2025";
 
 const json = (data: unknown, status = 200) =>
