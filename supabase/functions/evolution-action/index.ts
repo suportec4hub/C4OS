@@ -300,20 +300,30 @@ Deno.serve(async (req) => {
         (d?.base64 || d?.qrcode?.base64 || d?.Qrcode || d?.data?.Qrcode ||
          d?.data?.qrcode || d?.instance?.qrcode?.base64 || "") as string;
 
+      const isMissingResponse = (status: number, d: Record<string, unknown>): boolean => {
+        const sc = (d?.statusCode ?? d?.status ?? status) as number;
+        const msg = ((d?.message || d?.error || d?.response || "") as string).toLowerCase();
+        return sc === 404 || sc === 401 ||
+          msg.includes("not found") || msg.includes("no instance") ||
+          msg.includes("not exists") || msg.includes("doesn't exist") ||
+          msg.includes("instance not") || msg.includes("unauthorized") ||
+          msg.includes("bad request");
+      };
+
       // Estratégia 1: GET /instance/connect/{name} com token da instância
       try {
         const r = await cFetch(`/instance/connect/${effectiveName}`);
         const d = await r.json();
         console.log("[connect] S1 status:", r.status, JSON.stringify(d).slice(0, 400));
         tried.push(`S1:${r.status}`);
-        if (r.status === 404 || d?.statusCode === 404) instanceMissing = true;
+        if (!r.ok) instanceMissing = isMissingResponse(r.status, d);
         qrBase64 = extractQr(d);
         const state = d?.instance?.state || d?.state || d?.data?.state || "";
         if (!qrBase64 && state === "open") {
           await supabase.from("empresas").update({ evolution_connected: true, evolution_qr_temp: null }).eq("id", empresa_id);
           return json({ success: true, alreadyConnected: true, webhookUrl });
         }
-      } catch (e) { tried.push("S1:err"); }
+      } catch (e) { tried.push("S1:err"); instanceMissing = true; }
 
       // Estratégia 2: GET com global apikey
       if (!qrBase64 && !instanceMissing) {
@@ -322,9 +332,9 @@ Deno.serve(async (req) => {
           const d = await r.json();
           console.log("[connect] S2 status:", r.status, JSON.stringify(d).slice(0, 400));
           tried.push(`S2:${r.status}`);
-          if (r.status === 404 || d?.statusCode === 404) instanceMissing = true;
+          if (!r.ok) instanceMissing = isMissingResponse(r.status, d);
           qrBase64 = extractQr(d);
-        } catch (e) { tried.push("S2:err"); }
+        } catch (e) { tried.push("S2:err"); instanceMissing = true; }
       }
 
       // Estratégia 3: POST /instance/connect
@@ -353,17 +363,21 @@ Deno.serve(async (req) => {
         } catch (e) { tried.push("S4:err"); }
       }
 
-      // ── Caso 2: instância deletada na API → recria automaticamente ─────────
-      if (!qrBase64 && instanceMissing) {
-        console.log("[connect] instância deletada na API — recriando automaticamente...");
+      console.log("[connect] qrBase64 length:", qrBase64.length, "tried:", tried.join(", "), "instanceMissing:", instanceMissing);
+
+      // ── Caso 2/3: sem QR → recria instância (cobre instâncias deletadas E migração de servidor) ──
+      if (!qrBase64) {
+        console.log("[connect] sem QR — recriando instância no servidor atual...");
+        // Best-effort delete para evitar conflito de nome
+        try { await gFetch(`/instance/delete/${effectiveName}`, { method: "DELETE" }); } catch (_) {}
         try {
           const { tok, nm, qr } = await createFresh();
           effectiveToken = tok;
           effectiveName  = nm;
           if (qr) return json({ success: true, qrBase64: qr, newInstance: true,
             webhookUrl: `${SUPA_URL}/functions/v1/evolution-webhook?token=${tok}` });
-          // Se não veio QR no create, tenta buscar
-          await new Promise(r => setTimeout(r, 1200));
+          // QR não veio no create, aguarda e tenta buscar
+          await new Promise(r => setTimeout(r, 1500));
           const r2 = await fetch(`${evoUrl}/instance/connect/${nm}`, {
             headers: { "Content-Type": "application/json", "apikey": tok },
           });
@@ -374,17 +388,10 @@ Deno.serve(async (req) => {
             return json({ success: true, qrBase64, newInstance: true,
               webhookUrl: `${SUPA_URL}/functions/v1/evolution-webhook?token=${tok}` });
           }
+          return json({ error: "Instância recriada. Aguarde alguns segundos e clique em 'Gerar QR Code' novamente." }, 400);
         } catch (e) {
-          return json({ error: `Falha ao recriar instância: ${(e as Error).message}` }, 400);
+          return json({ error: `Falha ao criar instância: ${(e as Error).message}` }, 400);
         }
-      }
-
-      console.log("[connect] qrBase64 length:", qrBase64.length, "tried:", tried.join(", "));
-
-      if (!qrBase64) {
-        return json({
-          error: `QR não obtido para "${effectiveName}". Tentativas: ${tried.join(", ")}. Tente clicar em "Gerar QR Code" novamente.`,
-        }, 400);
       }
 
       await supabase.from("empresas").update({ evolution_qr_temp: qrBase64 }).eq("id", empresa_id);
