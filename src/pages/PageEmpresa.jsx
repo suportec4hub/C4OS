@@ -172,7 +172,17 @@ function EvolutionCard({ user, empData, onRefresh }) {
       }
 
       const qr = connRes?.qrBase64 || "";
-      if (!qr) throw new Error("QR code não retornado pelo servidor. Tente novamente.");
+      if (!qr) {
+        if (connRes?.needsRetry) {
+          // Instância recriada mas QR ainda inicializando — mostra aviso e volta ao idle
+          phaseRef.current = "idle";
+          setPhase("idle");
+          setSuccMsg("✓ Instância recriada! Aguarde 5 segundos e clique em 'Gerar QR Code' novamente.");
+          if (connRes?.newInstance) onRefresh?.();
+          return;
+        }
+        throw new Error("QR code não retornado pelo servidor. Tente novamente.");
+      }
 
       // Atualiza empData caso uma nova instância tenha sido criada
       if (connRes?.newInstance) onRefresh?.();
@@ -217,7 +227,16 @@ function EvolutionCard({ user, empData, onRefresh }) {
         return;
       }
       const qr = connRes?.qrBase64 || "";
-      if (!qr) throw new Error("QR code não retornado. Verifique a instância no Evolution GO.");
+      if (!qr) {
+        if (connRes?.needsRetry) {
+          phaseRef.current = "idle";
+          setPhase("idle");
+          setSuccMsg("✓ Instância recriada! Aguarde 5 segundos e clique em 'Gerar QR Code' novamente.");
+          if (connRes?.newInstance) onRefresh?.();
+          return;
+        }
+        throw new Error("QR code não retornado. Verifique a instância no Evolution GO.");
+      }
       setQrImg(qr.startsWith("data:") ? qr : qr.split("|")[0]);
       phaseRef.current = "qr";
       setPhase("qr");

@@ -376,19 +376,29 @@ Deno.serve(async (req) => {
           effectiveName  = nm;
           if (qr) return json({ success: true, qrBase64: qr, newInstance: true,
             webhookUrl: `${SUPA_URL}/functions/v1/evolution-webhook?token=${tok}` });
-          // QR não veio no create, aguarda e tenta buscar
-          await new Promise(r => setTimeout(r, 1500));
-          const r2 = await fetch(`${evoUrl}/instance/connect/${nm}`, {
-            headers: { "Content-Type": "application/json", "apikey": tok },
-          });
-          const d2 = await r2.json();
-          qrBase64 = extractQr(d2);
-          if (qrBase64) {
-            await supabase.from("empresas").update({ evolution_qr_temp: qrBase64 }).eq("id", empresa_id);
-            return json({ success: true, qrBase64, newInstance: true,
-              webhookUrl: `${SUPA_URL}/functions/v1/evolution-webhook?token=${tok}` });
+
+          // QR não veio no create — servidor precisa de alguns segundos para inicializar.
+          // Polling agressivo: tenta 5x com 2.5s de intervalo (total ~14s).
+          await new Promise(r => setTimeout(r, 2000));
+          for (let i = 0; i < 5; i++) {
+            const r2 = await fetch(`${evoUrl}/instance/connect/${nm}`, {
+              headers: { "Content-Type": "application/json", "apikey": tok },
+            });
+            const d2 = await r2.json();
+            console.log(`[connect] post-create poll ${i + 1}/5:`, r2.status, JSON.stringify(d2).slice(0, 300));
+            qrBase64 = extractQr(d2);
+            if (qrBase64) {
+              await supabase.from("empresas").update({ evolution_qr_temp: qrBase64 }).eq("id", empresa_id);
+              return json({ success: true, qrBase64, newInstance: true,
+                webhookUrl: `${SUPA_URL}/functions/v1/evolution-webhook?token=${tok}` });
+            }
+            if (i < 4) await new Promise(r => setTimeout(r, 2500));
           }
-          return json({ error: "Instância recriada. Aguarde alguns segundos e clique em 'Gerar QR Code' novamente." }, 400);
+
+          // Instância criada mas QR ainda não disponível — retorna 200 com flag needsRetry
+          // para o frontend mostrar mensagem amigável (não erro) e pedir que tente novamente.
+          return json({ success: true, qrBase64: "", newInstance: true, needsRetry: true,
+            webhookUrl: `${SUPA_URL}/functions/v1/evolution-webhook?token=${tok}` });
         } catch (e) {
           return json({ error: `Falha ao criar instância: ${(e as Error).message}` }, 400);
         }
