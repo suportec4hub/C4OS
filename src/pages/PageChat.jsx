@@ -611,6 +611,10 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
   const [notifPerm, setNotifPerm] = useState(
     typeof Notification !== "undefined" && Notification.permission === "granted"
   );
+  // Popups de nova conversa / atribuição automática
+  const [convPopups, setConvPopups] = useState([]); // [{ id, tipo, conv }]
+  const knownConvIdsRef  = useRef(null); // Set<string> — null = ainda não inicializado
+  const prevConvsMapRef  = useRef({});   // convId → dados anteriores da conversa
 
   // ── refs ──────────────────────────────────────────────────────────────────
   const bottomRef      = useRef(null);
@@ -813,20 +817,61 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
       if (updated) setActiveConv(p => ({ ...p, ...updated }));
     }
     if (!silent) setLoading(false);
+
+    // Inicializa mapa de IDs conhecidos na primeira carga não-silent
+    if (knownConvIdsRef.current === null && !silent) {
+      knownConvIdsRef.current = new Set(enriched.map(c => c.id));
+    }
+    // Mantém mapa do estado anterior para detectar mudanças de atendente
+    enriched.forEach(c => { prevConvsMapRef.current[c.id] = c; });
   }, [user?.empresa_id]);
 
   useEffect(() => { loadConversas(); }, [loadConversas, statusTab]);
+
+  // ── popup de nova conversa / atribuição ──────────────────────────────────
+  const showConvPopup = useCallback(({ tipo, conv }) => {
+    const pid = `${tipo}-${conv.id}-${Date.now()}`;
+    setConvPopups(prev => [{ id: pid, tipo, conv }, ...prev].slice(0, 5));
+    playNotificationSound();
+    if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+      const title = tipo === "nova"
+        ? `Nova conversa: ${conv.contato_nome || conv.contato_telefone || "Desconhecido"}`
+        : `Você foi atribuído: ${conv.contato_nome || conv.contato_telefone || "Desconhecido"}`;
+      showBrowserNotification(title, conv.ultima_mensagem || "");
+    }
+    setTimeout(() => setConvPopups(prev => prev.filter(p => p.id !== pid)), 9000);
+  }, []);
 
   // ── realtime conversas ────────────────────────────────────────────────────
   useEffect(() => {
     if (!user?.empresa_id) return;
     const ch = supabase.channel(`conv:${user.empresa_id}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "conversas",
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "conversas",
+        filter: `empresa_id=eq.${user.empresa_id}` }, (payload) => {
+        loadConversas(true);
+        const conv = payload.new;
+        if (conv?.id && knownConvIdsRef.current && !knownConvIdsRef.current.has(conv.id)) {
+          knownConvIdsRef.current.add(conv.id);
+          showConvPopup({ tipo: "nova", conv });
+        }
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "conversas",
+        filter: `empresa_id=eq.${user.empresa_id}` }, (payload) => {
+        loadConversas(true);
+        const conv = payload.new;
+        if (!conv?.id || !user?.id) return;
+        const prev = prevConvsMapRef.current[conv.id];
+        // Notifica apenas quando a conversa foi recém-atribuída ao usuário logado
+        if (conv.atendente_id === user.id && prev?.atendente_id !== user.id) {
+          showConvPopup({ tipo: "atribuicao", conv });
+        }
+      })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "conversas",
         filter: `empresa_id=eq.${user.empresa_id}` }, () => loadConversas(true))
       .subscribe();
     const timer = setInterval(() => loadConversas(true), 8000);
     return () => { supabase.removeChannel(ch); clearInterval(timer); };
-  }, [user?.empresa_id, loadConversas]);
+  }, [user?.empresa_id, user?.id, loadConversas, showConvPopup]);
 
   // ── load messages ─────────────────────────────────────────────────────────
   const loadMensagens = useCallback(async (convId) => {
@@ -2613,6 +2658,115 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
             style={{ background: "none", border: "none", cursor: "pointer", color: "rgba(255,255,255,.6)", fontSize: 16, lineHeight: 1, padding: 0, marginLeft: "auto", flexShrink: 0 }}>
             ×
           </button>
+        </div>
+      )}
+
+      {/* ── Popups de nova conversa / atribuição automática ── */}
+      {convPopups.length > 0 && (
+        <div style={{
+          position: "fixed", top: isMobile ? 12 : 20, right: isMobile ? 8 : 20,
+          zIndex: 10000, display: "flex", flexDirection: "column", gap: 10,
+          maxWidth: isMobile ? "calc(100vw - 16px)" : 360,
+          width: isMobile ? "calc(100vw - 16px)" : 360,
+        }}>
+          {convPopups.map((p) => {
+            const isNova = p.tipo === "nova";
+            const nome = p.conv.contato_nome || p.conv.contato_telefone || "Desconhecido";
+            const telefone = p.conv.contato_telefone || "";
+            const preview = p.conv.ultima_mensagem || (isNova ? "Nova conversa iniciada" : "");
+            const accentColor = isNova ? L.green : L.blue;
+            const bgColor = isNova ? L.greenBg : L.blueBg;
+            return (
+              <div key={p.id} style={{
+                background: L.white, borderRadius: 14,
+                boxShadow: "0 8px 32px rgba(0,0,0,.18), 0 2px 8px rgba(0,0,0,.10)",
+                border: `1px solid ${L.line}`,
+                borderLeft: `4px solid ${accentColor}`,
+                overflow: "hidden", animation: "slideInRight .25s ease",
+              }}>
+                {/* Header do popup */}
+                <div style={{
+                  background: bgColor, padding: "10px 14px 8px",
+                  display: "flex", alignItems: "center", gap: 10,
+                }}>
+                  <span style={{ fontSize: 18, flexShrink: 0 }}>
+                    {isNova ? "💬" : "👤"}
+                  </span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: accentColor, lineHeight: 1 }}>
+                      {isNova ? "Nova conversa" : "Conversa atribuída a você"}
+                    </div>
+                    <div style={{ fontSize: 11, color: L.t3, marginTop: 1 }}>
+                      {isNova ? "Chegou no WhatsApp" : "Distribuição automática"}
+                    </div>
+                  </div>
+                  <button onClick={() => setConvPopups(prev => prev.filter(x => x.id !== p.id))}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: L.t4, fontSize: 17, lineHeight: 1, padding: 2, flexShrink: 0 }}>
+                    ×
+                  </button>
+                </div>
+
+                {/* Corpo do popup */}
+                <div style={{ padding: "10px 14px 12px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                    {/* Avatar */}
+                    <div style={{
+                      width: 38, height: 38, borderRadius: "50%", flexShrink: 0,
+                      background: accentColor, display: "flex", alignItems: "center",
+                      justifyContent: "center", color: "white", fontSize: 15, fontWeight: 700,
+                    }}>
+                      {nome.charAt(0).toUpperCase()}
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 13.5, fontWeight: 700, color: L.t1, lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {nome}
+                      </div>
+                      {telefone && (
+                        <div style={{ fontSize: 11, color: L.t3, marginTop: 2 }}>
+                          {telefone.replace(/(\d{2})(\d{2})(\d{4,5})(\d{4})/, "+$1 ($2) $3-$4")}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {preview && (
+                    <div style={{
+                      fontSize: 12, color: L.t2, lineHeight: 1.45,
+                      background: L.surface, borderRadius: 8, padding: "7px 10px",
+                      overflow: "hidden", display: "-webkit-box",
+                      WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
+                      marginBottom: 10,
+                    }}>
+                      {preview}
+                    </div>
+                  )}
+
+                  <button
+                    onClick={() => {
+                      const conv = p.conv;
+                      setActiveConv(conv);
+                      setConvPopups(prev => prev.filter(x => x.id !== p.id));
+                    }}
+                    style={{
+                      width: "100%", padding: "8px 0",
+                      background: accentColor, color: "white",
+                      border: "none", borderRadius: 8, cursor: "pointer",
+                      fontSize: 12.5, fontWeight: 600, fontFamily: "inherit",
+                    }}>
+                    Ver conversa →
+                  </button>
+                </div>
+
+                {/* Barra de progresso de auto-dismiss */}
+                <div style={{ height: 3, background: L.line }}>
+                  <div style={{
+                    height: "100%", background: accentColor,
+                    animation: "shrinkBar 9s linear forwards",
+                  }} />
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
