@@ -5,9 +5,9 @@ const CORS = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const json = (data: unknown, status = 200) =>
+const json = (data: unknown, _status = 200) =>
   new Response(JSON.stringify(data), {
-    status, headers: { ...CORS, "Content-Type": "application/json" },
+    status: 200, headers: { ...CORS, "Content-Type": "application/json" },
   });
 
 /** Sanitiza nome da empresa para instanceName (sem acentos, sem espaços) */
@@ -83,7 +83,8 @@ Deno.serve(async (req) => {
     const instName     = emp.evolution_instance_id || `c4HUB-${sanitizeName(emp.nome || empresa_id.slice(0, 12))}`;
     const computedName = `c4HUB-${sanitizeName(emp.nome || empresa_id.slice(0, 12))}`;
 
-    if (!evoUrl) return json({ error: "Servidor Evolution não configurado." }, 400);
+    console.log("[config] evoUrl:", evoUrl, "| globalKey set:", !!GLOBAL_KEY, "| action:", action);
+    if (!evoUrl) return json({ error: "Servidor Evolution não configurado. Verifique as Secrets EVOLUTION_GLOBAL_URL e EVOLUTION_GLOBAL_KEY no Supabase." });
 
     /** Fetch autenticado com global apikey */
     const gFetch = (path: string, opts: RequestInit = {}) =>
