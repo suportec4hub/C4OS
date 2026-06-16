@@ -38,10 +38,25 @@ const presenca = (last_seen) => {
 };
 
 const corPresenca = (status) => {
-  if (status === "online") return "#22c55e";
+  if (status === "online")  return "#22c55e";
   if (status === "ausente") return "#eab308";
+  if (status === "ocupado") return "#ef4444";
   return "rgba(255,255,255,.3)";
 };
+
+const fmtTimer = (s) => {
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`;
+  return `${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`;
+};
+
+const STATUS_OPTS = [
+  { id: "online",  label: "Online",   cor: "#22c55e", emoji: "🟢" },
+  { id: "ausente", label: "Ausente",  cor: "#eab308", emoji: "🟡" },
+  { id: "ocupado", label: "Ocupado",  cor: "#ef4444", emoji: "🔴" },
+];
 
 const EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🎉", "🔥", "👏", "✅", "💯"];
 const VAZIO_CANAL   = { nome: "", tipo: "publico", descricao: "", membros_ids: [] };
@@ -209,36 +224,7 @@ function MsgItem({ m, prev, user, onReact, onReply, onPin }) {
 }
 
 // ─── Painel de Reuniões ──────────────────────────────────────────────────────
-function PainelReunioes({ reunioes, user, onNova, onEntrar, onExcluir, reuniaoAtiva, onFecharReuniao }) {
-  if (reuniaoAtiva) {
-    // Modo reunião ativa — iframe Jitsi embutido
-    return (
-      <div style={{
-        width: 480, minWidth: 480, borderLeft: `1px solid ${L.line}`,
-        display: "flex", flexDirection: "column", background: "#000", flexShrink: 0,
-      }}>
-        <div style={{ padding: "10px 14px", borderBottom: "1px solid #333", display: "flex", alignItems: "center", justifyContent: "space-between", background: "#1a1d21" }}>
-          <div>
-            <div style={{ fontSize: 12.5, fontWeight: 700, color: "#fff" }}>🎥 {reuniaoAtiva.titulo || "Reunião"}</div>
-            <div style={{ fontSize: 10, color: "rgba(255,255,255,.4)", marginTop: 1 }}>Em andamento · áudio e vídeo ativos</div>
-          </div>
-          <button
-            onClick={onFecharReuniao}
-            style={{ background: "#ef4444", border: "none", borderRadius: 7, color: "white", fontSize: 11, fontWeight: 700, cursor: "pointer", padding: "5px 11px" }}
-          >
-            Sair
-          </button>
-        </div>
-        <iframe
-          src={reuniaoAtiva.link}
-          allow="camera;microphone;display-capture;autoplay;clipboard-write"
-          style={{ flex: 1, border: "none", width: "100%", minHeight: 0 }}
-          title="Reunião"
-        />
-      </div>
-    );
-  }
-
+function PainelReunioes({ reunioes, user, onNova, onEntrar, onExcluir }) {
   return (
     <div style={{
       width: 272, minWidth: 272, borderLeft: `1px solid ${L.line}`,
@@ -405,10 +391,20 @@ export default function PageWorkspace({ user }) {
   const [formEditCanal,    setFormEditCanal]     = useState({ nome: "", tipo: "publico", descricao: "" });
   const [editMembrosSel,   setEditMembrosSel]    = useState([]); // uuid[]
 
-  const endRef    = useRef(null);
-  const subRef    = useRef(null);
-  const presRef   = useRef(null);
-  const inputRef  = useRef(null);
+  // ── reunião ativa ─────────────────────────────────────────────────────────
+  const [meetingSeconds, setMeetingSeconds] = useState(0);
+  // ── typing indicator ──────────────────────────────────────────────────────
+  const [typingUsers,    setTypingUsers]    = useState([]); // [{id, nome, exp}]
+  const [userStatus,     setUserStatus]     = useState("online"); // online|ausente|ocupado
+  const [showStatusMenu, setShowStatusMenu] = useState(false);
+
+  const endRef          = useRef(null);
+  const subRef          = useRef(null);
+  const presRef         = useRef(null);
+  const inputRef        = useRef(null);
+  const typingChRef     = useRef(null);
+  const typingTimeoutRef = useRef(null);
+  const meetingTimerRef = useRef(null);
 
   const canal = canais.find(c => c.id === canalId);
   const isDM  = canal?.tipo === "dm";
@@ -500,12 +496,52 @@ export default function PageWorkspace({ user }) {
 
   // ─── efeitos ──────────────────────────────────────────────────────────────
 
-  // Atualiza last_seen do usuário logado
+  // Atualiza last_seen do usuário logado (respeita status manual)
   const atualizarLastSeen = useCallback(() => {
     supabase.from("usuarios")
       .update({ last_seen: new Date().toISOString() })
       .eq("id", user.id);
   }, [user.id]);
+
+  // Timer de duração da reunião ativa
+  useEffect(() => {
+    if (reuniaoAtiva) {
+      setMeetingSeconds(0);
+      meetingTimerRef.current = setInterval(() => setMeetingSeconds(s => s + 1), 1000);
+    } else {
+      clearInterval(meetingTimerRef.current);
+      setMeetingSeconds(0);
+    }
+    return () => clearInterval(meetingTimerRef.current);
+  }, [reuniaoAtiva]);
+
+  // Typing indicator — canal broadcast por canal ativo
+  useEffect(() => {
+    if (!canalId || !user?.empresa_id) return;
+    if (typingChRef.current) supabase.removeChannel(typingChRef.current);
+    typingChRef.current = supabase.channel(`ws-typing:${canalId}`)
+      .on("broadcast", { event: "typing" }, ({ payload }) => {
+        if (payload.userId === user.id) return;
+        const entry = { id: payload.userId, nome: payload.nome, exp: Date.now() + 3500 };
+        setTypingUsers(prev => {
+          const without = prev.filter(u => u.id !== payload.userId);
+          return [...without, entry];
+        });
+        setTimeout(() => setTypingUsers(prev => prev.filter(u => u.exp > Date.now())), 3600);
+      })
+      .subscribe();
+    return () => { if (typingChRef.current) supabase.removeChannel(typingChRef.current); };
+  }, [canalId, user?.empresa_id, user?.id]);
+
+  const sendTyping = useCallback(() => {
+    if (!typingChRef.current || !canalId) return;
+    clearTimeout(typingTimeoutRef.current);
+    typingChRef.current.send({
+      type: "broadcast", event: "typing",
+      payload: { userId: user.id, nome: user.nome?.split(" ")[0] || "Alguém" },
+    });
+    typingTimeoutRef.current = setTimeout(() => {}, 3000);
+  }, [canalId, user?.id, user?.nome]);
 
   // Mount: carrega dados e inicia timer de presença
   useEffect(() => {
@@ -972,15 +1008,60 @@ export default function PageWorkspace({ user }) {
             })}
           </div>
 
-          {/* Rodapé — usuário logado */}
-          <div style={{ padding: "10px 14px", borderTop: "1px solid rgba(255,255,255,.08)", display: "flex", alignItems: "center", gap: 9 }}>
-            <div style={{ position: "relative" }}>
-              <Av name={user.nome} size={30} color={avatarColor(user.id)} src={user.foto_url || user.avatar_url} />
-              <div style={{ position: "absolute", bottom: -1, right: -1, width: 8, height: 8, borderRadius: "50%", background: "#22c55e", border: "1.5px solid #1a1d21" }} />
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.nome}</div>
-              <div style={{ fontSize: 10, color: "#22c55e" }}>Online</div>
+          {/* Rodapé — usuário logado + seletor de status */}
+          <div style={{ position: "relative" }}>
+            {showStatusMenu && (
+              <div style={{
+                position: "absolute", bottom: "calc(100% + 6px)", left: 10, right: 10,
+                background: "#252830", borderRadius: 10, border: "1px solid rgba(255,255,255,.1)",
+                boxShadow: "0 8px 24px rgba(0,0,0,.4)", zIndex: 50, overflow: "hidden",
+              }}>
+                <div style={{ padding: "8px 12px 6px", fontSize: 9, fontWeight: 700, letterSpacing: "1px", color: "rgba(255,255,255,.3)", textTransform: "uppercase" }}>
+                  Status
+                </div>
+                {STATUS_OPTS.map(s => (
+                  <button key={s.id} onClick={() => {
+                    setUserStatus(s.id);
+                    setShowStatusMenu(false);
+                    // Atualiza last_seen para sinalizar presença (ausente/ocupado mantêm last_seen recente)
+                    if (s.id !== "ausente") {
+                      supabase.from("usuarios").update({ last_seen: new Date().toISOString() }).eq("id", user.id);
+                    }
+                  }}
+                    style={{
+                      width: "100%", textAlign: "left", padding: "9px 14px",
+                      background: userStatus === s.id ? "rgba(255,255,255,.08)" : "transparent",
+                      border: "none", cursor: "pointer", color: userStatus === s.id ? "#fff" : "rgba(255,255,255,.55)",
+                      fontSize: 12.5, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 9,
+                      transition: "background .1s",
+                    }}
+                    onMouseEnter={e => { if (userStatus !== s.id) e.currentTarget.style.background = "rgba(255,255,255,.05)"; }}
+                    onMouseLeave={e => { if (userStatus !== s.id) e.currentTarget.style.background = "transparent"; }}
+                  >
+                    <div style={{ width: 9, height: 9, borderRadius: "50%", background: s.cor, flexShrink: 0 }} />
+                    {s.label}
+                    {userStatus === s.id && <span style={{ marginLeft: "auto", fontSize: 10 }}>✓</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div
+              onClick={() => setShowStatusMenu(p => !p)}
+              style={{ padding: "10px 14px", borderTop: "1px solid rgba(255,255,255,.08)", display: "flex", alignItems: "center", gap: 9, cursor: "pointer" }}
+              onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,.04)"}
+              onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+            >
+              <div style={{ position: "relative" }}>
+                <Av name={user.nome} size={30} color={avatarColor(user.id)} src={user.foto_url || user.avatar_url} />
+                <div style={{ position: "absolute", bottom: -1, right: -1, width: 8, height: 8, borderRadius: "50%", background: corPresenca(userStatus), border: "1.5px solid #1a1d21" }} />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.nome}</div>
+                <div style={{ fontSize: 10, color: corPresenca(userStatus) }}>
+                  {STATUS_OPTS.find(s => s.id === userStatus)?.label || "Online"}
+                </div>
+              </div>
+              <span style={{ fontSize: 9, color: "rgba(255,255,255,.25)" }}>▲</span>
             </div>
           </div>
         </div>
@@ -1113,7 +1194,7 @@ export default function PageWorkspace({ user }) {
               <textarea
                 ref={inputRef}
                 value={texto}
-                onChange={e => setTexto(e.target.value)}
+                onChange={e => { setTexto(e.target.value); if (e.target.value.trim()) sendTyping(); }}
                 onKeyDown={e => {
                   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); enviar(); }
                 }}
@@ -1146,8 +1227,16 @@ export default function PageWorkspace({ user }) {
                 {sending ? "..." : "↑"}
               </button>
             </div>
-            <div style={{ fontSize: 10, color: L.t5, marginTop: 4, textAlign: "right" }}>
-              Enter para enviar · Shift+Enter nova linha
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 4 }}>
+              <div style={{ fontSize: 10, color: L.teal, minHeight: 14 }}>
+                {typingUsers.length > 0 && (
+                  <span>
+                    <span style={{ display: "inline-block", animation: "blink 1s ease infinite" }}>•••</span>
+                    {" "}{typingUsers.map(u => u.nome).join(", ")} {typingUsers.length === 1 ? "está" : "estão"} digitando
+                  </span>
+                )}
+              </div>
+              <div style={{ fontSize: 10, color: L.t5 }}>Enter para enviar · Shift+Enter nova linha</div>
             </div>
           </div>
         </div>
@@ -1168,11 +1257,81 @@ export default function PageWorkspace({ user }) {
             onNova={() => setModalReuniao(true)}
             onEntrar={(r) => { setReuniaoAtiva(r); setMembroView(null); }}
             onExcluir={excluirReuniao}
-            reuniaoAtiva={reuniaoAtiva}
-            onFecharReuniao={() => setReuniaoAtiva(null)}
           />
         ) : null}
       </div>
+
+      {/* ══ OVERLAY DE REUNIÃO ATIVA (fullscreen, estilo Teams/Zoom) ══════════ */}
+      {reuniaoAtiva && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 9990, background: "#0d0e12", display: "flex", flexDirection: "column" }}>
+
+          {/* Barra superior */}
+          <div style={{
+            height: 56, background: "#1a1d21", display: "flex", alignItems: "center",
+            padding: "0 20px", gap: 16, borderBottom: "1px solid #2a2d35", flexShrink: 0,
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flex: 1, minWidth: 0 }}>
+              <div style={{ width: 32, height: 32, borderRadius: 8, background: "#22c55e22", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>
+                🎥
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 13.5, fontWeight: 700, color: "#fff", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {reuniaoAtiva.titulo || "Reunião"}
+                </div>
+                <div style={{ fontSize: 10.5, color: "#22c55e", marginTop: 1, display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: "#22c55e", animation: "blink 1.5s ease infinite" }} />
+                  Em andamento · {fmtTimer(meetingSeconds)}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
+              <button
+                onClick={() => window.open(reuniaoAtiva.link, "_blank")}
+                style={{ padding: "7px 14px", borderRadius: 8, fontSize: 11.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", background: "rgba(255,255,255,.1)", color: "rgba(255,255,255,.8)", border: "1px solid rgba(255,255,255,.15)", display: "flex", alignItems: "center", gap: 5 }}
+                onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,.16)"}
+                onMouseLeave={e => e.currentTarget.style.background = "rgba(255,255,255,.1)"}
+              >
+                ↗ Abrir em nova aba
+              </button>
+              <button
+                onClick={() => setReuniaoAtiva(null)}
+                style={{ padding: "7px 16px", borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", background: "#ef4444", color: "white", border: "none", display: "flex", alignItems: "center", gap: 6 }}
+                onMouseEnter={e => e.currentTarget.style.background = "#dc2626"}
+                onMouseLeave={e => e.currentTarget.style.background = "#ef4444"}
+              >
+                📵 Encerrar reunião
+              </button>
+            </div>
+          </div>
+
+          {/* Iframe Jitsi — ocupa todo o espaço restante */}
+          <iframe
+            src={reuniaoAtiva.link}
+            allow="camera;microphone;display-capture;autoplay;clipboard-write;fullscreen"
+            allowFullScreen
+            style={{ flex: 1, border: "none", width: "100%", minHeight: 0 }}
+            title="Reunião"
+          />
+
+          {/* Barra inferior de status */}
+          <div style={{
+            height: 34, background: "#111317", display: "flex", alignItems: "center",
+            padding: "0 20px", gap: 20, borderTop: "1px solid #2a2d35", flexShrink: 0,
+          }}>
+            <span style={{ fontSize: 10, color: "rgba(255,255,255,.3)" }}>
+              {user.empresa} · {user.nome?.split(" ")[0]}
+            </span>
+            <span style={{ fontSize: 10, color: "rgba(255,255,255,.2)" }}>
+              Áudio e vídeo gerenciados pelo Jitsi Meet
+            </span>
+            <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
+              <div style={{ width: 7, height: 7, borderRadius: "50%", background: "#22c55e" }} />
+              <span style={{ fontSize: 10, color: "#22c55e" }}>Conexão ativa</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ══ MODAL: Novo Canal ════════════════════════════════════════════════ */}
       {modalCanal && (

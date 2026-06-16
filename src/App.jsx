@@ -107,6 +107,8 @@ function AppInner() {
       }
 
       if (data) {
+        // Marca usuário como online imediatamente ao entrar no sistema
+        supabase.from("usuarios").update({ last_seen: new Date().toISOString() }).eq("id", userId);
         setProfile({
           id:                   data.id,
           nome:                 data.nome,
@@ -130,6 +132,10 @@ function AppInner() {
   };
 
   const handleLogout = async () => {
+    // Marca como offline antes de encerrar sessão
+    if (profile?.id) {
+      await supabase.from("usuarios").update({ last_seen: null }).eq("id", profile.id);
+    }
     await supabase.auth.signOut();
   };
 
