@@ -71,7 +71,7 @@ Deno.serve(async (req) => {
 
     const { data: emp, error: empErr } = await supabase
       .from("empresas")
-      .select("id, nome, evolution_instance_id, evolution_instance_token, evolution_api_url, evolution_connected")
+      .select("id, nome, evolution_instance_id, evolution_instance_token, evolution_api_url, evolution_api_key, evolution_connected")
       .eq("id", empresa_id)
       .single();
 
@@ -82,22 +82,24 @@ Deno.serve(async (req) => {
     // evolution_instance_id guarda o instanceName (string como "c4HUB-Lucas-Machado")
     const instName     = emp.evolution_instance_id || `c4HUB-${sanitizeName(emp.nome || empresa_id.slice(0, 12))}`;
     const computedName = `c4HUB-${sanitizeName(emp.nome || empresa_id.slice(0, 12))}`;
+    // DB key takes priority over Supabase Secret (fallback for secret propagation issues)
+    const apiKey       = (emp as Record<string, string>).evolution_api_key?.trim() || GLOBAL_KEY;
 
-    console.log("[config] evoUrl:", evoUrl, "| globalKey set:", !!GLOBAL_KEY, "| action:", action);
+    console.log("[config] evoUrl:", evoUrl, "| apiKey set:", !!apiKey, "| action:", action);
     if (!evoUrl) return json({ error: "Servidor Evolution não configurado. Verifique as Secrets EVOLUTION_GLOBAL_URL e EVOLUTION_GLOBAL_KEY no Supabase." });
 
     /** Fetch autenticado com global apikey */
     const gFetch = (path: string, opts: RequestInit = {}) =>
       fetch(`${evoUrl}${path}`, {
         ...opts,
-        headers: { "Content-Type": "application/json", "apikey": GLOBAL_KEY, ...(opts.headers || {}) },
+        headers: { "Content-Type": "application/json", "apikey": apiKey, ...(opts.headers || {}) },
       });
 
     /** Fetch autenticado com instance apikey */
     const iFetch = (path: string, opts: RequestInit = {}) =>
       fetch(`${evoUrl}${path}`, {
         ...opts,
-        headers: { "Content-Type": "application/json", "apikey": instToken || GLOBAL_KEY, ...(opts.headers || {}) },
+        headers: { "Content-Type": "application/json", "apikey": instToken || apiKey, ...(opts.headers || {}) },
       });
 
     // ────────────────────────────────────────────────────────────────────────
@@ -276,7 +278,7 @@ Deno.serve(async (req) => {
       const cFetch = (path: string, opts: RequestInit = {}) =>
         fetch(`${evoUrl}${path}`, {
           ...opts,
-          headers: { "Content-Type": "application/json", "apikey": effectiveToken || GLOBAL_KEY, ...(opts.headers || {}) },
+          headers: { "Content-Type": "application/json", "apikey": effectiveToken || apiKey, ...(opts.headers || {}) },
         });
 
       // Atualiza webhook para garantir webhookByEvents=false (best-effort)
