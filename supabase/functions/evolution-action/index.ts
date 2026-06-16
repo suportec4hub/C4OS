@@ -57,10 +57,10 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
 
-  // Credenciais do servidor Evolution API — altere aqui se mudar o servidor.
-  // Não lê variável de ambiente para evitar sobrescrever com valor inválido de sessão anterior.
-  const GLOBAL_KEY = "C4@Hub123#@#";
-  const GLOBAL_URL = "http://18.230.11.58:8080";
+  // Credenciais do servidor Evolution API — configure via Supabase Secrets:
+  // EVOLUTION_GLOBAL_KEY e EVOLUTION_GLOBAL_URL (Settings → Edge Functions → Secrets)
+  const GLOBAL_KEY = Deno.env.get("EVOLUTION_GLOBAL_KEY") || "";
+  const GLOBAL_URL = Deno.env.get("EVOLUTION_GLOBAL_URL") || "";
   const SUPA_URL   = Deno.env.get("SUPABASE_URL") || "";
 
   try {
