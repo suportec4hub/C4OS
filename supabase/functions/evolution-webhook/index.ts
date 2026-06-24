@@ -568,9 +568,12 @@ async function executarNosSequencialmente(
 
     case "respostas": {
       const botoes = [proximoNo.botao_1, proximoNo.botao_2, proximoNo.botao_3].filter(Boolean);
-      if (proximoNo.mensagem?.trim()) {
-        const textoBtn = proximoNo.mensagem + (botoes.length > 0 ? "\n\n" + botoes.map((b, i) => `${i + 1}. ${b}`).join("\n") : "");
-        await sendBot(interpolarVariaveis(textoBtn, estado.variaveis));
+      const partes: string[] = [];
+      if (proximoNo.mensagem?.trim()) partes.push(proximoNo.mensagem.trim());
+      if (botoes.length > 0) partes.push(botoes.map((b, i) => `${i + 1}. ${b}`).join("\n"));
+      const textoFinal = partes.join("\n\n");
+      if (textoFinal) {
+        await sendBot(interpolarVariaveis(textoFinal, estado.variaveis));
       }
       await supabase.from("conversas").update({ fluxo_estado: estado }).eq("id", convId);
       break;
