@@ -60,43 +60,6 @@ Deno.serve(async (req) => {
     ];
     if (SKIP_EVENTS.includes(event)) return new Response("OK");
 
-    // CONTACTS_UPSERT — mapeia LID → telefone real para corrigir conversas @lid
-    if (["contacts.upsert", "CONTACTS_UPSERT"].includes(event)) {
-      if (empresa_id) {
-        const contacts = Array.isArray(data) ? data : (data?.contacts ? data.contacts : [data]);
-        for (const contact of contacts) {
-          try {
-            const lidJid   = (contact?.id || contact?.jid || "") as string;
-            const phoneJid = (contact?.remoteJid || contact?.phone || contact?.number || "") as string;
-            if (!lidJid.includes("@lid")) continue;
-            const phoneNum = phoneJid.replace(/@s\.whatsapp\.net$/, "").replace(/:.*$/, "");
-            if (!phoneNum || phoneNum.length < 8 || phoneNum.includes("@")) continue;
-
-            // Se já existe conversa com o número real: migrar mensagens da @lid e deletar
-            const { data: existPhone } = await supabase.from("conversas")
-              .select("id").eq("empresa_id", empresa_id).eq("contato_telefone", phoneNum).maybeSingle();
-
-            if (!existPhone) {
-              // Não existe conversa com o número real — atualizar a conversa @lid para usar o número
-              await supabase.from("conversas")
-                .update({ contato_telefone: phoneNum })
-                .eq("empresa_id", empresa_id)
-                .eq("contato_telefone", lidJid);
-            } else {
-              // Já existe conversa com o número real — migrar mensagens da @lid e deletar duplicata
-              const { data: lidConv } = await supabase.from("conversas")
-                .select("id").eq("empresa_id", empresa_id).eq("contato_telefone", lidJid).maybeSingle();
-              if (lidConv?.id && lidConv.id !== existPhone.id) {
-                await supabase.from("mensagens").update({ conversa_id: existPhone.id }).eq("conversa_id", lidConv.id);
-                await supabase.from("conversas").delete().eq("id", lidConv.id);
-              }
-            }
-          } catch (_) { /* nunca propaga */ }
-        }
-      }
-      return new Response("OK");
-    }
-
     // Presença / "digitando..." — 1 query leve para empresa_id, depois Realtime broadcast
     if (["presence.update", "PRESENCE", "CHAT_PRESENCE"].includes(event)) {
       try {
@@ -144,6 +107,39 @@ Deno.serve(async (req) => {
     }
 
     const now = new Date().toISOString();
+
+    // CONTACTS_UPSERT — mapeia LID → telefone real para corrigir conversas @lid
+    // (movido para após resolução de empresa_id para evitar ReferenceError)
+    if (["contacts.upsert", "CONTACTS_UPSERT"].includes(event)) {
+      const contacts = Array.isArray(data) ? data : (data?.contacts ? data.contacts : [data]);
+      for (const contact of contacts) {
+        try {
+          const lidJid   = (contact?.id || contact?.jid || "") as string;
+          const phoneJid = (contact?.remoteJid || contact?.phone || contact?.number || "") as string;
+          if (!lidJid.includes("@lid")) continue;
+          const phoneNum = phoneJid.replace(/@s\.whatsapp\.net$/, "").replace(/:.*$/, "");
+          if (!phoneNum || phoneNum.length < 8 || phoneNum.includes("@")) continue;
+
+          const { data: existPhone } = await supabase.from("conversas")
+            .select("id").eq("empresa_id", empresa_id).eq("contato_telefone", phoneNum).maybeSingle();
+
+          if (!existPhone) {
+            await supabase.from("conversas")
+              .update({ contato_telefone: phoneNum })
+              .eq("empresa_id", empresa_id)
+              .eq("contato_telefone", lidJid);
+          } else {
+            const { data: lidConv } = await supabase.from("conversas")
+              .select("id").eq("empresa_id", empresa_id).eq("contato_telefone", lidJid).maybeSingle();
+            if (lidConv?.id && lidConv.id !== existPhone.id) {
+              await supabase.from("mensagens").update({ conversa_id: existPhone.id }).eq("conversa_id", lidConv.id);
+              await supabase.from("conversas").delete().eq("id", lidConv.id);
+            }
+          }
+        } catch (_) { /* nunca propaga */ }
+      }
+      return new Response("OK");
+    }
 
     // ── QR CODE ─────────────────────────────────────────────────────────────
     if (["QRCODE","QRCODE_UPDATED","qrcode.updated"].includes(event)) {
@@ -697,7 +693,7 @@ async function processMessages(
       const { data: nova } = await supabase.from("conversas").insert({
         empresa_id, contato_nome: senderName, contato_telefone: senderPhone,
         ultima_mensagem: texto, ultima_hora: hora,
-        nao_lidas: fromMe ? 0 : 1, status: "aberta", bot_ativo: false,
+        nao_lidas: fromMe ? 0 : 1, status: "aberta", bot_ativo: null,
         whatsapp_numero: senderPhone, fluxo_estado: null,
         ...(setorVendas?.id ? { setor_id: setorVendas.id } : {}),
       }).select("id, nao_lidas, contato_nome, status, bot_ativo, ultima_hora, fluxo_estado").single();
@@ -782,6 +778,7 @@ async function processMessages(
         reopenFields.status = "aberta";
         reopenFields.atendente_id = null;
         reopenFields.fluxo_estado = null;
+        reopenFields.bot_ativo = null; // permite o chatbot disparar novamente
         // Reaplica o setor Vendas ao reabrir
         const { data: setorV } = await supabase.from("setores")
           .select("id").eq("empresa_id", empresa_id).ilike("nome", "%Vendas%").maybeSingle();
@@ -907,13 +904,15 @@ async function processMessages(
           let apiErr = "";
 
           if (["imagem","video","audio","documento"].includes(tipo)) {
+            // Evolution API v2 — /message/sendMedia/{instance}
             const mediaType = tipo === "imagem" ? "image" : tipo === "video" ? "video" : tipo === "audio" ? "audio" : "document";
-            const r = await fetch(`${evoUrl}/send/media`, {
+            const r = await fetch(`${evoUrl}/message/sendMedia/${instId}`, {
               method: "POST",
               headers: { "Content-Type": "application/json", "apikey": instToken },
               body: JSON.stringify({
-                instanceName: instId, id: instId, number: senderPhone,
-                mediatype: mediaType, media: extra?.url as string || "",
+                number: senderPhone,
+                mediatype: mediaType,
+                media: extra?.url as string || "",
                 caption: msgText || "",
                 ...(extra?.fileName ? { fileName: extra.fileName } : {}),
               }),
@@ -921,13 +920,31 @@ async function processMessages(
             apiOk = r.ok;
             if (!r.ok) apiErr = await r.text().catch(() => String(r.status));
           } else {
-            const r = await fetch(`${evoUrl}/send/text`, {
+            // Evolution API v2 — /message/sendText/{instance} (formato simples)
+            const r = await fetch(`${evoUrl}/message/sendText/${instId}`, {
               method: "POST",
               headers: { "Content-Type": "application/json", "apikey": instToken },
-              body: JSON.stringify({ instanceName: instId, id: instId, number: senderPhone, text: msgText }),
+              body: JSON.stringify({ number: senderPhone, text: msgText }),
             });
             apiOk = r.ok;
             if (!r.ok) apiErr = await r.text().catch(() => String(r.status));
+
+            // Fallback: formato v2 alternativo com options/textMessage
+            if (!apiOk) {
+              try {
+                const r2 = await fetch(`${evoUrl}/message/sendText/${instId}`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json", "apikey": instToken },
+                  body: JSON.stringify({
+                    number: senderPhone,
+                    options: { delay: 1200, presence: "composing", linkPreview: false },
+                    textMessage: { text: msgText },
+                  }),
+                });
+                if (r2.ok) { apiOk = true; apiErr = ""; }
+                else apiErr = await r2.text().catch(() => String(r2.status));
+              } catch (_) {}
+            }
           }
 
           if (!apiOk) {
