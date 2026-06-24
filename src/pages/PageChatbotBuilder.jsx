@@ -65,6 +65,7 @@ const CONDICAO_TIPOS = [
 
 const NODE_W = 210;
 const NODE_H = 90; // approximate height for connection calc
+const PORT_Y = 50;  // vertical offset of connection ports from node top
 
 const VAZIO_FLUXO = { nome: "", descricao: "", usuario_id: null };
 
@@ -370,7 +371,7 @@ function NodeCard({ no, selected, connecting, onClick, onEdit, onDelete, onConne
     <div
       onClick={() => onClick(no)}
       style={{
-        width: NODE_W,
+        width: NODE_W, position: "relative",
         background: L.white, borderRadius: 10, border, boxShadow: shadow,
         cursor: "default", userSelect: "none", transition: "border-color .15s, box-shadow .15s",
       }}
@@ -434,11 +435,37 @@ function NodeCard({ no, selected, connecting, onClick, onEdit, onDelete, onConne
       {/* Actions */}
       <div style={{ padding: "5px 8px", display: "flex", gap: 3, justifyContent: "flex-end" }}>
         <NodeBtn color={L.t3} title="Editar" onClick={e => { e.stopPropagation(); onEdit(no); }}>✎</NodeBtn>
-        <NodeBtn color={tipo.cor} title="Conectar" onClick={e => { e.stopPropagation(); onConnectStart(no); }}>→</NodeBtn>
         {no.tipo !== "inicio" && (
           <NodeBtn color={L.red} title="Remover" onClick={e => { e.stopPropagation(); onDelete(no.id); }}>✕</NodeBtn>
         )}
       </div>
+
+      {/* Input port — left side (all nodes except início) */}
+      {no.tipo !== "inicio" && (
+        <div style={{
+          position: "absolute", left: -7, top: PORT_Y, transform: "translateY(-50%)",
+          width: 14, height: 14, borderRadius: "50%",
+          background: L.white, border: `2px solid ${L.line}`,
+          pointerEvents: "none", zIndex: 2, boxShadow: "0 0 0 2px white",
+        }} />
+      )}
+
+      {/* Output port — right side, click to start connection */}
+      <div
+        title="Conectar → (clique e depois clique no destino)"
+        onClick={e => { e.stopPropagation(); onConnectStart(no); }}
+        style={{
+          position: "absolute", right: -7, top: PORT_Y, transform: "translateY(-50%)",
+          width: 14, height: 14, borderRadius: "50%",
+          background: isConnectingFrom ? "white" : tipo.cor,
+          border: `2px solid ${tipo.cor}`,
+          cursor: "crosshair", zIndex: 2,
+          boxShadow: isConnectingFrom
+            ? `0 0 0 3px ${tipo.cor}55, 0 0 0 2px white`
+            : "0 0 0 2px white",
+          transition: "all .15s",
+        }}
+      />
     </div>
   );
 }
@@ -1348,49 +1375,61 @@ export default function PageChatbotBuilder({ user }) {
           <svg style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%",
             pointerEvents: "none", overflow: "visible" }}>
             <defs>
-              <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-                <path d="M0,0 L0,6 L8,3 z" fill={L.t4}/>
-              </marker>
-              <marker id="arrow-cond-sim" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-                <path d="M0,0 L0,6 L8,3 z" fill={L.green}/>
-              </marker>
-              <marker id="arrow-cond-nao" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-                <path d="M0,0 L0,6 L8,3 z" fill={L.red}/>
-              </marker>
+              {[
+                { id: "arrow",          color: L.t4   },
+                { id: "arrow-cond-sim", color: L.green },
+                { id: "arrow-cond-nao", color: L.red   },
+              ].map(({ id, color }) => (
+                <marker key={id} id={id} markerWidth="10" markerHeight="10"
+                  refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse">
+                  <path d="M0,1 L0,9 L9,5 z" fill={color} />
+                </marker>
+              ))}
             </defs>
             {conexoes.map(c => {
               const de   = nos.find(n => n.id === c.de);
               const para = nos.find(n => n.id === c.para);
               if (!de || !para) return null;
-              const x1 = de.x + NODE_W;
-              const y1 = de.y + 38;
-              const x2 = para.x;
-              const y2 = para.y + 38;
-              const cx = (x1 + x2) / 2;
+              const x1 = de.x + NODE_W + 7;   // right port center
+              const y1 = de.y + PORT_Y;
+              const x2 = para.x - 7;            // left port center
+              const y2 = para.y + PORT_Y;
+              const dx = Math.abs(x2 - x1);
+              const cp = Math.max(dx * 0.45, 55);
               const isSim = c.label === "Sim";
               const isNao = c.label === "Não";
-              const strokeColor = isSim ? L.green : isNao ? L.red : L.t4;
+              const strokeColor = isSim ? L.green : isNao ? L.red : L.t3;
               const markerId = isSim ? "arrow-cond-sim" : isNao ? "arrow-cond-nao" : "arrow";
               const mx = (x1 + x2) / 2;
               const my = (y1 + y2) / 2;
+              const pathD = `M${x1},${y1} C${x1+cp},${y1} ${x2-cp},${y2} ${x2},${y2}`;
               return (
                 <g key={c.id}>
-                  <path d={`M${x1},${y1} C${cx},${y1} ${cx},${y2} ${x2},${y2}`}
-                    fill="none" stroke={strokeColor} strokeWidth={1.8}
-                    markerEnd={`url(#${markerId})`} strokeDasharray={isNao ? "5 3" : "none"} />
+                  {/* Main path */}
+                  <path d={pathD}
+                    fill="none" stroke={strokeColor} strokeWidth={2}
+                    markerEnd={`url(#${markerId})`}
+                    strokeDasharray={isNao ? "6 3" : "none"}
+                    opacity={0.85}
+                  />
+                  {/* Dot at source port */}
+                  <circle cx={x1} cy={y1} r={4} fill={strokeColor} style={{ pointerEvents: "none" }} />
+                  {/* Dot at destination port */}
+                  <circle cx={x2} cy={y2} r={4} fill={strokeColor} style={{ pointerEvents: "none" }} />
+                  {/* Label badge */}
                   {c.label && (
                     <>
-                      <rect x={mx - 14} y={my - 9} width={28} height={17} rx={4}
-                        fill="white" stroke={strokeColor} strokeWidth={1}/>
-                      <text x={mx} y={my + 4} textAnchor="middle"
-                        fontSize={9} fontWeight={700} fill={strokeColor} fontFamily="inherit">
+                      <rect x={mx - 16} y={my - 10} width={32} height={19} rx={5}
+                        fill="white" stroke={strokeColor} strokeWidth={1.5}/>
+                      <text x={mx} y={my + 5} textAnchor="middle"
+                        fontSize={10} fontWeight={700} fill={strokeColor} fontFamily="inherit">
                         {c.label}
                       </text>
                     </>
                   )}
-                  {/* Hit area to delete connection */}
-                  <path d={`M${x1},${y1} C${cx},${y1} ${cx},${y2} ${x2},${y2}`}
-                    fill="none" stroke="transparent" strokeWidth={12}
+                  {/* Wide hit area to delete */}
+                  <path d={pathD}
+                    fill="none" stroke="transparent" strokeWidth={14}
                     style={{ pointerEvents: "all", cursor: "pointer" }}
                     onClick={e => { e.stopPropagation(); deleteConexao(c.id); }}
                   />
