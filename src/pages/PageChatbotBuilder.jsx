@@ -457,7 +457,7 @@ function NodeBtn({ color, title, onClick, children }) {
 }
 
 // ─── Node Edit Panel ──────────────────────────────────────────────────────────
-function NodeEditPanel({ no, onSave, onClose }) {
+function NodeEditPanel({ no, onSave, onClose, onGenerateRoutes }) {
   const [form, setForm] = useState({ ...no });
   const tipo = NODE_TYPES[form.tipo] || NODE_TYPES.mensagem;
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
@@ -529,7 +529,7 @@ function NodeEditPanel({ no, onSave, onClose }) {
               placeholder="Ex: Escolha uma opção abaixo:"
               rows={2}
             />
-            <div style={{ marginBottom: 12 }}>
+            <div style={{ marginBottom: 10 }}>
               {labelS("Opções (uma por linha)")}
               <textarea
                 value={(form.opcoes || []).join("\n")}
@@ -546,6 +546,34 @@ function NodeEditPanel({ no, onSave, onClose }) {
                 Cada linha = uma opção. O cliente digita o número correspondente.
               </div>
             </div>
+
+            {/* Guia de roteamento */}
+            <div style={{ padding: "10px 12px", background: L.yellowBg, borderRadius: 8,
+              border: `1px solid ${L.yellowA2}`, fontSize: 11, color: L.t2, lineHeight: 1.6, marginBottom: 8 }}>
+              <div style={{ fontWeight: 700, color: L.yellow, marginBottom: 4 }}>📋 Como rotear as opções:</div>
+              <div>Cada opção precisa de um nó <b>Condição</b> configurado como <b>"Respondeu opção nº"</b>.</div>
+              <div style={{ color: L.t3, marginTop: 3 }}>
+                Salve primeiro, depois clique em <b>⚡ Gerar rotas</b> para criar as condições automaticamente.
+                Conecte cada saída <b style={{ color: L.green }}>Sim →</b> ao destino desejado
+                (Mensagem, Transferir, Encerrar, etc.).
+              </div>
+            </div>
+
+            {/* Botão gerar rotas */}
+            {onGenerateRoutes && (form.opcoes || []).filter(Boolean).length > 0 && (
+              <button
+                type="button"
+                onClick={() => { onSave(form); onGenerateRoutes(form); }}
+                style={{ width: "100%", background: L.yellowBg, color: L.yellow,
+                  border: `1px solid ${L.yellowA2}`, borderRadius: 8, padding: "9px",
+                  fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+                  marginBottom: 8, transition: "opacity .12s" }}
+                onMouseEnter={e => e.currentTarget.style.opacity = ".8"}
+                onMouseLeave={e => e.currentTarget.style.opacity = "1"}
+              >
+                ⚡ Salvar e gerar condições de rota ({(form.opcoes || []).filter(Boolean).length} opções)
+              </button>
+            )}
           </>
         )}
 
@@ -576,9 +604,16 @@ function NodeEditPanel({ no, onSave, onClose }) {
               />
             )}
             <div style={{ padding: "10px 12px", background: "#7c3aed0d", borderRadius: 8,
-              border: "1px solid #7c3aed22", fontSize: 11, color: L.t3, lineHeight: 1.55 }}>
-              <b style={{ color: "#7c3aed" }}>Sim</b> → conecte ao próximo nó se condição for verdadeira<br/>
-              <b style={{ color: L.red }}>Não</b> → conecte ao nó alternativo
+              border: "1px solid #7c3aed22", fontSize: 11, color: L.t3, lineHeight: 1.65 }}>
+              <div style={{ fontWeight: 700, color: "#7c3aed", marginBottom: 4 }}>Como conectar saídas:</div>
+              <div>Clique em <b>→</b> neste nó → clique no nó de destino</div>
+              <div style={{ marginTop: 4, display: "flex", gap: 10 }}>
+                <span><b style={{ color: "#16a34a" }}>Sim →</b> condição verdadeira</span>
+                <span><b style={{ color: L.red }}>Não →</b> condição falsa</span>
+              </div>
+              <div style={{ marginTop: 6, borderTop: "1px solid #7c3aed22", paddingTop: 6, color: L.t4 }}>
+                A 1ª conexão criada = <b>Sim</b>, a 2ª = <b>Não</b>
+              </div>
             </div>
           </>
         )}
@@ -1053,6 +1088,37 @@ export default function PageChatbotBuilder({ user }) {
     setEditingNo(null);
   };
 
+  // ── Gerar condições de rota para Menu de Opções ──
+  const generateRoutes = useCallback((menuNo) => {
+    const opcoes = (menuNo.opcoes || []).filter(Boolean);
+    if (!opcoes.length) return;
+    const ts = Date.now();
+    const newNos = [];
+    const newConexoes = [];
+    const baseX = menuNo.x + 260;
+    const baseY = menuNo.y;
+    let prevId = menuNo.id;
+    let prevLabel = "";
+    opcoes.forEach((opcao, i) => {
+      const condId = `cond-route-${ts}-${i}`;
+      newNos.push({
+        id: condId, tipo: "condicao",
+        nome: `Opção ${i + 1}: ${opcao.slice(0, 18)}`,
+        condicao_tipo: "numero_opcao",
+        numero_opcao: String(i + 1),
+        gatilhos: "", mensagem: "",
+        x: baseX, y: baseY + i * 150,
+      });
+      newConexoes.push({ id: `con-route-${ts}-${i}`, de: prevId, para: condId, label: prevLabel });
+      prevId = condId;
+      prevLabel = "Não";
+    });
+    setNos(p => [...p, ...newNos]);
+    setConexoes(p => [...p, ...newConexoes]);
+    setEditingNo(null);
+    showToast(`${opcoes.length} condições criadas! Conecte cada 'Sim →' ao destino desejado.`);
+  }, []);
+
   // ── Conexões ──
   const handleConnectStart = (noOrigem) => {
     if (connecting?.id === noOrigem.id) { setConnecting(null); return; }
@@ -1362,13 +1428,19 @@ export default function PageChatbotBuilder({ user }) {
           {nos.length <= 1 && (
             <div style={{ position: "absolute", top: "50%", left: "50%",
               transform: "translate(-50%,-50%)", textAlign: "center",
-              color: L.t4, pointerEvents: "none" }}>
+              color: L.t4, pointerEvents: "none", maxWidth: 420, padding: 20 }}>
               <div style={{ fontSize: 36, marginBottom: 10 }}>🤖</div>
-              <div style={{ fontSize: 13, fontWeight: 500, color: L.t3 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: L.t3, marginBottom: 8 }}>
                 Adicione nós usando os botões na barra acima
               </div>
-              <div style={{ fontSize: 11, marginTop: 5 }}>
-                Arraste os nós para posicioná-los · Clique em → para conectar
+              <div style={{ fontSize: 11, color: L.t4, lineHeight: 1.7, textAlign: "left",
+                background: L.surface, borderRadius: 10, padding: "12px 16px", border: `1px solid ${L.line}` }}>
+                <b style={{ color: L.t3 }}>Fluxo típico:</b><br/>
+                <b>Início</b> → <b>Menu de opções</b> → <b>⚡ Gerar rotas</b><br/>
+                → Condição (Sim) → <b>Mensagem / Transferir / Encerrar</b><br/><br/>
+                <b style={{ color: L.t3 }}>Como conectar:</b><br/>
+                Clique em <b>→</b> no nó de origem, depois clique no nó de destino.<br/>
+                Clique em uma linha para removê-la.
               </div>
             </div>
           )}
@@ -1380,6 +1452,7 @@ export default function PageChatbotBuilder({ user }) {
             no={editingNo}
             onSave={saveNo}
             onClose={() => setEditingNo(null)}
+            onGenerateRoutes={generateRoutes}
           />
         )}
       </div>
