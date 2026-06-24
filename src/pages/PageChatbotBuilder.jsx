@@ -586,21 +586,31 @@ function NodeEditPanel({ no, onSave, onClose, onGenerateRoutes }) {
               </div>
             </div>
 
-            {/* Botão gerar rotas */}
-            {onGenerateRoutes && (form.opcoes || []).filter(Boolean).length > 0 && (
-              <button
-                type="button"
-                onClick={() => { onSave(form); onGenerateRoutes(form); }}
-                style={{ width: "100%", background: L.yellowBg, color: L.yellow,
-                  border: `1px solid ${L.yellowA2}`, borderRadius: 8, padding: "9px",
-                  fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
-                  marginBottom: 8, transition: "opacity .12s" }}
-                onMouseEnter={e => e.currentTarget.style.opacity = ".8"}
-                onMouseLeave={e => e.currentTarget.style.opacity = "1"}
-              >
-                ⚡ Salvar e gerar condições de rota ({(form.opcoes || []).filter(Boolean).length} opções)
-              </button>
-            )}
+            {/* Botão gerar rotas — sempre visível, desabilitado sem opções */}
+            {onGenerateRoutes && (() => {
+              const qtd = (form.opcoes || []).filter(Boolean).length;
+              const disabled = qtd === 0;
+              return (
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={disabled ? undefined : () => { onSave(form); onGenerateRoutes(form); }}
+                  title={disabled ? "Preencha as opções acima primeiro" : `Criar ${qtd} nó(s) Condição automaticamente`}
+                  style={{ width: "100%", background: disabled ? L.surface : L.yellowBg,
+                    color: disabled ? L.t4 : L.yellow,
+                    border: `1px solid ${disabled ? L.line : L.yellowA2}`,
+                    borderRadius: 8, padding: "9px",
+                    fontSize: 12, fontWeight: 600,
+                    cursor: disabled ? "not-allowed" : "pointer",
+                    fontFamily: "inherit", marginBottom: 8, transition: "opacity .12s, background .15s",
+                    opacity: disabled ? 0.6 : 1 }}
+                  onMouseEnter={e => { if (!disabled) e.currentTarget.style.opacity = ".8"; }}
+                  onMouseLeave={e => { if (!disabled) e.currentTarget.style.opacity = "1"; }}
+                >
+                  ⚡ {disabled ? "Gerar rotas automáticas (preencha as opções)" : `Salvar e gerar rotas (${qtd} opções)`}
+                </button>
+              );
+            })()}
           </>
         )}
 
