@@ -355,7 +355,8 @@ function NodeCard({ no, selected, connecting, onClick, onEdit, onDelete, onConne
     const ct = CONDICAO_TIPOS.find(t => t.id === (no.condicao_tipo || "contem_palavra"));
     preview = ct ? ct.label : "Condição";
   } else if (no.tipo === "transferir") {
-    preview = "→ Transfere para atendente";
+    const dest = no.transferir_tipo || "fila";
+    preview = dest === "setor" ? "🏢 → Setor" : dest === "usuario" ? "👤 → Atendente específico" : "🔄 → Fila automática";
   } else if (no.tipo === "encerrar") {
     preview = "✕ Encerra o fluxo";
   } else if (no.tipo === "aguardar") {
@@ -484,7 +485,7 @@ function NodeBtn({ color, title, onClick, children }) {
 }
 
 // ─── Node Edit Panel ──────────────────────────────────────────────────────────
-function NodeEditPanel({ no, onSave, onClose, onGenerateRoutes }) {
+function NodeEditPanel({ no, onSave, onClose, onGenerateRoutes, setores = [], usuarios = [] }) {
   const [form, setForm] = useState({ ...no });
   const tipo = NODE_TYPES[form.tipo] || NODE_TYPES.mensagem;
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
@@ -679,13 +680,86 @@ function NodeEditPanel({ no, onSave, onClose, onGenerateRoutes }) {
 
         {/* ── TRANSFERIR ── */}
         {form.tipo === "transferir" && (
-          <FieldTextarea
-            label="Mensagem antes de transferir"
-            value={form.mensagem}
-            onChange={v => set("mensagem", v)}
-            placeholder="Ex: Aguarde, vou transferir para um atendente..."
-            rows={3}
-          />
+          <>
+            {/* Tipo de destino */}
+            <div style={{ marginBottom: 12 }}>
+              {labelS("Destino da transferência")}
+              <div style={{ display: "flex", gap: 8 }}>
+                {[
+                  { id: "setor",   label: "Setor",    ico: "🏢" },
+                  { id: "usuario", label: "Atendente", ico: "👤" },
+                  { id: "fila",    label: "Fila (automático)", ico: "🔄" },
+                ].map(op => {
+                  const ativo = (form.transferir_tipo || "fila") === op.id;
+                  return (
+                    <button key={op.id} type="button"
+                      onClick={() => set("transferir_tipo", op.id)}
+                      style={{ flex: 1, padding: "8px 4px", borderRadius: 8, fontSize: 11, fontWeight: 600,
+                        cursor: "pointer", fontFamily: "inherit", border: `1.5px solid ${ativo ? "#b8845a" : L.line}`,
+                        background: ativo ? "#b8845a18" : L.surface, color: ativo ? "#b8845a" : L.t3,
+                        transition: "all .12s" }}>
+                      {op.ico}<br/>{op.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Selector de setor */}
+            {(form.transferir_tipo || "fila") === "setor" && (
+              <div style={{ marginBottom: 12 }}>
+                {labelS("Setor de destino")}
+                <select value={form.transferir_setor_id || ""}
+                  onChange={e => set("transferir_setor_id", e.target.value)}
+                  style={{ width: "100%", border: `1.5px solid ${L.line}`, borderRadius: 8,
+                    padding: "7px 10px", fontSize: 12, outline: "none", fontFamily: "inherit",
+                    background: L.surface, color: L.t1, boxSizing: "border-box" }}>
+                  <option value="">— Escolha o setor —</option>
+                  {setores.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
+                </select>
+                {setores.length === 0 && (
+                  <div style={{ fontSize: 10, color: L.red, marginTop: 4 }}>
+                    Nenhum setor cadastrado. Crie setores em Configurações → Setores.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Selector de atendente */}
+            {(form.transferir_tipo || "fila") === "usuario" && (
+              <div style={{ marginBottom: 12 }}>
+                {labelS("Atendente de destino")}
+                <select value={form.transferir_usuario_id || ""}
+                  onChange={e => set("transferir_usuario_id", e.target.value)}
+                  style={{ width: "100%", border: `1.5px solid ${L.line}`, borderRadius: 8,
+                    padding: "7px 10px", fontSize: 12, outline: "none", fontFamily: "inherit",
+                    background: L.surface, color: L.t1, boxSizing: "border-box" }}>
+                  <option value="">— Escolha o atendente —</option>
+                  {usuarios.map(u => <option key={u.id} value={u.id}>{u.nome}{u.cargo ? ` (${u.cargo})` : ""}</option>)}
+                </select>
+                {usuarios.length === 0 && (
+                  <div style={{ fontSize: 10, color: L.red, marginTop: 4 }}>
+                    Nenhum usuário ativo encontrado.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {(form.transferir_tipo || "fila") === "fila" && (
+              <div style={{ padding: "8px 10px", background: L.surface, borderRadius: 8,
+                border: `1px solid ${L.line}`, fontSize: 11, color: L.t3, marginBottom: 12 }}>
+                🔄 A conversa será distribuída automaticamente para o próximo atendente na fila (round-robin entre SDRs).
+              </div>
+            )}
+
+            <FieldTextarea
+              label="Mensagem antes de transferir (opcional)"
+              value={form.mensagem}
+              onChange={v => set("mensagem", v)}
+              placeholder="Ex: Aguarde, vou transferir para um atendente..."
+              rows={3}
+            />
+          </>
         )}
 
         {/* ── ENCERRAR ── */}
@@ -934,6 +1008,7 @@ function FluxoList({ fluxos, fluxoAtivoId, vendedores, onOpen, onUsar, onToggleA
 export default function PageChatbotBuilder({ user }) {
   const [fluxos,       setFluxos]       = useState([]);
   const [vendedores,   setVendedores]   = useState([]);
+  const [setores,      setSetores]      = useState([]);
   const [activeFluxo,  setActiveFluxo]  = useState(null);
   const [nos,          setNos]          = useState([]);
   const [conexoes,     setConexoes]     = useState([]);
@@ -976,6 +1051,9 @@ export default function PageChatbotBuilder({ user }) {
     supabase.from("usuarios")
       .select("id, nome, cargo").eq("empresa_id", user.empresa_id).eq("ativo", true).order("nome")
       .then(({ data }) => setVendedores(data || []));
+    supabase.from("setores")
+      .select("id, nome").eq("empresa_id", user.empresa_id).order("nome")
+      .then(({ data }) => setSetores(data || []));
   }, [user?.empresa_id]);
 
   // ── Unsaved changes tracker (justLoadedRef evita marcar dirty ao carregar fluxo) ──
@@ -1502,6 +1580,8 @@ export default function PageChatbotBuilder({ user }) {
             onSave={saveNo}
             onClose={() => setEditingNo(null)}
             onGenerateRoutes={generateRoutes}
+            setores={setores}
+            usuarios={vendedores}
           />
         )}
       </div>

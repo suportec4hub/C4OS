@@ -286,6 +286,9 @@ interface FluxoNo {
   botao_1?: string; botao_2?: string; botao_3?: string;
   lista_titulo_botao?: string; lista_itens?: string;
   controle_tipo?: "reiniciar" | "encerrar";
+  transferir_tipo?: "setor" | "usuario" | "fila";
+  transferir_setor_id?: string;
+  transferir_usuario_id?: string;
   intervalo_reativacao?: number;
   x?: number; y?: number;
 }
@@ -530,15 +533,28 @@ async function executarNosSequencialmente(
       } else {
         await sendBot("Aguarde um momento, vou transferir para um de nossos atendentes. 👋");
       }
-      await supabase.from("conversas").update({
+
+      const transferFields: Record<string, unknown> = {
         bot_ativo: false,
         status: "aguardando",
         fluxo_estado: null,
-      }).eq("id", convId);
+      };
+
+      const transferTipo = proximoNo.transferir_tipo || "fila";
+
+      if (transferTipo === "setor" && proximoNo.transferir_setor_id) {
+        transferFields.setor_id = proximoNo.transferir_setor_id;
+      } else if (transferTipo === "usuario" && proximoNo.transferir_usuario_id) {
+        transferFields.atendente_id = proximoNo.transferir_usuario_id;
+      }
+      // "fila" → round-robin já acontece via trigger ou a conversa fica sem atendente para distribuição
+
+      await supabase.from("conversas").update(transferFields).eq("id", convId);
       await logWA(supabase, {
         empresa_id, conversa_id: convId, tipo: "fluxo", nivel: "info",
         origem: "evolution-webhook", evento: "transferir",
-        telefone: senderPhone, resumo: "Conversa transferida para atendente humano",
+        telefone: senderPhone,
+        resumo: `Conversa transferida → ${transferTipo === "setor" ? "setor" : transferTipo === "usuario" ? "atendente" : "fila"}`,
       });
       break;
     }
