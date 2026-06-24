@@ -1030,16 +1030,21 @@ async function processMessages(
           continue;
         }
 
-        const { data: regras } = await supabase.from("chatbot_regras")
-          .select("*").eq("empresa_id", empresa_id).eq("ativo", true).order("ordem");
+        // Skip chatbot_regras when a visual flow is active (fluxo_estado set) —
+        // the flow owns the conversation state and rules could match numeric inputs
+        const temFluxoAtivo = !!(conv.fluxo_estado as { fluxo_id?: string } | null)?.fluxo_id;
         let gatilhoAtivado = false;
-        if (regras?.length) {
-          const tl2 = texto.toLowerCase();
-          for (const r of regras) {
-            if (tl2.includes(r.gatilho.toLowerCase())) {
-              await sendBot(r.resposta);
-              gatilhoAtivado = true;
-              break;
+        if (!temFluxoAtivo) {
+          const { data: regras } = await supabase.from("chatbot_regras")
+            .select("*").eq("empresa_id", empresa_id).eq("ativo", true).order("ordem");
+          if (regras?.length) {
+            const tl2 = texto.toLowerCase();
+            for (const r of regras) {
+              if (tl2.includes(r.gatilho.toLowerCase())) {
+                await sendBot(r.resposta);
+                gatilhoAtivado = true;
+                break;
+              }
             }
           }
         }
