@@ -267,8 +267,8 @@ function TriggerSelectorModal({ no, onSave, onClose }) {
           )}
 
           {/* Intervalo de reativação */}
-          <div style={{ marginTop: 4, padding: "12px 14px", background: "#f0f9ff", border: "1.5px solid #bae6fd", borderRadius: 9 }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: "#0284c7", textTransform: "uppercase", letterSpacing: "1px", marginBottom: 7, fontFamily: "'JetBrains Mono',monospace" }}>
+          <div style={{ marginTop: 4, padding: "12px 14px", background: L.blueBg, border: `1.5px solid ${L.blueA}`, borderRadius: 9 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: L.blue, textTransform: "uppercase", letterSpacing: "1px", marginBottom: 7, fontFamily: "'JetBrains Mono',monospace" }}>
               ⏱ Intervalo de Reativação
             </div>
             <div style={{ fontSize: 11.5, color: L.t3, marginBottom: 8, lineHeight: 1.4 }}>
@@ -281,7 +281,7 @@ function TriggerSelectorModal({ no, onSave, onClose }) {
                 onChange={e => setIntervalo(e.target.value)}
                 min="0"
                 placeholder="0"
-                style={{ width: 80, border: "1.5px solid #bae6fd", borderRadius: 8, padding: "7px 10px", fontSize: 12, outline: "none", fontFamily: "inherit", background: "white", color: L.t1 }}
+                style={{ width: 80, border: `1.5px solid ${L.blueA}`, borderRadius: 8, padding: "7px 10px", fontSize: 12, outline: "none", fontFamily: "inherit", background: L.surface, color: L.t1 }}
               />
               <span style={{ fontSize: 12, color: L.t3 }}>minutos (0 = sempre reativar)</span>
             </div>

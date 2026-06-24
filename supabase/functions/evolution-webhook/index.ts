@@ -501,7 +501,15 @@ async function executarNosSequencialmente(
       });
 
       if (conexaoEscolhida) {
-        await executarNosSequencialmente(conexaoEscolhida.para, nos, conexoes, estado, convId, empresa_id, senderPhone, senderName, isNew, supabase, sendBot, profundidade + 1);
+        // Filter conexoes so the recursion follows only the chosen branch (Sim or Não).
+        // Without this filter, executarNosSequencialmente would take the first connection
+        // from the condition node regardless of which branch was evaluated, and the
+        // destination node itself would be skipped.
+        const conexoesFiltradas = [
+          ...conexoes.filter(c => c.de !== proximoNo.id),
+          conexaoEscolhida,
+        ];
+        await executarNosSequencialmente(proximoNo.id, nos, conexoesFiltradas, estado, convId, empresa_id, senderPhone, senderName, isNew, supabase, sendBot, profundidade + 1);
       } else {
         await supabase.from("conversas").update({ fluxo_estado: null }).eq("id", convId);
       }
