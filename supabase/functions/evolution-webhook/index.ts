@@ -554,7 +554,13 @@ async function executarNosSequencialmente(
         empresa_id, conversa_id: convId, tipo: "fluxo", nivel: "info",
         origem: "evolution-webhook", evento: "transferir",
         telefone: senderPhone,
-        resumo: `Conversa transferida → ${transferTipo === "setor" ? "setor" : transferTipo === "usuario" ? "atendente" : "fila"}`,
+        resumo: `Conversa transferida → ${transferTipo === "setor" ? `setor:${proximoNo.transferir_setor_id}` : transferTipo === "usuario" ? `atendente:${proximoNo.transferir_usuario_id}` : "fila"}`,
+        payload: {
+          transferir_tipo: proximoNo.transferir_tipo,
+          transferir_setor_id: proximoNo.transferir_setor_id,
+          transferir_usuario_id: proximoNo.transferir_usuario_id,
+          fields_applied: Object.keys(transferFields),
+        },
       });
       break;
     }

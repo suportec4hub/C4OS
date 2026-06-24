@@ -1158,9 +1158,16 @@ export default function PageChatbotBuilder({ user }) {
   };
 
   const toggleAtivo = async (f) => {
-    await supabase.from("chatbot_fluxos").update({ ativo: !f.ativo }).eq("id", f.id);
-    setFluxos(p => p.map(x => x.id === f.id ? { ...x, ativo: !x.ativo } : x));
-    if (activeFluxo?.id === f.id) setActiveFluxo(p => ({ ...p, ativo: !p.ativo }));
+    if (!f.ativo) {
+      // Activating: also set as active chatbot (updates chatbot_config.fluxo_ativo_id)
+      await usarNoChatbot(f);
+      if (activeFluxo?.id === f.id) setActiveFluxo(p => ({ ...p, ativo: true }));
+    } else {
+      // Pausing: just toggle ativo off
+      await supabase.from("chatbot_fluxos").update({ ativo: false }).eq("id", f.id);
+      setFluxos(p => p.map(x => x.id === f.id ? { ...x, ativo: false } : x));
+      if (activeFluxo?.id === f.id) setActiveFluxo(p => ({ ...p, ativo: false }));
+    }
   };
 
   const deletarFluxo = async (id) => {
