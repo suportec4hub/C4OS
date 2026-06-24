@@ -337,6 +337,12 @@ async function executarFluxo(
   let estado: FluxoEstado | null = (conv.fluxo_estado as FluxoEstado) || null;
   const convId = conv.id as string;
 
+  // Clear orphaned flow state when the active flow changed
+  if (estado && estado.fluxo_id !== fluxoId) {
+    await supabase.from("conversas").update({ fluxo_estado: null }).eq("id", convId);
+    estado = null;
+  }
+
   if (estado && estado.fluxo_id === fluxoId) {
     const noAtual = nos.find(n => n.id === estado!.no_atual_id);
     if (noAtual) {
@@ -811,7 +817,9 @@ async function processMessages(
         reopenFields.status = "aberta";
         reopenFields.atendente_id = null;
         reopenFields.fluxo_estado = null;
-        reopenFields.bot_ativo = null; // permite o chatbot disparar novamente
+        reopenFields.bot_ativo = null;
+        // Sync in-memory conv so the chatbot block below sees the cleared state
+        conv = { ...conv, fluxo_estado: null, bot_ativo: null, status: "aberta" };
         // Reaplica o setor Vendas ao reabrir
         const { data: setorV } = await supabase.from("setores")
           .select("id").eq("empresa_id", empresa_id).ilike("nome", "%Vendas%").maybeSingle();

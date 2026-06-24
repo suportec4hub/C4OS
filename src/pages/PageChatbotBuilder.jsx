@@ -1163,8 +1163,16 @@ export default function PageChatbotBuilder({ user }) {
       await usarNoChatbot(f);
       if (activeFluxo?.id === f.id) setActiveFluxo(p => ({ ...p, ativo: true }));
     } else {
-      // Pausing: just toggle ativo off
+      // Pausing: set ativo=false and clear fluxo_ativo_id if this was the active chatbot flow
       await supabase.from("chatbot_fluxos").update({ ativo: false }).eq("id", f.id);
+      if (fluxoAtivoId === f.id) {
+        const { data: cfgExist } = await supabase.from("chatbot_config")
+          .select("id").eq("empresa_id", user.empresa_id).maybeSingle();
+        if (cfgExist) {
+          await supabase.from("chatbot_config").update({ fluxo_ativo_id: null }).eq("id", cfgExist.id);
+        }
+        setFluxoAtivoId(null);
+      }
       setFluxos(p => p.map(x => x.id === f.id ? { ...x, ativo: false } : x));
       if (activeFluxo?.id === f.id) setActiveFluxo(p => ({ ...p, ativo: false }));
     }
@@ -1174,6 +1182,15 @@ export default function PageChatbotBuilder({ user }) {
     if (!window.confirm("Remover este fluxo permanentemente?")) return;
     const { error } = await supabase.from("chatbot_fluxos").delete().eq("id", id);
     if (error) { showToast("Erro ao remover: " + error.message, false); return; }
+    // If deleting the active chatbot flow, clear fluxo_ativo_id so the config stays consistent
+    if (fluxoAtivoId === id) {
+      const { data: cfgExist } = await supabase.from("chatbot_config")
+        .select("id").eq("empresa_id", user.empresa_id).maybeSingle();
+      if (cfgExist) {
+        await supabase.from("chatbot_config").update({ fluxo_ativo_id: null }).eq("id", cfgExist.id);
+      }
+      setFluxoAtivoId(null);
+    }
     setFluxos(p => p.filter(x => x.id !== id));
     if (activeFluxo?.id === id) setActiveFluxo(null);
     showToast("Fluxo removido.");
