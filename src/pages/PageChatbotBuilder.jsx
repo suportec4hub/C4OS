@@ -370,7 +370,7 @@ function NodeCard({ no, selected, connecting, onClick, onEdit, onDelete, onConne
     <div
       onClick={() => onClick(no)}
       style={{
-        position: "absolute", left: no.x, top: no.y, width: NODE_W,
+        width: NODE_W,
         background: L.white, borderRadius: 10, border, boxShadow: shadow,
         cursor: "default", userSelect: "none", transition: "border-color .15s, box-shadow .15s",
       }}
