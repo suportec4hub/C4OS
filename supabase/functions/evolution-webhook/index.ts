@@ -747,7 +747,8 @@ async function processMessages(
         ultima_mensagem: texto, ultima_hora: hora,
         nao_lidas: fromMe ? 0 : 1, status: "aberta", bot_ativo: null,
         whatsapp_numero: senderPhone, fluxo_estado: null,
-        ...(cfgEarly?.setor_padrao_id ? { setor_id: cfgEarly.setor_padrao_id } : {}),
+        // setor_padrao só se houver fluxo visual ativo (ele roteará o setor); senão, round-robin assume
+        ...(cfgEarly?.setor_padrao_id && cfgEarly?.fluxo_ativo_id ? { setor_id: cfgEarly.setor_padrao_id } : {}),
       }).select("id, nao_lidas, contato_nome, status, bot_ativo, ultima_hora, fluxo_estado").single();
       conv = nova;
 
@@ -768,8 +769,8 @@ async function processMessages(
       }
 
       // ── Round-robin: distribui novo cliente para o próximo vendedor ──────────
-      // Ativo por padrão — só desliga se dist.ativo === false explicitamente
-      if (!fromMe && conv?.id) {
+      // Só corre quando não há fluxo visual ativo (o fluxo visual é quem roteia setores/atendente)
+      if (!fromMe && conv?.id && !cfgEarly?.fluxo_ativo_id) {
         try {
           const { data: dist } = await supabase
             .from("distribuicao_atendimento")
@@ -833,13 +834,14 @@ async function processMessages(
         reopenFields.bot_ativo = null;
         // Sync in-memory conv so the chatbot block below sees the cleared state
         conv = { ...conv, fluxo_estado: null, bot_ativo: null, status: "aberta" };
-        if (cfgEarly?.setor_padrao_id) reopenFields.setor_id = cfgEarly.setor_padrao_id;
+        // setor_padrao só se houver fluxo visual ativo; senão round-robin assume o roteamento
+        if (cfgEarly?.setor_padrao_id && cfgEarly?.fluxo_ativo_id) reopenFields.setor_id = cfgEarly.setor_padrao_id;
       }
       await supabase.from("conversas").update(reopenFields).eq("id", conv.id);
 
-      // Round-robin for existing conversations with no assigned atendente
-      // (covers: aberta sem atendente, or re-opened from resolvida)
-      const precisaAtribuir = conv.status === "resolvida" || !(conv as Record<string, unknown>).atendente_id;
+      // Round-robin para conversas sem atendente — só se não houver fluxo visual ativo
+      const precisaAtribuir = !cfgEarly?.fluxo_ativo_id &&
+        (conv.status === "resolvida" || !(conv as Record<string, unknown>).atendente_id);
       if (precisaAtribuir) {
         try {
           const { data: dist } = await supabase
