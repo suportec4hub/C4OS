@@ -724,7 +724,7 @@ async function processMessages(
     // ── Busca ou cria conversa ────────────────────────────────────────────────
     let isNew = false;
     let { data: conv } = await supabase.from("conversas")
-      .select("id, nao_lidas, contato_nome, status, bot_ativo, ultima_hora, fluxo_estado")
+      .select("id, nao_lidas, contato_nome, status, bot_ativo, ultima_hora, fluxo_estado, atendente_id")
       .eq("empresa_id", empresa_id).eq("contato_telefone", senderPhone).maybeSingle();
 
     if (!conv) {
@@ -832,8 +832,10 @@ async function processMessages(
       }
       await supabase.from("conversas").update(reopenFields).eq("id", conv.id);
 
-      // Re-assign via round-robin when conversation is re-opened (resolved + no atendente)
-      if (conv.status === "resolvida") {
+      // Round-robin for existing conversations with no assigned atendente
+      // (covers: aberta sem atendente, or re-opened from resolvida)
+      const precisaAtribuir = conv.status === "resolvida" || !(conv as Record<string, unknown>).atendente_id;
+      if (precisaAtribuir) {
         try {
           const { data: dist } = await supabase
             .from("distribuicao_atendimento")
