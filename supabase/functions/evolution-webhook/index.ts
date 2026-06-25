@@ -799,7 +799,10 @@ async function processMessages(
               const assignedSeller = sellers[idx];
 
               await supabase.from("conversas")
-                .update({ atendente_id: assignedSeller.id })
+                .update({
+                  atendente_id: assignedSeller.id,
+                  ...(cfgEarly?.setor_padrao_id ? { setor_id: cfgEarly.setor_padrao_id } : {}),
+                })
                 .eq("id", conv.id);
 
               if (dist?.id) {
@@ -812,7 +815,7 @@ async function processMessages(
                   .insert({ empresa_id, ativo: true, vendedores_ids: [], proximo_indice: 1 });
               }
 
-              console.log(`[round-robin] Conversa ${conv.id} → ${assignedSeller.nome} (idx ${idx})`);
+              console.log(`[round-robin] Conversa ${conv.id} → ${assignedSeller.nome} (idx ${idx}) setor:${cfgEarly?.setor_padrao_id ?? "nenhum"}`);
             }
           }
         } catch (rrErr) {
@@ -866,14 +869,17 @@ async function processMessages(
               const idx = (dist?.proximo_indice ?? 0) % sellers.length;
               const assignedSeller = sellers[idx];
               await supabase.from("conversas")
-                .update({ atendente_id: assignedSeller.id })
+                .update({
+                  atendente_id: assignedSeller.id,
+                  ...(cfgEarly?.setor_padrao_id ? { setor_id: cfgEarly.setor_padrao_id } : {}),
+                })
                 .eq("id", conv.id);
               if (dist?.id) {
                 await supabase.from("distribuicao_atendimento")
                   .update({ proximo_indice: (dist.proximo_indice ?? 0) + 1, updated_at: new Date().toISOString() })
                   .eq("id", dist.id);
               }
-              console.log(`[round-robin] Re-open: conversa ${conv.id} → ${assignedSeller.nome}`);
+              console.log(`[round-robin] Re-open: conversa ${conv.id} → ${assignedSeller.nome} setor:${cfgEarly?.setor_padrao_id ?? "nenhum"}`);
             }
           }
         } catch (rrErr) {
