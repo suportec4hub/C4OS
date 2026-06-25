@@ -875,17 +875,6 @@ async function processMessages(
 
     if (!conv?.id) continue;
 
-    // ── Dedup — wamid first, fallback to hora+texto ──────────────────────────
-    if (wamid) {
-      const { data: existWa } = await supabase.from("mensagens")
-        .select("id").eq("wamid", wamid).maybeSingle();
-      if (existWa) { console.log("[webhook] dedup: wamid já existe"); continue; }
-    } else {
-      const { data: existing } = await supabase.from("mensagens")
-        .select("id").eq("conversa_id", conv.id).eq("hora", hora).eq("texto", texto).maybeSingle();
-      if (existing) { console.log("[webhook] dedup: msg já existe"); continue; }
-    }
-
     // ── Re-hospedar mídia recebida no Supabase Storage ───────────────────────
     let storedMediaUrl = mediaUrl;
     if (mediaUrl && ["imagem","video","audio","documento"].includes(tipoMsg)) {
@@ -906,12 +895,36 @@ async function processMessages(
       } catch (e) { console.log("[webhook] media re-host err:", (e as Error).message); }
     }
 
-    await supabase.from("mensagens").insert({
-      conversa_id: conv.id, empresa_id, de: fromMe ? "me" : "contato",
-      texto, tipo: tipoMsg, media_url: storedMediaUrl, nome_arquivo: nomeArquivo,
-      wamid: wamid || null, hora, status: fromMe ? "enviado" : "recebido",
-      remetente: fromMe ? "me" : "contato",
-    });
+    // ── Insert message — for wamid messages the unique index (mensagens_wamid_unique)
+    //    acts as a dedup mutex: when Evolution API delivers the same webhook multiple
+    //    times simultaneously, only the first insert succeeds; the rest get error 23505
+    //    and skip all further processing (including chatbot) — preventing duplicate menus.
+    if (wamid) {
+      const { error: insertErr } = await supabase.from("mensagens").insert({
+        conversa_id: conv.id, empresa_id, de: fromMe ? "me" : "contato",
+        texto, tipo: tipoMsg, media_url: storedMediaUrl, nome_arquivo: nomeArquivo,
+        wamid, hora, status: fromMe ? "enviado" : "recebido",
+        remetente: fromMe ? "me" : "contato",
+      });
+      if (insertErr) {
+        if (insertErr.code === "23505") {
+          console.log("[webhook] dedup: wamid concurrent duplicate, skipping");
+          continue;
+        }
+        console.error("[webhook] insert error:", insertErr.message);
+      }
+    } else {
+      // No wamid: select-based dedup then insert
+      const { data: existing } = await supabase.from("mensagens")
+        .select("id").eq("conversa_id", conv.id).eq("hora", hora).eq("texto", texto).maybeSingle();
+      if (existing) { console.log("[webhook] dedup: msg já existe"); continue; }
+      await supabase.from("mensagens").insert({
+        conversa_id: conv.id, empresa_id, de: fromMe ? "me" : "contato",
+        texto, tipo: tipoMsg, media_url: storedMediaUrl, nome_arquivo: nomeArquivo,
+        wamid: null, hora, status: fromMe ? "enviado" : "recebido",
+        remetente: fromMe ? "me" : "contato",
+      });
+    }
 
     // ── Log mensagem recebida do contato ─────────────────────────────────────
     if (!fromMe && !isHistory) {
