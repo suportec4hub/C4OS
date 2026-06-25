@@ -772,11 +772,17 @@ async function processMessages(
       // Só corre quando não há fluxo visual ativo (o fluxo visual é quem roteia setores/atendente)
       if (!fromMe && conv?.id && !cfgEarly?.fluxo_ativo_id) {
         try {
-          const { data: dist } = await supabase
-            .from("distribuicao_atendimento")
-            .select("id, ativo, vendedores_ids, proximo_indice")
-            .eq("empresa_id", empresa_id)
-            .maybeSingle();
+          const [{ data: dist }, { data: setorVendas }] = await Promise.all([
+            supabase.from("distribuicao_atendimento")
+              .select("id, ativo, vendedores_ids, proximo_indice")
+              .eq("empresa_id", empresa_id)
+              .maybeSingle(),
+            supabase.from("setores")
+              .select("id")
+              .eq("empresa_id", empresa_id)
+              .ilike("nome", "%vendas%")
+              .maybeSingle(),
+          ]);
 
           const roundRobinAtivo = !dist || dist.ativo !== false;
 
@@ -801,7 +807,7 @@ async function processMessages(
               await supabase.from("conversas")
                 .update({
                   atendente_id: assignedSeller.id,
-                  ...(cfgEarly?.setor_padrao_id ? { setor_id: cfgEarly.setor_padrao_id } : {}),
+                  ...(setorVendas?.id ? { setor_id: setorVendas.id } : {}),
                 })
                 .eq("id", conv.id);
 
@@ -815,7 +821,7 @@ async function processMessages(
                   .insert({ empresa_id, ativo: true, vendedores_ids: [], proximo_indice: 1 });
               }
 
-              console.log(`[round-robin] Conversa ${conv.id} → ${assignedSeller.nome} (idx ${idx}) setor:${cfgEarly?.setor_padrao_id ?? "nenhum"}`);
+              console.log(`[round-robin] Conversa ${conv.id} → ${assignedSeller.nome} (idx ${idx}) setor:${setorVendas?.id ?? "nenhum"}`);
             }
           }
         } catch (rrErr) {
@@ -847,11 +853,17 @@ async function processMessages(
         (conv.status === "resolvida" || !(conv as Record<string, unknown>).atendente_id);
       if (precisaAtribuir) {
         try {
-          const { data: dist } = await supabase
-            .from("distribuicao_atendimento")
-            .select("id, ativo, vendedores_ids, proximo_indice")
-            .eq("empresa_id", empresa_id)
-            .maybeSingle();
+          const [{ data: dist }, { data: setorVendas }] = await Promise.all([
+            supabase.from("distribuicao_atendimento")
+              .select("id, ativo, vendedores_ids, proximo_indice")
+              .eq("empresa_id", empresa_id)
+              .maybeSingle(),
+            supabase.from("setores")
+              .select("id")
+              .eq("empresa_id", empresa_id)
+              .ilike("nome", "%vendas%")
+              .maybeSingle(),
+          ]);
 
           const roundRobinAtivo = !dist || dist.ativo !== false;
           if (roundRobinAtivo) {
@@ -871,7 +883,7 @@ async function processMessages(
               await supabase.from("conversas")
                 .update({
                   atendente_id: assignedSeller.id,
-                  ...(cfgEarly?.setor_padrao_id ? { setor_id: cfgEarly.setor_padrao_id } : {}),
+                  ...(setorVendas?.id ? { setor_id: setorVendas.id } : {}),
                 })
                 .eq("id", conv.id);
               if (dist?.id) {
@@ -879,7 +891,7 @@ async function processMessages(
                   .update({ proximo_indice: (dist.proximo_indice ?? 0) + 1, updated_at: new Date().toISOString() })
                   .eq("id", dist.id);
               }
-              console.log(`[round-robin] Re-open: conversa ${conv.id} → ${assignedSeller.nome} setor:${cfgEarly?.setor_padrao_id ?? "nenhum"}`);
+              console.log(`[round-robin] Re-open: conversa ${conv.id} → ${assignedSeller.nome} setor:${setorVendas?.id ?? "nenhum"}`);
             }
           }
         } catch (rrErr) {
