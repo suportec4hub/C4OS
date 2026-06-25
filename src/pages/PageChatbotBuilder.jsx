@@ -65,6 +65,7 @@ const CONDICAO_TIPOS = [
 
 const NODE_W = 210;
 const NODE_H = 90; // approximate height for connection calc
+const PORT_Y = 50;  // vertical offset of connection ports from node top
 
 const VAZIO_FLUXO = { nome: "", descricao: "", usuario_id: null };
 
@@ -268,8 +269,8 @@ function TriggerSelectorModal({ no, onSave, onClose, setores = [] }) {
           )}
 
           {/* Intervalo de reativação */}
-          <div style={{ marginTop: 4, padding: "12px 14px", background: "#f0f9ff", border: "1.5px solid #bae6fd", borderRadius: 9 }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: "#0284c7", textTransform: "uppercase", letterSpacing: "1px", marginBottom: 7, fontFamily: "'JetBrains Mono',monospace" }}>
+          <div style={{ marginTop: 4, padding: "12px 14px", background: L.blueBg, border: `1.5px solid ${L.blueA}`, borderRadius: 9 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: L.blue, textTransform: "uppercase", letterSpacing: "1px", marginBottom: 7, fontFamily: "'JetBrains Mono',monospace" }}>
               ⏱ Intervalo de Reativação
             </div>
             <div style={{ fontSize: 11.5, color: L.t3, marginBottom: 8, lineHeight: 1.4 }}>
@@ -282,7 +283,7 @@ function TriggerSelectorModal({ no, onSave, onClose, setores = [] }) {
                 onChange={e => setIntervalo(e.target.value)}
                 min="0"
                 placeholder="0"
-                style={{ width: 80, border: "1.5px solid #bae6fd", borderRadius: 8, padding: "7px 10px", fontSize: 12, outline: "none", fontFamily: "inherit", background: "white", color: L.t1 }}
+                style={{ width: 80, border: `1.5px solid ${L.blueA}`, borderRadius: 8, padding: "7px 10px", fontSize: 12, outline: "none", fontFamily: "inherit", background: L.surface, color: L.t1 }}
               />
               <span style={{ fontSize: 12, color: L.t3 }}>minutos (0 = sempre reativar)</span>
             </div>
@@ -376,9 +377,11 @@ function NodeCard({ no, selected, connecting, onClick, onEdit, onDelete, onConne
     preview = `${no.opcoes.filter(Boolean).length} opções`;
   } else if (no.tipo === "condicao") {
     const ct = CONDICAO_TIPOS.find(t => t.id === (no.condicao_tipo || "contem_palavra"));
-    preview = ct ? ct.label : "Condição";
+    const extra = no.numero_opcao ? ` ${no.numero_opcao}` : no.gatilhos ? `: ${no.gatilhos}` : "";
+    preview = ct ? ct.label + extra : "Condição";
   } else if (no.tipo === "transferir") {
-    preview = "→ Transfere para atendente";
+    const dest = no.transferir_tipo || "fila";
+    preview = dest === "setor" ? "🏢 → Setor" : dest === "usuario" ? "👤 → Atendente específico" : "🔄 → Fila automática";
   } else if (no.tipo === "encerrar") {
     preview = "✕ Encerra o fluxo";
   } else if (no.tipo === "aguardar") {
@@ -394,7 +397,7 @@ function NodeCard({ no, selected, connecting, onClick, onEdit, onDelete, onConne
     <div
       onClick={() => onClick(no)}
       style={{
-        position: "absolute", left: no.x, top: no.y, width: NODE_W,
+        width: NODE_W, position: "relative",
         background: L.white, borderRadius: 10, border, boxShadow: shadow,
         cursor: "default", userSelect: "none", transition: "border-color .15s, box-shadow .15s",
       }}
@@ -458,11 +461,37 @@ function NodeCard({ no, selected, connecting, onClick, onEdit, onDelete, onConne
       {/* Actions */}
       <div style={{ padding: "5px 8px", display: "flex", gap: 3, justifyContent: "flex-end" }}>
         <NodeBtn color={L.t3} title="Editar" onClick={e => { e.stopPropagation(); onEdit(no); }}>✎</NodeBtn>
-        <NodeBtn color={tipo.cor} title="Conectar" onClick={e => { e.stopPropagation(); onConnectStart(no); }}>→</NodeBtn>
         {no.tipo !== "inicio" && (
           <NodeBtn color={L.red} title="Remover" onClick={e => { e.stopPropagation(); onDelete(no.id); }}>✕</NodeBtn>
         )}
       </div>
+
+      {/* Input port — left side (all nodes except início) */}
+      {no.tipo !== "inicio" && (
+        <div style={{
+          position: "absolute", left: -7, top: PORT_Y, transform: "translateY(-50%)",
+          width: 14, height: 14, borderRadius: "50%",
+          background: L.white, border: `2px solid ${L.line}`,
+          pointerEvents: "none", zIndex: 2, boxShadow: "0 0 0 2px white",
+        }} />
+      )}
+
+      {/* Output port — right side, click to start connection */}
+      <div
+        title="Conectar → (clique e depois clique no destino)"
+        onClick={e => { e.stopPropagation(); onConnectStart(no); }}
+        style={{
+          position: "absolute", right: -7, top: PORT_Y, transform: "translateY(-50%)",
+          width: 14, height: 14, borderRadius: "50%",
+          background: isConnectingFrom ? "white" : tipo.cor,
+          border: `2px solid ${tipo.cor}`,
+          cursor: "crosshair", zIndex: 2,
+          boxShadow: isConnectingFrom
+            ? `0 0 0 3px ${tipo.cor}55, 0 0 0 2px white`
+            : "0 0 0 2px white",
+          transition: "all .15s",
+        }}
+      />
     </div>
   );
 }
@@ -481,7 +510,7 @@ function NodeBtn({ color, title, onClick, children }) {
 }
 
 // ─── Node Edit Panel ──────────────────────────────────────────────────────────
-function NodeEditPanel({ no, onSave, onClose }) {
+function NodeEditPanel({ no, onSave, onClose, onGenerateRoutes, setores = [], usuarios = [] }) {
   const [form, setForm] = useState({ ...no });
   const tipo = NODE_TYPES[form.tipo] || NODE_TYPES.mensagem;
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
@@ -553,7 +582,7 @@ function NodeEditPanel({ no, onSave, onClose }) {
               placeholder="Ex: Escolha uma opção abaixo:"
               rows={2}
             />
-            <div style={{ marginBottom: 12 }}>
+            <div style={{ marginBottom: 10 }}>
               {labelS("Opções (uma por linha)")}
               <textarea
                 value={(form.opcoes || []).join("\n")}
@@ -570,6 +599,44 @@ function NodeEditPanel({ no, onSave, onClose }) {
                 Cada linha = uma opção. O cliente digita o número correspondente.
               </div>
             </div>
+
+            {/* Guia de roteamento */}
+            <div style={{ padding: "10px 12px", background: L.yellowBg, borderRadius: 8,
+              border: `1px solid ${L.yellowA2}`, fontSize: 11, color: L.t2, lineHeight: 1.6, marginBottom: 8 }}>
+              <div style={{ fontWeight: 700, color: L.yellow, marginBottom: 4 }}>📋 Como rotear as opções:</div>
+              <div>Cada opção precisa de um nó <b>Condição</b> configurado como <b>"Respondeu opção nº"</b>.</div>
+              <div style={{ color: L.t3, marginTop: 3 }}>
+                Salve primeiro, depois clique em <b>⚡ Gerar rotas</b> para criar as condições automaticamente.
+                Conecte cada saída <b style={{ color: L.green }}>Sim →</b> ao destino desejado
+                (Mensagem, Transferir, Encerrar, etc.).
+              </div>
+            </div>
+
+            {/* Botão gerar rotas — sempre visível, desabilitado sem opções */}
+            {onGenerateRoutes && (() => {
+              const qtd = (form.opcoes || []).filter(Boolean).length;
+              const disabled = qtd === 0;
+              return (
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={disabled ? undefined : () => { onSave(form); onGenerateRoutes(form); }}
+                  title={disabled ? "Preencha as opções acima primeiro" : `Criar ${qtd} nó(s) Condição automaticamente`}
+                  style={{ width: "100%", background: disabled ? L.surface : L.yellowBg,
+                    color: disabled ? L.t4 : L.yellow,
+                    border: `1px solid ${disabled ? L.line : L.yellowA2}`,
+                    borderRadius: 8, padding: "9px",
+                    fontSize: 12, fontWeight: 600,
+                    cursor: disabled ? "not-allowed" : "pointer",
+                    fontFamily: "inherit", marginBottom: 8, transition: "opacity .12s, background .15s",
+                    opacity: disabled ? 0.6 : 1 }}
+                  onMouseEnter={e => { if (!disabled) e.currentTarget.style.opacity = ".8"; }}
+                  onMouseLeave={e => { if (!disabled) e.currentTarget.style.opacity = "1"; }}
+                >
+                  ⚡ {disabled ? "Gerar rotas automáticas (preencha as opções)" : `Salvar e gerar rotas (${qtd} opções)`}
+                </button>
+              );
+            })()}
           </>
         )}
 
@@ -600,9 +667,16 @@ function NodeEditPanel({ no, onSave, onClose }) {
               />
             )}
             <div style={{ padding: "10px 12px", background: "#7c3aed0d", borderRadius: 8,
-              border: "1px solid #7c3aed22", fontSize: 11, color: L.t3, lineHeight: 1.55 }}>
-              <b style={{ color: "#7c3aed" }}>Sim</b> → conecte ao próximo nó se condição for verdadeira<br/>
-              <b style={{ color: L.red }}>Não</b> → conecte ao nó alternativo
+              border: "1px solid #7c3aed22", fontSize: 11, color: L.t3, lineHeight: 1.65 }}>
+              <div style={{ fontWeight: 700, color: "#7c3aed", marginBottom: 4 }}>Como conectar saídas:</div>
+              <div>Clique em <b>→</b> neste nó → clique no nó de destino</div>
+              <div style={{ marginTop: 4, display: "flex", gap: 10 }}>
+                <span><b style={{ color: "#16a34a" }}>Sim →</b> condição verdadeira</span>
+                <span><b style={{ color: L.red }}>Não →</b> condição falsa</span>
+              </div>
+              <div style={{ marginTop: 6, borderTop: "1px solid #7c3aed22", paddingTop: 6, color: L.t4 }}>
+                A 1ª conexão criada = <b>Sim</b>, a 2ª = <b>Não</b>
+              </div>
             </div>
           </>
         )}
@@ -631,13 +705,86 @@ function NodeEditPanel({ no, onSave, onClose }) {
 
         {/* ── TRANSFERIR ── */}
         {form.tipo === "transferir" && (
-          <FieldTextarea
-            label="Mensagem antes de transferir"
-            value={form.mensagem}
-            onChange={v => set("mensagem", v)}
-            placeholder="Ex: Aguarde, vou transferir para um atendente..."
-            rows={3}
-          />
+          <>
+            {/* Tipo de destino */}
+            <div style={{ marginBottom: 12 }}>
+              {labelS("Destino da transferência")}
+              <div style={{ display: "flex", gap: 8 }}>
+                {[
+                  { id: "setor",   label: "Setor",    ico: "🏢" },
+                  { id: "usuario", label: "Atendente", ico: "👤" },
+                  { id: "fila",    label: "Fila (automático)", ico: "🔄" },
+                ].map(op => {
+                  const ativo = (form.transferir_tipo || "fila") === op.id;
+                  return (
+                    <button key={op.id} type="button"
+                      onClick={() => set("transferir_tipo", op.id)}
+                      style={{ flex: 1, padding: "8px 4px", borderRadius: 8, fontSize: 11, fontWeight: 600,
+                        cursor: "pointer", fontFamily: "inherit", border: `1.5px solid ${ativo ? "#b8845a" : L.line}`,
+                        background: ativo ? "#b8845a18" : L.surface, color: ativo ? "#b8845a" : L.t3,
+                        transition: "all .12s" }}>
+                      {op.ico}<br/>{op.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Selector de setor */}
+            {(form.transferir_tipo || "fila") === "setor" && (
+              <div style={{ marginBottom: 12 }}>
+                {labelS("Setor de destino")}
+                <select value={form.transferir_setor_id || ""}
+                  onChange={e => set("transferir_setor_id", e.target.value)}
+                  style={{ width: "100%", border: `1.5px solid ${L.line}`, borderRadius: 8,
+                    padding: "7px 10px", fontSize: 12, outline: "none", fontFamily: "inherit",
+                    background: L.surface, color: L.t1, boxSizing: "border-box" }}>
+                  <option value="">— Escolha o setor —</option>
+                  {setores.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
+                </select>
+                {setores.length === 0 && (
+                  <div style={{ fontSize: 10, color: L.red, marginTop: 4 }}>
+                    Nenhum setor cadastrado. Crie setores em Configurações → Setores.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Selector de atendente */}
+            {(form.transferir_tipo || "fila") === "usuario" && (
+              <div style={{ marginBottom: 12 }}>
+                {labelS("Atendente de destino")}
+                <select value={form.transferir_usuario_id || ""}
+                  onChange={e => set("transferir_usuario_id", e.target.value)}
+                  style={{ width: "100%", border: `1.5px solid ${L.line}`, borderRadius: 8,
+                    padding: "7px 10px", fontSize: 12, outline: "none", fontFamily: "inherit",
+                    background: L.surface, color: L.t1, boxSizing: "border-box" }}>
+                  <option value="">— Escolha o atendente —</option>
+                  {usuarios.map(u => <option key={u.id} value={u.id}>{u.nome}{u.cargo ? ` (${u.cargo})` : ""}</option>)}
+                </select>
+                {usuarios.length === 0 && (
+                  <div style={{ fontSize: 10, color: L.red, marginTop: 4 }}>
+                    Nenhum usuário ativo encontrado.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {(form.transferir_tipo || "fila") === "fila" && (
+              <div style={{ padding: "8px 10px", background: L.surface, borderRadius: 8,
+                border: `1px solid ${L.line}`, fontSize: 11, color: L.t3, marginBottom: 12 }}>
+                🔄 A conversa será distribuída automaticamente para o próximo atendente na fila (round-robin entre SDRs).
+              </div>
+            )}
+
+            <FieldTextarea
+              label="Mensagem antes de transferir (opcional)"
+              value={form.mensagem}
+              onChange={v => set("mensagem", v)}
+              placeholder="Ex: Aguarde, vou transferir para um atendente..."
+              rows={3}
+            />
+          </>
         )}
 
         {/* ── ENCERRAR ── */}
@@ -886,6 +1033,7 @@ function FluxoList({ fluxos, fluxoAtivoId, vendedores, onOpen, onUsar, onToggleA
 export default function PageChatbotBuilder({ user }) {
   const [fluxos,       setFluxos]       = useState([]);
   const [vendedores,   setVendedores]   = useState([]);
+  const [setores,      setSetores]      = useState([]);
   const [activeFluxo,  setActiveFluxo]  = useState(null);
   const [nos,          setNos]          = useState([]);
   const [conexoes,     setConexoes]     = useState([]);
@@ -898,13 +1046,21 @@ export default function PageChatbotBuilder({ user }) {
   const [novaForm,     setNovaForm]     = useState(VAZIO_FLUXO);
   const [fluxoAtivoId, setFluxoAtivoId] = useState(null);
   const [connLabel,    setConnLabel]    = useState("");     // label da conexão em criação
+  const [unsavedChanges, setUnsavedChanges] = useState(false);
+  const [toast,        setToast]        = useState(null);  // { msg, ok }
 
   const { isMobile } = useBreakpoint();
 
   // Drag state (ref para não re-render no mousemove)
-  const draggingRef  = useRef(null);
-  const dragOffRef   = useRef({ x: 0, y: 0 });
-  const canvasRef    = useRef(null);
+  const draggingRef    = useRef(null);
+  const dragOffRef     = useRef({ x: 0, y: 0 });
+  const canvasRef      = useRef(null);
+  const justLoadedRef  = useRef(false); // suprime unsavedChanges após carregamento de fluxo
+
+  const showToast = (msg, ok = true) => {
+    setToast({ msg, ok });
+    setTimeout(() => setToast(null), 2500);
+  };
 
   // ── Load ──
   useEffect(() => {
@@ -915,37 +1071,59 @@ export default function PageChatbotBuilder({ user }) {
       .order("created_at", { ascending: false })
       .then(({ data }) => setFluxos(data || []));
     supabase.from("chatbot_config")
-      .select("fluxo_ativo_id").eq("empresa_id", user.empresa_id).single()
+      .select("fluxo_ativo_id").eq("empresa_id", user.empresa_id).maybeSingle()
       .then(({ data }) => { if (data) setFluxoAtivoId(data.fluxo_ativo_id); });
     supabase.from("usuarios")
       .select("id, nome, cargo").eq("empresa_id", user.empresa_id).eq("ativo", true).order("nome")
       .then(({ data }) => setVendedores(data || []));
+    supabase.from("setores")
+      .select("id, nome").eq("empresa_id", user.empresa_id).order("nome")
+      .then(({ data }) => setSetores(data || []));
   }, [user?.empresa_id]);
+
+  // ── Unsaved changes tracker (justLoadedRef evita marcar dirty ao carregar fluxo) ──
+  useEffect(() => {
+    if (!activeFluxo) return;
+    if (justLoadedRef.current) { justLoadedRef.current = false; return; }
+    setUnsavedChanges(true);
+  }, [nos, conexoes]);
 
   // ── Abrir fluxo ──
   const openFluxo = async (f) => {
-    const { data } = await supabase.from("chatbot_fluxos")
+    const { data, error } = await supabase.from("chatbot_fluxos")
       .select("nos, conexoes").eq("id", f.id).single();
+    if (error) {
+      showToast("Erro ao carregar fluxo: " + (error.message || "tente novamente."), false);
+      return;
+    }
     const initNos = data?.nos?.length
       ? data.nos
       : [{ id: "inicio", tipo: "inicio", nome: "Início", gatilho_tipo: "mensagem_recebida",
            mensagem: "", x: 60, y: 80 }];
+    justLoadedRef.current = true; // suprime unsavedChanges no próximo efeito
     setNos(initNos);
     setConexoes(data?.conexoes || []);
     setActiveFluxo(f);
     setSelectedNo(null);
     setEditingNo(null);
     setConnecting(null);
+    setUnsavedChanges(false);
   };
 
   // ── Salvar fluxo ──
   const saveFluxo = async () => {
     if (!activeFluxo) return;
     setSaving(true);
-    await supabase.from("chatbot_fluxos")
+    const { error } = await supabase.from("chatbot_fluxos")
       .update({ nos, conexoes, updated_at: new Date().toISOString() })
       .eq("id", activeFluxo.id);
     setSaving(false);
+    if (error) {
+      showToast("Erro ao salvar: " + (error.message || "tente novamente."), false);
+      return;
+    }
+    setUnsavedChanges(false);
+    showToast("Fluxo salvo com sucesso!");
   };
 
   // ── Criar fluxo ──
@@ -959,7 +1137,9 @@ export default function PageChatbotBuilder({ user }) {
       usuario_id: novaForm.usuario_id || null,
       nos: [initNo], conexoes: [],
     }).select().single();
-    if (!error && data) {
+    if (error) {
+      showToast("Erro ao criar fluxo: " + (error.message || "tente novamente."), false);
+    } else if (data) {
       setFluxos(p => [data, ...p]);
       setNovaModal(false);
       setNovaForm(VAZIO_FLUXO);
@@ -972,7 +1152,7 @@ export default function PageChatbotBuilder({ user }) {
     const isJaAtivo = fluxoAtivoId === f.id;
     const novoId = isJaAtivo ? null : f.id;
     const { data: cfgExist } = await supabase.from("chatbot_config")
-      .select("id").eq("empresa_id", user.empresa_id).single();
+      .select("id").eq("empresa_id", user.empresa_id).maybeSingle();
     if (cfgExist) {
       await supabase.from("chatbot_config").update({ fluxo_ativo_id: novoId }).eq("id", cfgExist.id);
     } else {
@@ -987,6 +1167,12 @@ export default function PageChatbotBuilder({ user }) {
     setFluxoAtivoId(novoId);
     if (!isJaAtivo) {
       await supabase.from("chatbot_fluxos").update({ ativo: true }).eq("id", f.id);
+      // Deactivate all other company-level flows in DB
+      await supabase.from("chatbot_fluxos")
+        .update({ ativo: false })
+        .eq("empresa_id", user.empresa_id)
+        .is("usuario_id", null)
+        .neq("id", f.id);
       // Only flip ativo on other company-level flows (usuario_id IS NULL), never touch vendor flows
       setFluxos(p => p.map(x => {
         if (x.id === f.id) return { ...x, ativo: true };
@@ -997,16 +1183,42 @@ export default function PageChatbotBuilder({ user }) {
   };
 
   const toggleAtivo = async (f) => {
-    await supabase.from("chatbot_fluxos").update({ ativo: !f.ativo }).eq("id", f.id);
-    setFluxos(p => p.map(x => x.id === f.id ? { ...x, ativo: !x.ativo } : x));
-    if (activeFluxo?.id === f.id) setActiveFluxo(p => ({ ...p, ativo: !p.ativo }));
+    if (!f.ativo) {
+      // Activating: also set as active chatbot (updates chatbot_config.fluxo_ativo_id)
+      await usarNoChatbot(f);
+      if (activeFluxo?.id === f.id) setActiveFluxo(p => ({ ...p, ativo: true }));
+    } else {
+      // Pausing: set ativo=false and clear fluxo_ativo_id if this was the active chatbot flow
+      await supabase.from("chatbot_fluxos").update({ ativo: false }).eq("id", f.id);
+      if (fluxoAtivoId === f.id) {
+        const { data: cfgExist } = await supabase.from("chatbot_config")
+          .select("id").eq("empresa_id", user.empresa_id).maybeSingle();
+        if (cfgExist) {
+          await supabase.from("chatbot_config").update({ fluxo_ativo_id: null }).eq("id", cfgExist.id);
+        }
+        setFluxoAtivoId(null);
+      }
+      setFluxos(p => p.map(x => x.id === f.id ? { ...x, ativo: false } : x));
+      if (activeFluxo?.id === f.id) setActiveFluxo(p => ({ ...p, ativo: false }));
+    }
   };
 
   const deletarFluxo = async (id) => {
     if (!window.confirm("Remover este fluxo permanentemente?")) return;
-    await supabase.from("chatbot_fluxos").delete().eq("id", id);
+    const { error } = await supabase.from("chatbot_fluxos").delete().eq("id", id);
+    if (error) { showToast("Erro ao remover: " + error.message, false); return; }
+    // If deleting the active chatbot flow, clear fluxo_ativo_id so the config stays consistent
+    if (fluxoAtivoId === id) {
+      const { data: cfgExist } = await supabase.from("chatbot_config")
+        .select("id").eq("empresa_id", user.empresa_id).maybeSingle();
+      if (cfgExist) {
+        await supabase.from("chatbot_config").update({ fluxo_ativo_id: null }).eq("id", cfgExist.id);
+      }
+      setFluxoAtivoId(null);
+    }
     setFluxos(p => p.filter(x => x.id !== id));
     if (activeFluxo?.id === id) setActiveFluxo(null);
+    showToast("Fluxo removido.");
   };
 
   // ── Nós ──
@@ -1040,6 +1252,37 @@ export default function PageChatbotBuilder({ user }) {
     setEditingNo(null);
   };
 
+  // ── Gerar condições de rota para Menu de Opções ──
+  const generateRoutes = useCallback((menuNo) => {
+    const opcoes = (menuNo.opcoes || []).filter(Boolean);
+    if (!opcoes.length) return;
+    const ts = Date.now();
+    const newNos = [];
+    const newConexoes = [];
+    const baseX = menuNo.x + 260;
+    const baseY = menuNo.y;
+    let prevId = menuNo.id;
+    let prevLabel = "";
+    opcoes.forEach((opcao, i) => {
+      const condId = `cond-route-${ts}-${i}`;
+      newNos.push({
+        id: condId, tipo: "condicao",
+        nome: `Opção ${i + 1}: ${opcao.slice(0, 18)}`,
+        condicao_tipo: "numero_opcao",
+        numero_opcao: String(i + 1),
+        gatilhos: "", mensagem: "",
+        x: baseX, y: baseY + i * 150,
+      });
+      newConexoes.push({ id: `con-route-${ts}-${i}`, de: prevId, para: condId, label: prevLabel });
+      prevId = condId;
+      prevLabel = "Não";
+    });
+    setNos(p => [...p, ...newNos]);
+    setConexoes(p => [...p, ...newConexoes]);
+    setEditingNo(null);
+    showToast(`${opcoes.length} condições criadas! Conecte cada 'Sim →' ao destino desejado.`);
+  }, []);
+
   // ── Conexões ──
   const handleConnectStart = (noOrigem) => {
     if (connecting?.id === noOrigem.id) { setConnecting(null); return; }
@@ -1070,7 +1313,8 @@ export default function PageChatbotBuilder({ user }) {
   const handleMouseDown = useCallback((e, noId) => {
     if (e.button !== 0) return;
     e.stopPropagation();
-    const rect = canvasRef.current.getBoundingClientRect();
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
     const no = nos.find(n => n.id === noId);
     if (!no) return;
     draggingRef.current = noId;
@@ -1080,13 +1324,52 @@ export default function PageChatbotBuilder({ user }) {
 
   const handleMouseMove = useCallback((e) => {
     if (!draggingRef.current) return;
-    const rect = canvasRef.current.getBoundingClientRect();
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
     const x = Math.max(0, e.clientX - rect.left - dragOffRef.current.x);
     const y = Math.max(0, e.clientY - rect.top - dragOffRef.current.y);
     setNos(p => p.map(n => n.id === draggingRef.current ? { ...n, x, y } : n));
   }, []);
 
   const handleMouseUp = useCallback(() => { draggingRef.current = null; }, []);
+
+  // ── Touch drag ──
+  const handleTouchStart = useCallback((e) => {
+    const touch = e.touches[0];
+    const target = e.target.closest('[data-nodeid]');
+    if (!target) return;
+    const noId = target.dataset.nodeid;
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const no = nos.find(n => n.id === noId);
+    if (!no) return;
+    draggingRef.current = noId;
+    dragOffRef.current = { x: touch.clientX - rect.left - no.x, y: touch.clientY - rect.top - no.y };
+  }, [nos]);
+
+  const handleTouchMove = useCallback((e) => {
+    if (!draggingRef.current) return;
+    e.preventDefault();
+    const touch = e.touches[0];
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const x = Math.max(0, touch.clientX - rect.left - dragOffRef.current.x);
+    const y = Math.max(0, touch.clientY - rect.top - dragOffRef.current.y);
+    setNos(p => p.map(n => n.id === draggingRef.current ? { ...n, x, y } : n));
+  }, []);
+
+  const handleTouchEnd = useCallback(() => { draggingRef.current = null; }, []);
+
+  // ── Toast overlay (shared between list and editor views) ──
+  const toastEl = toast && (
+    <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)",
+      background: toast.ok ? "#111827" : L.red, color: "white", borderRadius: 10,
+      padding: "10px 20px", fontSize: 12.5, fontWeight: 600, zIndex: 9999,
+      boxShadow: "0 4px 20px rgba(0,0,0,.25)", pointerEvents: "none",
+      animation: "fadeIn .2s ease" }}>
+      {toast.ok ? "✓ " : "⚠ "}{toast.msg}
+    </div>
+  );
 
   // ── LIST view ──
   if (!activeFluxo) {
@@ -1114,6 +1397,7 @@ export default function PageChatbotBuilder({ user }) {
             onClose={() => { setNovaModal(false); setNovaForm(VAZIO_FLUXO); }}
           />
         )}
+        {toastEl}
       </>
     );
   }
@@ -1121,7 +1405,7 @@ export default function PageChatbotBuilder({ user }) {
   // ── EDITOR view ──
   const emUso = fluxoAtivoId === activeFluxo.id;
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: isMobile ? "calc(100vh - 80px)" : "calc(100vh - 110px)",
+    <div style={{ display: "flex", flexDirection: "column", height: isMobile ? "calc(100dvh - 80px)" : "calc(100dvh - 110px)",
       borderRadius: isMobile ? 8 : 12, border: `1px solid ${L.line}`, overflow: "hidden",
       background: L.white, boxShadow: "0 1px 4px rgba(0,0,0,.06)" }}>
 
@@ -1177,10 +1461,10 @@ export default function PageChatbotBuilder({ user }) {
         )}
 
         <button onClick={saveFluxo} disabled={saving}
-          style={btn(saving ? L.surface : L.green, "white",
+          style={btn(saving ? L.surface : unsavedChanges ? L.green : L.teal, "white",
             { fontSize: isMobile ? 11 : 11.5, fontWeight: 600, border: "none",
               padding: isMobile ? "5px 10px" : "6px 14px", flexShrink: 0 })}>
-          {saving ? "..." : "💾 Salvar"}
+          {saving ? "..." : unsavedChanges ? "💾 Salvar*" : "💾 Salvar"}
         </button>
 
         <button onClick={() => toggleAtivo(activeFluxo)}
@@ -1212,6 +1496,9 @@ export default function PageChatbotBuilder({ user }) {
           ref={canvasRef}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
           onClick={() => { setSelectedNo(null); if (connecting) setConnecting(null); }}
           style={{ flex: 1, position: "relative", overflow: "auto",
             background: "#f9fafb",
@@ -1225,49 +1512,61 @@ export default function PageChatbotBuilder({ user }) {
           <svg style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%",
             pointerEvents: "none", overflow: "visible" }}>
             <defs>
-              <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-                <path d="M0,0 L0,6 L8,3 z" fill={L.t4}/>
-              </marker>
-              <marker id="arrow-cond-sim" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-                <path d="M0,0 L0,6 L8,3 z" fill={L.green}/>
-              </marker>
-              <marker id="arrow-cond-nao" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-                <path d="M0,0 L0,6 L8,3 z" fill={L.red}/>
-              </marker>
+              {[
+                { id: "arrow",          color: L.t4   },
+                { id: "arrow-cond-sim", color: L.green },
+                { id: "arrow-cond-nao", color: L.red   },
+              ].map(({ id, color }) => (
+                <marker key={id} id={id} markerWidth="10" markerHeight="10"
+                  refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse">
+                  <path d="M0,1 L0,9 L9,5 z" fill={color} />
+                </marker>
+              ))}
             </defs>
             {conexoes.map(c => {
               const de   = nos.find(n => n.id === c.de);
               const para = nos.find(n => n.id === c.para);
               if (!de || !para) return null;
-              const x1 = de.x + NODE_W;
-              const y1 = de.y + 38;
-              const x2 = para.x;
-              const y2 = para.y + 38;
-              const cx = (x1 + x2) / 2;
+              const x1 = de.x + NODE_W + 7;   // right port center
+              const y1 = de.y + PORT_Y;
+              const x2 = para.x - 7;            // left port center
+              const y2 = para.y + PORT_Y;
+              const dx = Math.abs(x2 - x1);
+              const cp = Math.max(dx * 0.45, 55);
               const isSim = c.label === "Sim";
               const isNao = c.label === "Não";
-              const strokeColor = isSim ? L.green : isNao ? L.red : L.t4;
+              const strokeColor = isSim ? L.green : isNao ? L.red : L.t3;
               const markerId = isSim ? "arrow-cond-sim" : isNao ? "arrow-cond-nao" : "arrow";
               const mx = (x1 + x2) / 2;
               const my = (y1 + y2) / 2;
+              const pathD = `M${x1},${y1} C${x1+cp},${y1} ${x2-cp},${y2} ${x2},${y2}`;
               return (
                 <g key={c.id}>
-                  <path d={`M${x1},${y1} C${cx},${y1} ${cx},${y2} ${x2},${y2}`}
-                    fill="none" stroke={strokeColor} strokeWidth={1.8}
-                    markerEnd={`url(#${markerId})`} strokeDasharray={isNao ? "5 3" : "none"} />
+                  {/* Main path */}
+                  <path d={pathD}
+                    fill="none" stroke={strokeColor} strokeWidth={2}
+                    markerEnd={`url(#${markerId})`}
+                    strokeDasharray={isNao ? "6 3" : "none"}
+                    opacity={0.85}
+                  />
+                  {/* Dot at source port */}
+                  <circle cx={x1} cy={y1} r={4} fill={strokeColor} style={{ pointerEvents: "none" }} />
+                  {/* Dot at destination port */}
+                  <circle cx={x2} cy={y2} r={4} fill={strokeColor} style={{ pointerEvents: "none" }} />
+                  {/* Label badge */}
                   {c.label && (
                     <>
-                      <rect x={mx - 14} y={my - 9} width={28} height={17} rx={4}
-                        fill="white" stroke={strokeColor} strokeWidth={1}/>
-                      <text x={mx} y={my + 4} textAnchor="middle"
-                        fontSize={9} fontWeight={700} fill={strokeColor} fontFamily="inherit">
+                      <rect x={mx - 16} y={my - 10} width={32} height={19} rx={5}
+                        fill="white" stroke={strokeColor} strokeWidth={1.5}/>
+                      <text x={mx} y={my + 5} textAnchor="middle"
+                        fontSize={10} fontWeight={700} fill={strokeColor} fontFamily="inherit">
                         {c.label}
                       </text>
                     </>
                   )}
-                  {/* Hit area to delete connection */}
-                  <path d={`M${x1},${y1} C${cx},${y1} ${cx},${y2} ${x2},${y2}`}
-                    fill="none" stroke="transparent" strokeWidth={12}
+                  {/* Wide hit area to delete */}
+                  <path d={pathD}
+                    fill="none" stroke="transparent" strokeWidth={14}
                     style={{ pointerEvents: "all", cursor: "pointer" }}
                     onClick={e => { e.stopPropagation(); deleteConexao(c.id); }}
                   />
@@ -1280,6 +1579,7 @@ export default function PageChatbotBuilder({ user }) {
           {nos.map(no => (
             <div
               key={no.id}
+              data-nodeid={no.id}
               onMouseDown={e => handleMouseDown(e, no.id)}
               style={{ position: "absolute", left: no.x, top: no.y, cursor: "grab" }}
             >
@@ -1304,13 +1604,19 @@ export default function PageChatbotBuilder({ user }) {
           {nos.length <= 1 && (
             <div style={{ position: "absolute", top: "50%", left: "50%",
               transform: "translate(-50%,-50%)", textAlign: "center",
-              color: L.t4, pointerEvents: "none" }}>
+              color: L.t4, pointerEvents: "none", maxWidth: 420, padding: 20 }}>
               <div style={{ fontSize: 36, marginBottom: 10 }}>🤖</div>
-              <div style={{ fontSize: 13, fontWeight: 500, color: L.t3 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: L.t3, marginBottom: 8 }}>
                 Adicione nós usando os botões na barra acima
               </div>
-              <div style={{ fontSize: 11, marginTop: 5 }}>
-                Arraste os nós para posicioná-los · Clique em → para conectar
+              <div style={{ fontSize: 11, color: L.t4, lineHeight: 1.7, textAlign: "left",
+                background: L.surface, borderRadius: 10, padding: "12px 16px", border: `1px solid ${L.line}` }}>
+                <b style={{ color: L.t3 }}>Fluxo típico:</b><br/>
+                <b>Início</b> → <b>Menu de opções</b> → <b>⚡ Gerar rotas</b><br/>
+                → Condição (Sim) → <b>Mensagem / Transferir / Encerrar</b><br/><br/>
+                <b style={{ color: L.t3 }}>Como conectar:</b><br/>
+                Clique em <b>→</b> no nó de origem, depois clique no nó de destino.<br/>
+                Clique em uma linha para removê-la.
               </div>
             </div>
           )}
@@ -1322,6 +1628,9 @@ export default function PageChatbotBuilder({ user }) {
             no={editingNo}
             onSave={saveNo}
             onClose={() => setEditingNo(null)}
+            onGenerateRoutes={generateRoutes}
+            setores={setores}
+            usuarios={vendedores}
           />
         )}
       </div>
@@ -1338,6 +1647,7 @@ export default function PageChatbotBuilder({ user }) {
           onClose={() => setTriggerModal(null)}
         />
       )}
+      {toastEl}
 
       {/* Status bar */}
       <div style={{ height: 28, borderTop: `1px solid ${L.lineSoft}`, background: L.surface,

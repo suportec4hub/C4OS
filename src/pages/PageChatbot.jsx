@@ -37,7 +37,7 @@ function TabConfig({ user }) {
   const [err, setErr] = useState("");
 
   useEffect(() => {
-    supabase.from("chatbot_config").select("*").eq("empresa_id", user.empresa_id).single()
+    supabase.from("chatbot_config").select("*").eq("empresa_id", user.empresa_id).maybeSingle()
       .then(({ data }) => {
         if (data) setCfg(data);
         else setCfg({
@@ -70,7 +70,7 @@ function TabConfig({ user }) {
       .from("chatbot_config")
       .upsert(
         { ...cfg, empresa_id: user.empresa_id },
-        { onConflict: "empresa_id", returning: "representation" }
+        { onConflict: "empresa_id" }
       )
       .select()
       .single();

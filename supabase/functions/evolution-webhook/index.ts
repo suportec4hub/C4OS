@@ -40,7 +40,7 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
-  const GLOBAL_URL = "https://evolution-api-xrrw.srv1583408.hstgr.cloud";
+  const GLOBAL_URL = "https://evolution-evolution-api.ng5obv.easypanel.host";
 
   try {
     const reqUrl       = new URL(req.url);
@@ -54,7 +54,7 @@ Deno.serve(async (req) => {
     // Saída rápida para eventos de alta frequência que não precisam consultar o banco
     const SKIP_EVENTS = [
       "chats.update", "CHATS_UPDATE", "CHATS_UPSERT", "CHATS_SET", "CHATS_DELETE",
-      "contacts.update", "CONTACTS_UPDATE", "CONTACTS_UPSERT", "CONTACTS_SET",
+      "contacts.update", "CONTACTS_UPDATE", "CONTACTS_SET",
       "message.ack", "READ_RECEIPT",
       "labels.edit", "LABELS_EDIT", "labels.association", "LABELS_ASSOCIATION",
     ];
@@ -102,11 +102,44 @@ Deno.serve(async (req) => {
       if (emp) empresa_id = emp.id;
     }
     if (!empresa_id) {
-      console.error("[webhook] empresa nao encontrada | token:", instanceToken.slice(0, 8), "| instanceName:", instanceName);
-      return new Response("Instance not found", { status: 404 });
+      // Retorna 200 para não disparar retry loop na Evolution API
+      return new Response("OK", { status: 200 });
     }
 
     const now = new Date().toISOString();
+
+    // CONTACTS_UPSERT — mapeia LID → telefone real para corrigir conversas @lid
+    // (movido para após resolução de empresa_id para evitar ReferenceError)
+    if (["contacts.upsert", "CONTACTS_UPSERT"].includes(event)) {
+      const contacts = Array.isArray(data) ? data : (data?.contacts ? data.contacts : [data]);
+      for (const contact of contacts) {
+        try {
+          const lidJid   = (contact?.id || contact?.jid || "") as string;
+          const phoneJid = (contact?.remoteJid || contact?.phone || contact?.number || "") as string;
+          if (!lidJid.includes("@lid")) continue;
+          const phoneNum = phoneJid.replace(/@s\.whatsapp\.net$/, "").replace(/:.*$/, "");
+          if (!phoneNum || phoneNum.length < 8 || phoneNum.includes("@")) continue;
+
+          const { data: existPhone } = await supabase.from("conversas")
+            .select("id").eq("empresa_id", empresa_id).eq("contato_telefone", phoneNum).maybeSingle();
+
+          if (!existPhone) {
+            await supabase.from("conversas")
+              .update({ contato_telefone: phoneNum })
+              .eq("empresa_id", empresa_id)
+              .eq("contato_telefone", lidJid);
+          } else {
+            const { data: lidConv } = await supabase.from("conversas")
+              .select("id").eq("empresa_id", empresa_id).eq("contato_telefone", lidJid).maybeSingle();
+            if (lidConv?.id && lidConv.id !== existPhone.id) {
+              await supabase.from("mensagens").update({ conversa_id: existPhone.id }).eq("conversa_id", lidConv.id);
+              await supabase.from("conversas").delete().eq("id", lidConv.id);
+            }
+          }
+        } catch (_) { /* nunca propaga */ }
+      }
+      return new Response("OK");
+    }
 
     // ── QR CODE ─────────────────────────────────────────────────────────────
     if (["QRCODE","QRCODE_UPDATED","qrcode.updated"].includes(event)) {
@@ -305,20 +338,37 @@ async function executarFluxo(
   let estado: FluxoEstado | null = (conv.fluxo_estado as FluxoEstado) || null;
   const convId = conv.id as string;
 
+  // Clear orphaned flow state when the active flow changed
+  if (estado && estado.fluxo_id !== fluxoId) {
+    await supabase.from("conversas").update({ fluxo_estado: null }).eq("id", convId);
+    estado = null;
+  }
+
   if (estado && estado.fluxo_id === fluxoId) {
     const noAtual = nos.find(n => n.id === estado!.no_atual_id);
     if (noAtual) {
-      if (noAtual.tipo === "aguardar" && noAtual.variavel) {
-        estado.variaveis[noAtual.variavel] = texto;
-      }
-      if (noAtual.tipo === "opcoes") {
-        const num = parseInt(texto.trim(), 10);
-        if (!isNaN(num) && num > 0) {
-          estado.variaveis["_opcao"] = String(num);
+      // Only interactive nodes legitimately pause waiting for user input
+      const isInteractive = ["opcoes", "aguardar", "respostas", "lista"].includes(noAtual.tipo);
+      if (!isInteractive) {
+        // Stuck estado at non-interactive node — clear and restart flow fresh
+        await supabase.from("conversas").update({ fluxo_estado: null }).eq("id", convId);
+        estado = null;
+        // Fall through to trigger restart below
+      } else {
+        // Process user's response based on node type
+        estado.variaveis["_ultima_msg"] = texto;
+        if (noAtual.tipo === "aguardar" && noAtual.variavel) {
+          estado.variaveis[noAtual.variavel] = texto;
         }
+        if (["opcoes", "respostas", "lista"].includes(noAtual.tipo)) {
+          const num = parseInt(texto.trim(), 10);
+          if (!isNaN(num) && num > 0) {
+            estado.variaveis["_opcao"] = String(num);
+          }
+        }
+        await executarNosSequencialmente(noAtual.id, nos, conexoes, estado, convId, empresa_id, senderPhone, senderName, isNew, supabase, sendBot);
+        return true;
       }
-      await executarNosSequencialmente(noAtual.id, nos, conexoes, estado, convId, empresa_id, senderPhone, senderName, isNew, supabase, sendBot);
-      return true;
     }
   }
 
@@ -346,7 +396,9 @@ async function executarFluxo(
 
   if (!deveDisparar) return false;
 
-  if (noInicioRaw.intervalo_reativacao && noInicioRaw.intervalo_reativacao > 0) {
+  // intervalo_reativacao only applies to non-mensagem_recebida triggers
+  // "mensagem_recebida" must always fire on every message
+  if (gatilhoTipo !== "mensagem_recebida" && noInicioRaw.intervalo_reativacao && noInicioRaw.intervalo_reativacao > 0) {
     const ultimaHora = conv.ultima_hora as string | null;
     if (ultimaHora && !estado) {
       const diffMinutes = (Date.now() - new Date(ultimaHora).getTime()) / 60000;
@@ -417,7 +469,6 @@ async function executarNosSequencialmente(
       if (proximoNo.mensagem?.trim()) {
         await sendBot(interpolarVariaveis(proximoNo.mensagem, estado.variaveis));
       }
-      await supabase.from("conversas").update({ fluxo_estado: estado }).eq("id", convId);
       await executarNosSequencialmente(proximoNo.id, nos, conexoes, estado, convId, empresa_id, senderPhone, senderName, isNew, supabase, sendBot, profundidade + 1);
       break;
     }
@@ -464,7 +515,15 @@ async function executarNosSequencialmente(
       });
 
       if (conexaoEscolhida) {
-        await executarNosSequencialmente(conexaoEscolhida.para, nos, conexoes, estado, convId, empresa_id, senderPhone, senderName, isNew, supabase, sendBot, profundidade + 1);
+        // Filter conexoes so the recursion follows only the chosen branch (Sim or Não).
+        // Without this filter, executarNosSequencialmente would take the first connection
+        // from the condition node regardless of which branch was evaluated, and the
+        // destination node itself would be skipped.
+        const conexoesFiltradas = [
+          ...conexoes.filter(c => c.de !== proximoNo.id),
+          conexaoEscolhida,
+        ];
+        await executarNosSequencialmente(proximoNo.id, nos, conexoesFiltradas, estado, convId, empresa_id, senderPhone, senderName, isNew, supabase, sendBot, profundidade + 1);
       } else {
         await supabase.from("conversas").update({ fluxo_estado: null }).eq("id", convId);
       }
@@ -480,21 +539,45 @@ async function executarNosSequencialmente(
     }
 
     case "transferir": {
+      const transferFields: Record<string, unknown> = {
+        bot_ativo: false,
+        status: "aguardando",
+        fluxo_estado: null,
+      };
+
+      const transferTipo = proximoNo.transferir_tipo || "fila";
+
+      if (transferTipo === "setor" && proximoNo.transferir_setor_id) {
+        transferFields.setor_id = proximoNo.transferir_setor_id;
+      } else if (transferTipo === "usuario" && proximoNo.transferir_usuario_id) {
+        transferFields.atendente_id = proximoNo.transferir_usuario_id;
+      }
+
+      // Update DB FIRST so any immediate webhook from the bot message below
+      // sees bot_ativo=false and skips the chatbot (prevents menu loop race condition)
+      await supabase.from("conversas").update(transferFields).eq("id", convId);
+
       if (proximoNo.mensagem?.trim()) {
         await sendBot(interpolarVariaveis(proximoNo.mensagem, estado.variaveis));
       } else {
         await sendBot("Aguarde um momento, vou transferir para um de nossos atendentes. 👋");
       }
-      await supabase.from("conversas").update({
-        bot_ativo: false,
-        status: "aguardando",
-        fluxo_estado: null,
-      }).eq("id", convId);
+
       await logWA(supabase, {
         empresa_id, conversa_id: convId, tipo: "fluxo", nivel: "info",
         origem: "evolution-webhook", evento: "transferir",
-        telefone: senderPhone, resumo: "Conversa transferida para atendente humano",
+        telefone: senderPhone,
+        resumo: `Conversa transferida → ${transferTipo === "setor" ? `setor:${proximoNo.transferir_setor_id}` : transferTipo === "usuario" ? `atendente:${proximoNo.transferir_usuario_id}` : "fila"}`,
+        payload: {
+          transferir_tipo: proximoNo.transferir_tipo,
+          transferir_setor_id: proximoNo.transferir_setor_id,
+          transferir_usuario_id: proximoNo.transferir_usuario_id,
+          fields_applied: Object.keys(transferFields),
+        },
       });
+
+      // Continue to the next node (e.g., Encerrar) so closing messages are sent
+      await executarNosSequencialmente(proximoNo.id, nos, conexoes, estado, convId, empresa_id, senderPhone, senderName, isNew, supabase, sendBot, profundidade + 1);
       break;
     }
 
@@ -517,16 +600,18 @@ async function executarNosSequencialmente(
           { url: proximoNo.media_url },
         );
       }
-      await supabase.from("conversas").update({ fluxo_estado: estado }).eq("id", convId);
       await executarNosSequencialmente(proximoNo.id, nos, conexoes, estado, convId, empresa_id, senderPhone, senderName, isNew, supabase, sendBot, profundidade + 1);
       break;
     }
 
     case "respostas": {
       const botoes = [proximoNo.botao_1, proximoNo.botao_2, proximoNo.botao_3].filter(Boolean);
-      if (proximoNo.mensagem?.trim()) {
-        const textoBtn = proximoNo.mensagem + (botoes.length > 0 ? "\n\n" + botoes.map((b, i) => `${i + 1}. ${b}`).join("\n") : "");
-        await sendBot(interpolarVariaveis(textoBtn, estado.variaveis));
+      const partes: string[] = [];
+      if (proximoNo.mensagem?.trim()) partes.push(proximoNo.mensagem.trim());
+      if (botoes.length > 0) partes.push(botoes.map((b, i) => `${i + 1}. ${b}`).join("\n"));
+      const textoFinal = partes.join("\n\n");
+      if (textoFinal) {
+        await sendBot(interpolarVariaveis(textoFinal, estado.variaveis));
       }
       await supabase.from("conversas").update({ fluxo_estado: estado }).eq("id", convId);
       break;
@@ -583,9 +668,17 @@ async function processMessages(
     if (remoteJid.endsWith("@broadcast")) continue;
 
     const isGroup   = remoteJid.endsWith("@g.us");
-    const senderPhone = isGroup
+    // Para @lid: tentar pegar o número real de campos alternativos do payload
+    const participantJid = (key.participant || info.Sender || m.participant || "") as string;
+    const resolvedPhone = participantJid
+      ? participantJid.replace(/@s\.whatsapp\.net$/, "").replace(/:.*$/, "")
+      : "";
+    const rawPhone = isGroup
       ? remoteJid
       : remoteJid.replace(/@s\.whatsapp\.net$/, "").replace(/:.*$/, "");
+    const senderPhone = (rawPhone.endsWith("@lid") && resolvedPhone && !resolvedPhone.includes("@"))
+      ? resolvedPhone
+      : rawPhone;
     if (!senderPhone) continue;
 
     const senderName = ((info.PushName || m.pushName || m.PushName || (isGroup ? "Grupo" : senderPhone)) as string);
@@ -636,16 +729,22 @@ async function processMessages(
     // ── Busca ou cria conversa ────────────────────────────────────────────────
     let isNew = false;
     let { data: conv } = await supabase.from("conversas")
-      .select("id, nao_lidas, contato_nome, status, bot_ativo, ultima_hora, fluxo_estado")
+      .select("id, nao_lidas, contato_nome, status, bot_ativo, ultima_hora, fluxo_estado, atendente_id")
       .eq("empresa_id", empresa_id).eq("contato_telefone", senderPhone).maybeSingle();
 
     if (!conv) {
       isNew = true;
+
+      // Busca o setor "Vendas" da empresa para atribuir automaticamente
+      const { data: setorVendas } = await supabase.from("setores")
+        .select("id").eq("empresa_id", empresa_id).ilike("nome", "%Vendas%").maybeSingle();
+
       const { data: nova } = await supabase.from("conversas").insert({
         empresa_id, contato_nome: senderName, contato_telefone: senderPhone,
         ultima_mensagem: texto, ultima_hora: hora,
-        nao_lidas: fromMe ? 0 : 1, status: "aberta", bot_ativo: false,
+        nao_lidas: fromMe ? 0 : 1, status: "aberta", bot_ativo: null,
         whatsapp_numero: senderPhone, fluxo_estado: null,
+        ...(setorVendas?.id ? { setor_id: setorVendas.id } : {}),
       }).select("id, nao_lidas, contato_nome, status, bot_ativo, ultima_hora, fluxo_estado").single();
       conv = nova;
 
@@ -664,20 +763,124 @@ async function processMessages(
           origem: "WhatsApp", status: "novo", score: 20, ultima_atividade: hora,
         });
       }
+
+      // ── Round-robin: distribui novo cliente para o próximo vendedor ──────────
+      // Ativo por padrão — só desliga se dist.ativo === false explicitamente
+      if (!fromMe && conv?.id) {
+        try {
+          const { data: dist } = await supabase
+            .from("distribuicao_atendimento")
+            .select("id, ativo, vendedores_ids, proximo_indice")
+            .eq("empresa_id", empresa_id)
+            .maybeSingle();
+
+          const roundRobinAtivo = !dist || dist.ativo !== false;
+
+          if (roundRobinAtivo) {
+            let sellersQuery = supabase
+              .from("usuarios")
+              .select("id, nome")
+              .eq("empresa_id", empresa_id)
+              .eq("ativo", true)
+              .ilike("cargo", "%SDR%");
+
+            if (dist?.vendedores_ids?.length) {
+              sellersQuery = sellersQuery.in("id", dist.vendedores_ids);
+            }
+
+            const { data: sellers } = await sellersQuery.order("created_at");
+
+            if (sellers?.length) {
+              const idx = (dist?.proximo_indice ?? 0) % sellers.length;
+              const assignedSeller = sellers[idx];
+
+              await supabase.from("conversas")
+                .update({ atendente_id: assignedSeller.id })
+                .eq("id", conv.id);
+
+              if (dist?.id) {
+                await supabase.from("distribuicao_atendimento")
+                  .update({ proximo_indice: (dist.proximo_indice ?? 0) + 1, updated_at: new Date().toISOString() })
+                  .eq("id", dist.id);
+              } else {
+                // Cria o registro de controle automaticamente na primeira vez
+                await supabase.from("distribuicao_atendimento")
+                  .insert({ empresa_id, ativo: true, vendedores_ids: [], proximo_indice: 1 });
+              }
+
+              console.log(`[round-robin] Conversa ${conv.id} → ${assignedSeller.nome} (idx ${idx})`);
+            }
+          }
+        } catch (rrErr) {
+          console.error("[round-robin] erro:", (rrErr as Error).message);
+        }
+      }
+
     } else if (!fromMe && !isHistory) {
-      await supabase.from("conversas").update({
+      const reopenFields: Record<string, unknown> = {
         ultima_mensagem: texto, ultima_hora: hora,
         nao_lidas: (conv.nao_lidas || 0) + 1,
         contato_nome: senderName || conv.contato_nome,
-      }).eq("id", conv.id);
+      };
+      // Reabre conversa resolvida automaticamente quando cliente envia nova mensagem
+      if (conv.status === "resolvida") {
+        reopenFields.status = "aberta";
+        reopenFields.atendente_id = null;
+        reopenFields.fluxo_estado = null;
+        reopenFields.bot_ativo = null;
+        // Sync in-memory conv so the chatbot block below sees the cleared state
+        conv = { ...conv, fluxo_estado: null, bot_ativo: null, status: "aberta" };
+        // Reaplica o setor Vendas ao reabrir
+        const { data: setorV } = await supabase.from("setores")
+          .select("id").eq("empresa_id", empresa_id).ilike("nome", "%Vendas%").maybeSingle();
+        if (setorV?.id) reopenFields.setor_id = setorV.id;
+      }
+      await supabase.from("conversas").update(reopenFields).eq("id", conv.id);
+
+      // Round-robin for existing conversations with no assigned atendente
+      // (covers: aberta sem atendente, or re-opened from resolvida)
+      const precisaAtribuir = conv.status === "resolvida" || !(conv as Record<string, unknown>).atendente_id;
+      if (precisaAtribuir) {
+        try {
+          const { data: dist } = await supabase
+            .from("distribuicao_atendimento")
+            .select("id, ativo, vendedores_ids, proximo_indice")
+            .eq("empresa_id", empresa_id)
+            .maybeSingle();
+
+          const roundRobinAtivo = !dist || dist.ativo !== false;
+          if (roundRobinAtivo) {
+            let rrQuery = supabase
+              .from("usuarios")
+              .select("id, nome")
+              .eq("empresa_id", empresa_id)
+              .eq("ativo", true)
+              .ilike("cargo", "%SDR%");
+            if (dist?.vendedores_ids?.length) {
+              rrQuery = rrQuery.in("id", dist.vendedores_ids);
+            }
+            const { data: sellers } = await rrQuery.order("created_at");
+            if (sellers?.length) {
+              const idx = (dist?.proximo_indice ?? 0) % sellers.length;
+              const assignedSeller = sellers[idx];
+              await supabase.from("conversas")
+                .update({ atendente_id: assignedSeller.id })
+                .eq("id", conv.id);
+              if (dist?.id) {
+                await supabase.from("distribuicao_atendimento")
+                  .update({ proximo_indice: (dist.proximo_indice ?? 0) + 1, updated_at: new Date().toISOString() })
+                  .eq("id", dist.id);
+              }
+              console.log(`[round-robin] Re-open: conversa ${conv.id} → ${assignedSeller.nome}`);
+            }
+          }
+        } catch (rrErr) {
+          console.error("[round-robin] re-open erro:", (rrErr as Error).message);
+        }
+      }
     }
 
     if (!conv?.id) continue;
-
-    // ── Dedup ────────────────────────────────────────────────────────────────
-    const { data: existing } = await supabase.from("mensagens")
-      .select("id").eq("conversa_id", conv.id).eq("hora", hora).eq("texto", texto).maybeSingle();
-    if (existing) { console.log("[webhook] dedup: msg já existe"); continue; }
 
     // ── Re-hospedar mídia recebida no Supabase Storage ───────────────────────
     let storedMediaUrl = mediaUrl;
@@ -699,12 +902,36 @@ async function processMessages(
       } catch (e) { console.log("[webhook] media re-host err:", (e as Error).message); }
     }
 
-    await supabase.from("mensagens").insert({
-      conversa_id: conv.id, empresa_id, de: fromMe ? "me" : "contato",
-      texto, tipo: tipoMsg, media_url: storedMediaUrl, nome_arquivo: nomeArquivo,
-      wamid: wamid || null, hora, status: fromMe ? "enviado" : "recebido",
-      remetente: fromMe ? "me" : "contato",
-    });
+    // ── Insert message — for wamid messages the unique index (mensagens_wamid_unique)
+    //    acts as a dedup mutex: when Evolution API delivers the same webhook multiple
+    //    times simultaneously, only the first insert succeeds; the rest get error 23505
+    //    and skip all further processing (including chatbot) — preventing duplicate menus.
+    if (wamid) {
+      const { error: insertErr } = await supabase.from("mensagens").insert({
+        conversa_id: conv.id, empresa_id, de: fromMe ? "me" : "contato",
+        texto, tipo: tipoMsg, media_url: storedMediaUrl, nome_arquivo: nomeArquivo,
+        wamid, hora, status: fromMe ? "enviado" : "recebido",
+        remetente: fromMe ? "me" : "contato",
+      });
+      if (insertErr) {
+        if (insertErr.code === "23505") {
+          console.log("[webhook] dedup: wamid concurrent duplicate, skipping");
+          continue;
+        }
+        console.error("[webhook] insert error:", insertErr.message);
+      }
+    } else {
+      // No wamid: select-based dedup then insert
+      const { data: existing } = await supabase.from("mensagens")
+        .select("id").eq("conversa_id", conv.id).eq("hora", hora).eq("texto", texto).maybeSingle();
+      if (existing) { console.log("[webhook] dedup: msg já existe"); continue; }
+      await supabase.from("mensagens").insert({
+        conversa_id: conv.id, empresa_id, de: fromMe ? "me" : "contato",
+        texto, tipo: tipoMsg, media_url: storedMediaUrl, nome_arquivo: nomeArquivo,
+        wamid: null, hora, status: fromMe ? "enviado" : "recebido",
+        remetente: fromMe ? "me" : "contato",
+      });
+    }
 
     // ── Log mensagem recebida do contato ─────────────────────────────────────
     if (!fromMe && !isHistory) {
@@ -718,13 +945,16 @@ async function processMessages(
     }
 
     // ── Chatbot ──────────────────────────────────────────────────────────────
-    if (!fromMe && !isHistory && conv.status !== "em_atendimento") {
+    if (!fromMe && !isHistory && conv.status !== "em_atendimento" && conv.bot_ativo !== false) {
       try {
         const { data: cfg } = await supabase.from("chatbot_config").select("*").eq("empresa_id", empresa_id).maybeSingle();
         if (!cfg?.ativo) continue;
 
         if (isGroup && !cfg.responder_grupos) continue;
-        if (cfg.nao_responder_aberta && conv.status === "aberta") continue;
+        // nao_responder_aberta only silences the bot for conversations with no active flow —
+        // an ongoing flow must always continue even if status is "aberta"
+        const hasActiveFlow = !!(conv.fluxo_estado as { fluxo_id?: string } | null)?.fluxo_id;
+        if (cfg.nao_responder_aberta && conv.status === "aberta" && !hasActiveFlow) continue;
 
         const { data: empData } = await supabase.from("empresas")
           .select("evolution_instance_id, evolution_instance_token, evolution_api_url")
@@ -740,13 +970,15 @@ async function processMessages(
           let apiErr = "";
 
           if (["imagem","video","audio","documento"].includes(tipo)) {
+            // Evolution API v2 — /message/sendMedia/{instance}
             const mediaType = tipo === "imagem" ? "image" : tipo === "video" ? "video" : tipo === "audio" ? "audio" : "document";
-            const r = await fetch(`${evoUrl}/send/media`, {
+            const r = await fetch(`${evoUrl}/message/sendMedia/${instId}`, {
               method: "POST",
               headers: { "Content-Type": "application/json", "apikey": instToken },
               body: JSON.stringify({
-                instanceName: instId, id: instId, number: senderPhone,
-                mediatype: mediaType, media: extra?.url as string || "",
+                number: senderPhone,
+                mediatype: mediaType,
+                media: extra?.url as string || "",
                 caption: msgText || "",
                 ...(extra?.fileName ? { fileName: extra.fileName } : {}),
               }),
@@ -754,13 +986,31 @@ async function processMessages(
             apiOk = r.ok;
             if (!r.ok) apiErr = await r.text().catch(() => String(r.status));
           } else {
-            const r = await fetch(`${evoUrl}/send/text`, {
+            // Evolution API v2 — /message/sendText/{instance} (formato simples)
+            const r = await fetch(`${evoUrl}/message/sendText/${instId}`, {
               method: "POST",
               headers: { "Content-Type": "application/json", "apikey": instToken },
-              body: JSON.stringify({ instanceName: instId, id: instId, number: senderPhone, text: msgText }),
+              body: JSON.stringify({ number: senderPhone, text: msgText }),
             });
             apiOk = r.ok;
             if (!r.ok) apiErr = await r.text().catch(() => String(r.status));
+
+            // Fallback: formato v2 alternativo com options/textMessage
+            if (!apiOk) {
+              try {
+                const r2 = await fetch(`${evoUrl}/message/sendText/${instId}`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json", "apikey": instToken },
+                  body: JSON.stringify({
+                    number: senderPhone,
+                    options: { delay: 1200, presence: "composing", linkPreview: false },
+                    textMessage: { text: msgText },
+                  }),
+                });
+                if (r2.ok) { apiOk = true; apiErr = ""; }
+                else apiErr = await r2.text().catch(() => String(r2.status));
+              } catch (_) {}
+            }
           }
 
           if (!apiOk) {
@@ -813,16 +1063,21 @@ async function processMessages(
           continue;
         }
 
-        const { data: regras } = await supabase.from("chatbot_regras")
-          .select("*").eq("empresa_id", empresa_id).eq("ativo", true).order("ordem");
+        // Skip chatbot_regras when a visual flow is active (fluxo_estado set) —
+        // the flow owns the conversation state and rules could match numeric inputs
+        const temFluxoAtivo = !!(conv.fluxo_estado as { fluxo_id?: string } | null)?.fluxo_id;
         let gatilhoAtivado = false;
-        if (regras?.length) {
-          const tl2 = texto.toLowerCase();
-          for (const r of regras) {
-            if (tl2.includes(r.gatilho.toLowerCase())) {
-              await sendBot(r.resposta);
-              gatilhoAtivado = true;
-              break;
+        if (!temFluxoAtivo) {
+          const { data: regras } = await supabase.from("chatbot_regras")
+            .select("*").eq("empresa_id", empresa_id).eq("ativo", true).order("ordem");
+          if (regras?.length) {
+            const tl2 = texto.toLowerCase();
+            for (const r of regras) {
+              if (tl2.includes(r.gatilho.toLowerCase())) {
+                await sendBot(r.resposta);
+                gatilhoAtivado = true;
+                break;
+              }
             }
           }
         }

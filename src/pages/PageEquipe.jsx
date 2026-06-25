@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { L } from "../constants/theme";
 import { useTable, criarUsuario } from "../hooks/useData";
 import { supabase } from "../lib/supabase";
@@ -78,6 +78,7 @@ export default function PageEquipe({ user }) {
   const [confirmDelete, setConfirmDelete] = useState(null); // usuário a excluir
   const [deleting,      setDeleting]      = useState(false);
 
+
   const filtered = usuarios.filter(m => {
     if (filtro === "Todos")   return true;
     if (filtro === "Admin")   return m.role === "client_admin" || m.role === "c4hub_admin";
@@ -145,10 +146,12 @@ export default function PageEquipe({ user }) {
     if (!confirmDelete) return;
     setDeleting(true);
     const { error } = await supabase.functions.invoke("excluir-usuario", { body: { id: confirmDelete.id } });
-    if (!error) {
+    if (error) {
+      alert("Erro ao excluir usuário: " + (error.message || "tente novamente."));
+    } else {
       refetch();
+      setConfirmDelete(null);
     }
-    setConfirmDelete(null);
     setDeleting(false);
   };
 

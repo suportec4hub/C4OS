@@ -42,8 +42,23 @@ const btnStyle = (bg = L.surface, color = L.t2, extra = {}) => ({
 
 // ─── Notification helpers ────────────────────────────────────────────────────
 let _waAudio = null;
+let _audioUnlocked = false;
+
+// Call once after any user gesture to unlock browser autoplay policy
+function unlockAudio() {
+  if (_audioUnlocked) return;
+  _audioUnlocked = true;
+  try {
+    if (!_waAudio) {
+      _waAudio = new Audio("/wa-notify.wav");
+      _waAudio.volume = 0.7;
+    }
+    const p = _waAudio.play();
+    if (p) p.then(() => { _waAudio.pause(); _waAudio.currentTime = 0; }).catch(() => {});
+  } catch (_) {}
+}
+
 function playNotificationSound() {
-  // Tenta tocar o arquivo de som real primeiro
   try {
     if (!_waAudio) {
       _waAudio = new Audio("/wa-notify.wav");
@@ -510,12 +525,49 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
   const [convEtiquetas,setConvEtiquetas]= useState([]);
 
   // ── script / fluxo vendedor ───────────────────────────────────────────────
-  const [scriptFluxo,  setScriptFluxo]  = useState(null);  // fluxo ativo
-  const [scriptPassos, setScriptPassos] = useState([]);    // passos ordenados
-  const [scriptSending,setScriptSending]= useState(null);  // id do passo sendo enviado
+  const [scriptFluxo,  setScriptFluxo]  = useState(null);
+  const [scriptPassos, setScriptPassos] = useState([]);
+  const [scriptSending,setScriptSending]= useState(null);
   const [logsAtend,    setLogsAtend]    = useState([]);
   const [agendadas,    setAgendadas]    = useState([]);
   const [showRight,    setShowRight]    = useState(true);
+
+  // ── distribuição de atendentes (round-robin) ──────────────────────────────
+  const [distModal,    setDistModal]    = useState(false);
+  const [distCfg,      setDistCfg]      = useState(null);
+  const [distVendedores, setDistVendedores] = useState([]);
+  const [distSaving,   setDistSaving]   = useState(false);
+  const [distMsg,      setDistMsg]      = useState("");
+
+  useEffect(() => {
+    if (!user?.empresa_id) return;
+    supabase.from("distribuicao_atendimento").select("*").eq("empresa_id", user.empresa_id).maybeSingle()
+      .then(({ data }) => setDistCfg(data));
+    supabase.from("usuarios").select("id, nome, foto_url, ativo, cargo").eq("empresa_id", user.empresa_id).eq("ativo", true).order("nome")
+      .then(({ data }) => setDistVendedores(data || []));
+  }, [user?.empresa_id]);
+
+  const saveDistCfg = async (patch) => {
+    setDistSaving(true); setDistMsg("");
+    const next = { ...(distCfg || {}), ...patch, empresa_id: user.empresa_id };
+    if (distCfg?.id) {
+      await supabase.from("distribuicao_atendimento").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", distCfg.id);
+    } else {
+      const { data } = await supabase.from("distribuicao_atendimento")
+        .insert({ empresa_id: user.empresa_id, ativo: true, vendedores_ids: [], proximo_indice: 0, ...patch })
+        .select().single();
+      if (data) next.id = data.id;
+    }
+    setDistCfg(next);
+    setDistMsg("Salvo!"); setTimeout(() => setDistMsg(""), 2000);
+    setDistSaving(false);
+  };
+
+  const toggleDistVendedor = (id) => {
+    const ids = distCfg?.vendedores_ids || [];
+    const next = ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id];
+    setDistCfg(p => ({ ...p, vendedores_ids: next }));
+  };
 
   // ── modals / panels ───────────────────────────────────────────────────────
   const [novaModal,    setNovaModal]    = useState(false);
@@ -554,10 +606,15 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
 
   // ── notifications ─────────────────────────────────────────────────────────
   const [toast, setToast]         = useState(null); // { msg, tipo }
+  const [notifBannerDismissed, setNotifBannerDismissed] = useState(false);
   // Lê permissão sincronamente para evitar flash do banner
   const [notifPerm, setNotifPerm] = useState(
     typeof Notification !== "undefined" && Notification.permission === "granted"
   );
+  // Popups de nova conversa / atribuição automática
+  const [convPopups, setConvPopups] = useState([]); // [{ id, tipo, conv }]
+  const knownConvIdsRef  = useRef(null); // Set<string> — null = ainda não inicializado
+  const prevConvsMapRef  = useRef({});   // convId → dados anteriores da conversa
 
   // ── refs ──────────────────────────────────────────────────────────────────
   const bottomRef      = useRef(null);
@@ -606,11 +663,26 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
       .then(({ data }) => setQuickReplies(data || []));
   }, [user?.empresa_id]);
 
-  // ── permissão de notificação — não auto-solicita (browser bloqueia sem gesto)
-  // O banner com botão "Ativar" é exibido quando não está granted
+  // ── permissão de notificação + desbloqueio de áudio no primeiro gesto ────
   useEffect(() => {
-    if (typeof Notification === "undefined") return;
-    setNotifPerm(Notification.permission === "granted");
+    if (typeof Notification !== "undefined") {
+      setNotifPerm(Notification.permission === "granted");
+    }
+    // Desbloqueia autoplay de áudio na primeira interação do usuário
+    const onFirstGesture = () => {
+      unlockAudio();
+      document.removeEventListener("click", onFirstGesture, true);
+      document.removeEventListener("keydown", onFirstGesture, true);
+      document.removeEventListener("touchstart", onFirstGesture, true);
+    };
+    document.addEventListener("click", onFirstGesture, true);
+    document.addEventListener("keydown", onFirstGesture, true);
+    document.addEventListener("touchstart", onFirstGesture, true);
+    return () => {
+      document.removeEventListener("click", onFirstGesture, true);
+      document.removeEventListener("keydown", onFirstGesture, true);
+      document.removeEventListener("touchstart", onFirstGesture, true);
+    };
   }, []);
 
   // ── badge no título da aba ────────────────────────────────────────────────
@@ -650,7 +722,7 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
   // ── subscription a notificações pessoais (transferências / atribuições) ───
   useEffect(() => {
     if (!user?.id) return;
-    const ch = supabase.channel(`notif:${user.id}:${Date.now()}`)
+    const ch = supabase.channel(`notif:${user.id}`)
       .on("postgres_changes", {
         event: "INSERT", schema: "public", table: "notificacoes",
         filter: `usuario_id=eq.${user.id}`,
@@ -689,7 +761,8 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
   useEffect(() => {
     if (!user?.empresa_id) return;
     supabase.from("conversa_etiquetas")
-      .select("conversa_id, etiqueta_id")
+      .select("conversa_id, etiqueta_id, conversas!inner(empresa_id)")
+      .eq("conversas.empresa_id", user.empresa_id)
       .then(({ data }) => {
         if (!data) return;
         const map = {};
@@ -744,20 +817,61 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
       if (updated) setActiveConv(p => ({ ...p, ...updated }));
     }
     if (!silent) setLoading(false);
+
+    // Inicializa mapa de IDs conhecidos na primeira carga não-silent
+    if (knownConvIdsRef.current === null && !silent) {
+      knownConvIdsRef.current = new Set(enriched.map(c => c.id));
+    }
+    // Mantém mapa do estado anterior para detectar mudanças de atendente
+    enriched.forEach(c => { prevConvsMapRef.current[c.id] = c; });
   }, [user?.empresa_id]);
 
   useEffect(() => { loadConversas(); }, [loadConversas, statusTab]);
 
+  // ── popup de nova conversa / atribuição ──────────────────────────────────
+  const showConvPopup = useCallback(({ tipo, conv }) => {
+    const pid = `${tipo}-${conv.id}-${Date.now()}`;
+    setConvPopups(prev => [{ id: pid, tipo, conv }, ...prev].slice(0, 5));
+    playNotificationSound();
+    if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+      const title = tipo === "nova"
+        ? `Nova conversa: ${conv.contato_nome || conv.contato_telefone || "Desconhecido"}`
+        : `Você foi atribuído: ${conv.contato_nome || conv.contato_telefone || "Desconhecido"}`;
+      showBrowserNotification(title, conv.ultima_mensagem || "");
+    }
+    setTimeout(() => setConvPopups(prev => prev.filter(p => p.id !== pid)), 9000);
+  }, []);
+
   // ── realtime conversas ────────────────────────────────────────────────────
   useEffect(() => {
     if (!user?.empresa_id) return;
-    const ch = supabase.channel(`conv:${user.empresa_id}:${Date.now()}`)
-      .on("postgres_changes", { event: "*", schema: "public", table: "conversas",
+    const ch = supabase.channel(`conv:${user.empresa_id}`)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "conversas",
+        filter: `empresa_id=eq.${user.empresa_id}` }, (payload) => {
+        loadConversas(true);
+        const conv = payload.new;
+        if (conv?.id && knownConvIdsRef.current && !knownConvIdsRef.current.has(conv.id)) {
+          knownConvIdsRef.current.add(conv.id);
+          showConvPopup({ tipo: "nova", conv });
+        }
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "conversas",
+        filter: `empresa_id=eq.${user.empresa_id}` }, (payload) => {
+        loadConversas(true);
+        const conv = payload.new;
+        if (!conv?.id || !user?.id) return;
+        const prev = prevConvsMapRef.current[conv.id];
+        // Notifica apenas quando a conversa foi recém-atribuída ao usuário logado
+        if (conv.atendente_id === user.id && prev?.atendente_id !== user.id) {
+          showConvPopup({ tipo: "atribuicao", conv });
+        }
+      })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "conversas",
         filter: `empresa_id=eq.${user.empresa_id}` }, () => loadConversas(true))
       .subscribe();
     const timer = setInterval(() => loadConversas(true), 8000);
     return () => { supabase.removeChannel(ch); clearInterval(timer); };
-  }, [user?.empresa_id, loadConversas]);
+  }, [user?.empresa_id, user?.id, loadConversas, showConvPopup]);
 
   // ── load messages ─────────────────────────────────────────────────────────
   const loadMensagens = useCallback(async (convId) => {
@@ -778,7 +892,8 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
     if (!activeConv?.id) return;
     loadMensagens(activeConv.id);
     const convId = activeConv.id;
-    const ch = supabase.channel(`msgs:${convId}:${Date.now()}`)
+    // Stable channel name (no Date.now()) — cleanup removes it before new one is created
+    const ch = supabase.channel(`msgs:${convId}`)
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "mensagens",
         filter: `conversa_id=eq.${convId}` }, (payload) => {
         setMensagens(p => {
@@ -880,7 +995,7 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
         .limit(20)
         .then(({ data }) => setAgendadas(data || []));
 
-    const ch = supabase.channel(`agend:${convId}:${Date.now()}`)
+    const ch = supabase.channel(`agend:${convId}`)
       .on("postgres_changes", {
         event: "*", schema: "public", table: "mensagens_agendadas",
         filter: `conversa_id=eq.${convId}`,
@@ -937,9 +1052,10 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
 
   const updateConvStatus = async (status) => {
     if (!activeConv) return;
-    await supabase.from("conversas").update({ status }).eq("id", activeConv.id);
-    setActiveConv(p => ({ ...p, status }));
-    setConversas(p => p.map(c => c.id === activeConv.id ? { ...c, status } : c));
+    const extra = status === "resolvida" ? { atendente_id: null, fluxo_estado: null } : {};
+    await supabase.from("conversas").update({ status, ...extra }).eq("id", activeConv.id);
+    setActiveConv(p => ({ ...p, status, ...extra }));
+    setConversas(p => p.map(c => c.id === activeConv.id ? { ...c, status, ...extra } : c));
     logAtendimento(user.empresa_id, activeConv.id, user.id,
       status === "resolvida" ? "resolveu" : status === "em_atendimento" ? "reabriu" : "status_alterado",
       `Status: ${status}`);
@@ -1500,6 +1616,8 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
                     {syncing ? "⟳" : "🔄"}
                   </button>
                   <button onClick={() => loadConversas()} title="Atualizar" style={btnStyle()}>⟳</button>
+                  <button onClick={() => setDistModal(true)} title="Distribuição de atendentes"
+                    style={btnStyle(distCfg?.ativo === false ? L.surface : L.tealBg, distCfg?.ativo === false ? L.t3 : L.teal)}>⇄</button>
                   <button onClick={() => setNovaModal(true)} style={btnStyle(L.accent, "white")}>+ Nova</button>
                 </Row>
               </Row>
@@ -2543,8 +2661,117 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
         </div>
       )}
 
+      {/* ── Popups de nova conversa / atribuição automática ── */}
+      {convPopups.length > 0 && (
+        <div style={{
+          position: "fixed", top: isMobile ? 12 : 20, right: isMobile ? 8 : 20,
+          zIndex: 10000, display: "flex", flexDirection: "column", gap: 10,
+          maxWidth: isMobile ? "calc(100vw - 16px)" : 360,
+          width: isMobile ? "calc(100vw - 16px)" : 360,
+        }}>
+          {convPopups.map((p) => {
+            const isNova = p.tipo === "nova";
+            const nome = p.conv.contato_nome || p.conv.contato_telefone || "Desconhecido";
+            const telefone = p.conv.contato_telefone || "";
+            const preview = p.conv.ultima_mensagem || (isNova ? "Nova conversa iniciada" : "");
+            const accentColor = isNova ? L.green : L.blue;
+            const bgColor = isNova ? L.greenBg : L.blueBg;
+            return (
+              <div key={p.id} style={{
+                background: L.white, borderRadius: 14,
+                boxShadow: "0 8px 32px rgba(0,0,0,.18), 0 2px 8px rgba(0,0,0,.10)",
+                border: `1px solid ${L.line}`,
+                borderLeft: `4px solid ${accentColor}`,
+                overflow: "hidden", animation: "slideInRight .25s ease",
+              }}>
+                {/* Header do popup */}
+                <div style={{
+                  background: bgColor, padding: "10px 14px 8px",
+                  display: "flex", alignItems: "center", gap: 10,
+                }}>
+                  <span style={{ fontSize: 18, flexShrink: 0 }}>
+                    {isNova ? "💬" : "👤"}
+                  </span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: accentColor, lineHeight: 1 }}>
+                      {isNova ? "Nova conversa" : "Conversa atribuída a você"}
+                    </div>
+                    <div style={{ fontSize: 11, color: L.t3, marginTop: 1 }}>
+                      {isNova ? "Chegou no WhatsApp" : "Distribuição automática"}
+                    </div>
+                  </div>
+                  <button onClick={() => setConvPopups(prev => prev.filter(x => x.id !== p.id))}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: L.t4, fontSize: 17, lineHeight: 1, padding: 2, flexShrink: 0 }}>
+                    ×
+                  </button>
+                </div>
+
+                {/* Corpo do popup */}
+                <div style={{ padding: "10px 14px 12px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                    {/* Avatar */}
+                    <div style={{
+                      width: 38, height: 38, borderRadius: "50%", flexShrink: 0,
+                      background: accentColor, display: "flex", alignItems: "center",
+                      justifyContent: "center", color: "white", fontSize: 15, fontWeight: 700,
+                    }}>
+                      {nome.charAt(0).toUpperCase()}
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 13.5, fontWeight: 700, color: L.t1, lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {nome}
+                      </div>
+                      {telefone && (
+                        <div style={{ fontSize: 11, color: L.t3, marginTop: 2 }}>
+                          {telefone.replace(/(\d{2})(\d{2})(\d{4,5})(\d{4})/, "+$1 ($2) $3-$4")}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {preview && (
+                    <div style={{
+                      fontSize: 12, color: L.t2, lineHeight: 1.45,
+                      background: L.surface, borderRadius: 8, padding: "7px 10px",
+                      overflow: "hidden", display: "-webkit-box",
+                      WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
+                      marginBottom: 10,
+                    }}>
+                      {preview}
+                    </div>
+                  )}
+
+                  <button
+                    onClick={() => {
+                      const conv = p.conv;
+                      setActiveConv(conv);
+                      setConvPopups(prev => prev.filter(x => x.id !== p.id));
+                    }}
+                    style={{
+                      width: "100%", padding: "8px 0",
+                      background: accentColor, color: "white",
+                      border: "none", borderRadius: 8, cursor: "pointer",
+                      fontSize: 12.5, fontWeight: 600, fontFamily: "inherit",
+                    }}>
+                    Ver conversa →
+                  </button>
+                </div>
+
+                {/* Barra de progresso de auto-dismiss */}
+                <div style={{ height: 3, background: L.line }}>
+                  <div style={{
+                    height: "100%", background: accentColor,
+                    animation: "shrinkBar 9s linear forwards",
+                  }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* Aviso se notificações do browser não foram permitidas */}
-      {!notifPerm && typeof Notification !== "undefined" && (
+      {!notifPerm && !notifBannerDismissed && typeof Notification !== "undefined" && (
         <div style={{
           position: "fixed", bottom: 24, left: 24, zIndex: 9998,
           background: L.white, border: `1px solid ${L.line}`,
@@ -2563,25 +2790,131 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
             </div>
             <div style={{ color: L.t3, lineHeight: 1.4 }}>
               {Notification.permission === "denied"
-                ? "Desbloqueie nas configurações do navegador."
-                : "Receba alertas de novas mensagens no WhatsApp."}
+                ? "Desbloqueie nas configurações do navegador e recarregue."
+                : "Receba alertas sonoros e pop-ups de novas mensagens."}
             </div>
           </div>
           {Notification.permission !== "denied" && (
-            <button onClick={() =>
+            <button onClick={() => {
+              unlockAudio();
               Notification.requestPermission().then(p => {
                 setNotifPerm(p === "granted");
-                if (p === "granted") playNotificationSound();
-              })
-            }
+                if (p === "granted") setTimeout(playNotificationSound, 300);
+                if (p === "denied") setNotifBannerDismissed(true);
+              });
+            }}
               style={{ ...btnStyle(L.accent, "white"), fontSize: 10.5, padding: "5px 12px", flexShrink: 0 }}>
               Ativar
             </button>
           )}
-          {Notification.permission === "denied" && (
-            <button onClick={() => setNotifPerm(true) /* esconde banner */}
-              style={{ background: "none", border: "none", cursor: "pointer", color: L.t4, fontSize: 16, padding: 2 }}>×</button>
-          )}
+          <button onClick={() => setNotifBannerDismissed(true)}
+            style={{ background: "none", border: "none", cursor: "pointer", color: L.t4, fontSize: 16, padding: 2, flexShrink: 0 }}>×</button>
+        </div>
+      )}
+
+      {/* ── Modal: Distribuição de Atendentes (Round-Robin) ── */}
+      {distModal && (
+        <div style={{ position:"fixed",inset:0,zIndex:9900,background:"rgba(0,0,0,.45)",
+          display:"flex",alignItems:"center",justifyContent:"center",padding:16 }}
+          onClick={() => setDistModal(false)}>
+          <div style={{ background:L.white,borderRadius:16,width:"100%",maxWidth:460,
+            boxShadow:"0 8px 40px rgba(0,0,0,.22)",overflow:"hidden" }}
+            onClick={e => e.stopPropagation()}>
+
+            {/* Header */}
+            <div style={{ padding:"18px 20px",borderBottom:`1px solid ${L.lineSoft}`,
+              display:"flex",alignItems:"center",justifyContent:"space-between" }}>
+              <div style={{ display:"flex",alignItems:"center",gap:10 }}>
+                <span style={{ fontSize:22 }}>⇄</span>
+                <div>
+                  <div style={{ fontSize:14,fontWeight:700,color:L.t1 }}>Distribuição de Atendentes</div>
+                  <div style={{ fontSize:11,color:L.t3 }}>
+                    {distCfg?.ativo === false ? "Desativado — atribuição manual" : "Ativo — novos clientes distribuídos automaticamente"}
+                  </div>
+                </div>
+              </div>
+              <button onClick={() => setDistModal(false)}
+                style={{ background:"none",border:"none",cursor:"pointer",color:L.t4,fontSize:20,lineHeight:1,padding:4 }}>×</button>
+            </div>
+
+            <div style={{ padding:"18px 20px" }}>
+              {/* Toggle */}
+              <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18 }}>
+                <div>
+                  <div style={{ fontSize:13,fontWeight:600,color:L.t1 }}>Round-robin automático</div>
+                  <div style={{ fontSize:11,color:L.t3,marginTop:2 }}>Cada novo cliente vai para o próximo atendente na fila</div>
+                </div>
+                <button onClick={() => saveDistCfg({ ativo: distCfg?.ativo === false ? true : false })}
+                  disabled={distSaving}
+                  style={{ display:"flex",alignItems:"center",gap:8,
+                    background: distCfg?.ativo === false ? L.surface : L.tealBg,
+                    border:`1px solid ${distCfg?.ativo === false ? L.line : L.tealA2}`,
+                    borderRadius:20,padding:"7px 14px",cursor:"pointer",fontSize:12,
+                    fontWeight:600,color:distCfg?.ativo === false ? L.t3 : L.teal,fontFamily:"inherit" }}>
+                  <span style={{ width:14,height:14,borderRadius:"50%",
+                    background: distCfg?.ativo === false ? L.t4 : L.teal,
+                    display:"inline-block",transition:"background .15s" }}/>
+                  {distCfg?.ativo === false ? "Desativado" : "Ativado"}
+                </button>
+              </div>
+
+              {/* Seleção de atendentes */}
+              {distCfg?.ativo !== false && (
+                <>
+                  <div style={{ fontSize:11,color:L.t3,fontWeight:600,letterSpacing:"1px",
+                    textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace",marginBottom:10 }}>
+                    Atendentes na fila — {!distCfg?.vendedores_ids?.length ? "todos ativos" : `${distCfg.vendedores_ids.length} selecionado(s)`}
+                  </div>
+                  <div style={{ display:"flex",flexWrap:"wrap",gap:8,marginBottom:16 }}>
+                    {distVendedores.map(v => {
+                      const ids = distCfg?.vendedores_ids || [];
+                      const sel = !ids.length || ids.includes(v.id);
+                      const eff = ids.length ? ids : distVendedores.map(x => x.id);
+                      const isNext = eff[(distCfg?.proximo_indice || 0) % eff.length] === v.id;
+                      return (
+                        <button key={v.id} onClick={() => toggleDistVendedor(v.id)}
+                          style={{ display:"flex",alignItems:"center",gap:7,padding:"6px 12px",
+                            borderRadius:20,border:`1.5px solid ${sel?L.tealA2:L.line}`,
+                            background:sel?L.tealBg:L.surface,cursor:"pointer",
+                            color:sel?L.teal:L.t3,fontSize:12,fontWeight:sel?600:400,
+                            fontFamily:"inherit",transition:"all .12s" }}>
+                          <span style={{ width:22,height:22,borderRadius:"50%",background:sel?L.tealA2:L.surface,
+                            border:`1px solid ${sel?L.tealA2:L.line}`,display:"flex",alignItems:"center",
+                            justifyContent:"center",fontSize:11,fontWeight:700,color:sel?L.teal:L.t4,flexShrink:0 }}>
+                            {(v.nome || "?")[0]}
+                          </span>
+                          {(v.nome || "Atendente").split(" ")[0]}
+                          {isNext && sel && (
+                            <span style={{ background:L.teal,color:"white",borderRadius:8,
+                              padding:"1px 6px",fontSize:9,fontWeight:700 }}>próximo</span>
+                          )}
+                        </button>
+                      );
+                    })}
+                    {distVendedores.length === 0 && (
+                      <span style={{ color:L.t4,fontSize:12 }}>Nenhum atendente ativo encontrado.</span>
+                    )}
+                  </div>
+
+                  {/* Ações */}
+                  <div style={{ display:"flex",alignItems:"center",gap:10,flexWrap:"wrap" }}>
+                    <button onClick={() => saveDistCfg({ vendedores_ids: distCfg?.vendedores_ids || [], proximo_indice: 0 })}
+                      disabled={distSaving}
+                      style={{ ...btnStyle(), fontSize:12 }}>
+                      ⟳ Reiniciar fila
+                    </button>
+                    <button onClick={() => saveDistCfg({ vendedores_ids: distCfg?.vendedores_ids || [] })}
+                      disabled={distSaving}
+                      style={{ background:L.teal,border:"none",borderRadius:8,padding:"7px 18px",
+                        cursor:"pointer",fontSize:12,color:"white",fontFamily:"inherit",fontWeight:600 }}>
+                      {distSaving ? "Salvando…" : "💾 Salvar"}
+                    </button>
+                    {distMsg && <span style={{ fontSize:12,color:L.green,fontWeight:600 }}>{distMsg}</span>}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
         </div>
       )}
 

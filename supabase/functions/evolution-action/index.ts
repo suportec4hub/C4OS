@@ -5,9 +5,9 @@ const CORS = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const json = (data: unknown, status = 200) =>
+const json = (data: unknown, _status = 200) =>
   new Response(JSON.stringify(data), {
-    status, headers: { ...CORS, "Content-Type": "application/json" },
+    status: 200, headers: { ...CORS, "Content-Type": "application/json" },
   });
 
 /** Sanitiza nome da empresa para instanceName (sem acentos, sem espaços) */
@@ -57,10 +57,10 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
 
-  // Credenciais do servidor Evolution API — altere aqui se mudar o servidor.
-  // Não lê variável de ambiente para evitar sobrescrever com valor inválido de sessão anterior.
-  const GLOBAL_KEY = "pangAbOM4AI1yo0LlSFAGtclhwQAt31B";
-  const GLOBAL_URL = "https://evolution-api-xrrw.srv1583408.hstgr.cloud";
+  // Credenciais do servidor Evolution API — configure via Supabase Secrets:
+  // EVOLUTION_GLOBAL_KEY e EVOLUTION_GLOBAL_URL (Settings → Edge Functions → Secrets)
+  const GLOBAL_KEY = Deno.env.get("EVOLUTION_GLOBAL_KEY") || "";
+  const GLOBAL_URL = Deno.env.get("EVOLUTION_GLOBAL_URL") || "";
   const SUPA_URL   = Deno.env.get("SUPABASE_URL") || "";
 
   try {
@@ -71,7 +71,7 @@ Deno.serve(async (req) => {
 
     const { data: emp, error: empErr } = await supabase
       .from("empresas")
-      .select("id, nome, evolution_instance_id, evolution_instance_token, evolution_api_url, evolution_connected")
+      .select("id, nome, evolution_instance_id, evolution_instance_token, evolution_api_url, evolution_api_key, evolution_connected")
       .eq("id", empresa_id)
       .single();
 
@@ -82,21 +82,24 @@ Deno.serve(async (req) => {
     // evolution_instance_id guarda o instanceName (string como "c4HUB-Lucas-Machado")
     const instName     = emp.evolution_instance_id || `c4HUB-${sanitizeName(emp.nome || empresa_id.slice(0, 12))}`;
     const computedName = `c4HUB-${sanitizeName(emp.nome || empresa_id.slice(0, 12))}`;
+    // DB key takes priority over Supabase Secret (fallback for secret propagation issues)
+    const apiKey       = (emp as Record<string, string>).evolution_api_key?.trim() || GLOBAL_KEY;
 
-    if (!evoUrl) return json({ error: "Servidor Evolution não configurado." }, 400);
+    console.log("[config] evoUrl:", evoUrl, "| apiKey set:", !!apiKey, "| action:", action);
+    if (!evoUrl) return json({ error: "Servidor Evolution não configurado. Verifique as Secrets EVOLUTION_GLOBAL_URL e EVOLUTION_GLOBAL_KEY no Supabase." });
 
     /** Fetch autenticado com global apikey */
     const gFetch = (path: string, opts: RequestInit = {}) =>
       fetch(`${evoUrl}${path}`, {
         ...opts,
-        headers: { "Content-Type": "application/json", "apikey": GLOBAL_KEY, ...(opts.headers || {}) },
+        headers: { "Content-Type": "application/json", "apikey": apiKey, ...(opts.headers || {}) },
       });
 
     /** Fetch autenticado com instance apikey */
     const iFetch = (path: string, opts: RequestInit = {}) =>
       fetch(`${evoUrl}${path}`, {
         ...opts,
-        headers: { "Content-Type": "application/json", "apikey": instToken || GLOBAL_KEY, ...(opts.headers || {}) },
+        headers: { "Content-Type": "application/json", "apikey": instToken || apiKey, ...(opts.headers || {}) },
       });
 
     // ────────────────────────────────────────────────────────────────────────
@@ -275,7 +278,7 @@ Deno.serve(async (req) => {
       const cFetch = (path: string, opts: RequestInit = {}) =>
         fetch(`${evoUrl}${path}`, {
           ...opts,
-          headers: { "Content-Type": "application/json", "apikey": effectiveToken || GLOBAL_KEY, ...(opts.headers || {}) },
+          headers: { "Content-Type": "application/json", "apikey": effectiveToken || apiKey, ...(opts.headers || {}) },
         });
 
       // Atualiza webhook para garantir webhookByEvents=false (best-effort)
@@ -300,20 +303,30 @@ Deno.serve(async (req) => {
         (d?.base64 || d?.qrcode?.base64 || d?.Qrcode || d?.data?.Qrcode ||
          d?.data?.qrcode || d?.instance?.qrcode?.base64 || "") as string;
 
+      const isMissingResponse = (status: number, d: Record<string, unknown>): boolean => {
+        const sc = (d?.statusCode ?? d?.status ?? status) as number;
+        const msg = ((d?.message || d?.error || d?.response || "") as string).toLowerCase();
+        return sc === 404 || sc === 401 ||
+          msg.includes("not found") || msg.includes("no instance") ||
+          msg.includes("not exists") || msg.includes("doesn't exist") ||
+          msg.includes("instance not") || msg.includes("unauthorized") ||
+          msg.includes("bad request");
+      };
+
       // Estratégia 1: GET /instance/connect/{name} com token da instância
       try {
         const r = await cFetch(`/instance/connect/${effectiveName}`);
         const d = await r.json();
         console.log("[connect] S1 status:", r.status, JSON.stringify(d).slice(0, 400));
         tried.push(`S1:${r.status}`);
-        if (r.status === 404 || d?.statusCode === 404) instanceMissing = true;
+        if (!r.ok) instanceMissing = isMissingResponse(r.status, d);
         qrBase64 = extractQr(d);
         const state = d?.instance?.state || d?.state || d?.data?.state || "";
         if (!qrBase64 && state === "open") {
           await supabase.from("empresas").update({ evolution_connected: true, evolution_qr_temp: null }).eq("id", empresa_id);
           return json({ success: true, alreadyConnected: true, webhookUrl });
         }
-      } catch (e) { tried.push("S1:err"); }
+      } catch (e) { tried.push("S1:err"); instanceMissing = true; }
 
       // Estratégia 2: GET com global apikey
       if (!qrBase64 && !instanceMissing) {
@@ -322,9 +335,9 @@ Deno.serve(async (req) => {
           const d = await r.json();
           console.log("[connect] S2 status:", r.status, JSON.stringify(d).slice(0, 400));
           tried.push(`S2:${r.status}`);
-          if (r.status === 404 || d?.statusCode === 404) instanceMissing = true;
+          if (!r.ok) instanceMissing = isMissingResponse(r.status, d);
           qrBase64 = extractQr(d);
-        } catch (e) { tried.push("S2:err"); }
+        } catch (e) { tried.push("S2:err"); instanceMissing = true; }
       }
 
       // Estratégia 3: POST /instance/connect
@@ -353,38 +366,45 @@ Deno.serve(async (req) => {
         } catch (e) { tried.push("S4:err"); }
       }
 
-      // ── Caso 2: instância deletada na API → recria automaticamente ─────────
-      if (!qrBase64 && instanceMissing) {
-        console.log("[connect] instância deletada na API — recriando automaticamente...");
+      console.log("[connect] qrBase64 length:", qrBase64.length, "tried:", tried.join(", "), "instanceMissing:", instanceMissing);
+
+      // ── Caso 2/3: sem QR → recria instância (cobre instâncias deletadas E migração de servidor) ──
+      if (!qrBase64) {
+        console.log("[connect] sem QR — recriando instância no servidor atual...");
+        // Best-effort delete para evitar conflito de nome
+        try { await gFetch(`/instance/delete/${effectiveName}`, { method: "DELETE" }); } catch (_) {}
         try {
           const { tok, nm, qr } = await createFresh();
           effectiveToken = tok;
           effectiveName  = nm;
           if (qr) return json({ success: true, qrBase64: qr, newInstance: true,
             webhookUrl: `${SUPA_URL}/functions/v1/evolution-webhook?token=${tok}` });
-          // Se não veio QR no create, tenta buscar
-          await new Promise(r => setTimeout(r, 1200));
-          const r2 = await fetch(`${evoUrl}/instance/connect/${nm}`, {
-            headers: { "Content-Type": "application/json", "apikey": tok },
-          });
-          const d2 = await r2.json();
-          qrBase64 = extractQr(d2);
-          if (qrBase64) {
-            await supabase.from("empresas").update({ evolution_qr_temp: qrBase64 }).eq("id", empresa_id);
-            return json({ success: true, qrBase64, newInstance: true,
-              webhookUrl: `${SUPA_URL}/functions/v1/evolution-webhook?token=${tok}` });
+
+          // QR não veio no create — servidor precisa de alguns segundos para inicializar.
+          // Polling agressivo: tenta 5x com 2.5s de intervalo (total ~14s).
+          await new Promise(r => setTimeout(r, 2000));
+          for (let i = 0; i < 5; i++) {
+            const r2 = await fetch(`${evoUrl}/instance/connect/${nm}`, {
+              headers: { "Content-Type": "application/json", "apikey": tok },
+            });
+            const d2 = await r2.json();
+            console.log(`[connect] post-create poll ${i + 1}/5:`, r2.status, JSON.stringify(d2).slice(0, 300));
+            qrBase64 = extractQr(d2);
+            if (qrBase64) {
+              await supabase.from("empresas").update({ evolution_qr_temp: qrBase64 }).eq("id", empresa_id);
+              return json({ success: true, qrBase64, newInstance: true,
+                webhookUrl: `${SUPA_URL}/functions/v1/evolution-webhook?token=${tok}` });
+            }
+            if (i < 4) await new Promise(r => setTimeout(r, 2500));
           }
+
+          // Instância criada mas QR ainda não disponível — retorna 200 com flag needsRetry
+          // para o frontend mostrar mensagem amigável (não erro) e pedir que tente novamente.
+          return json({ success: true, qrBase64: "", newInstance: true, needsRetry: true,
+            webhookUrl: `${SUPA_URL}/functions/v1/evolution-webhook?token=${tok}` });
         } catch (e) {
-          return json({ error: `Falha ao recriar instância: ${(e as Error).message}` }, 400);
+          return json({ error: `Falha ao criar instância: ${(e as Error).message}` }, 400);
         }
-      }
-
-      console.log("[connect] qrBase64 length:", qrBase64.length, "tried:", tried.join(", "));
-
-      if (!qrBase64) {
-        return json({
-          error: `QR não obtido para "${effectiveName}". Tentativas: ${tried.join(", ")}. Tente clicar em "Gerar QR Code" novamente.`,
-        }, 400);
       }
 
       await supabase.from("empresas").update({ evolution_qr_temp: qrBase64 }).eq("id", empresa_id);

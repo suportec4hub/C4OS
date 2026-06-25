@@ -396,15 +396,21 @@ export default function PageFluxosVendedor({ user }) {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [{ data: fxs }, { data: vends }] = await Promise.all([
-      supabase.from("fluxos_vendedor").select("*").eq("empresa_id", user.empresa_id).order("created_at", { ascending: false }),
-      supabase.from("usuarios").select("id, nome").eq("empresa_id", user.empresa_id).order("nome"),
-    ]);
-    const vendMap = Object.fromEntries((vends || []).map(v => [v.id, v.nome]));
-    const enriched = (fxs || []).map(f => ({ ...f, _usuario_nome: vendMap[f.usuario_id] || null }));
-    setFluxos(enriched);
-    setVendedores(vends || []);
-    setLoading(false);
+    try {
+      const [{ data: fxs }, { data: vends }] = await Promise.all([
+        supabase.from("fluxos_vendedor").select("*").eq("empresa_id", user.empresa_id).order("created_at", { ascending: false }),
+        supabase.from("usuarios").select("id, nome").eq("empresa_id", user.empresa_id).order("nome"),
+      ]);
+      const vendMap = Object.fromEntries((vends || []).map(v => [v.id, v.nome]));
+      const enriched = (fxs || []).map(f => ({ ...f, _usuario_nome: vendMap[f.usuario_id] || null }));
+      setFluxos(enriched);
+      setVendedores(vends || []);
+    } catch (_) {
+      setFluxos([]);
+      setVendedores([]);
+    } finally {
+      setLoading(false);
+    }
   }, [user.empresa_id]);
 
   useEffect(() => { load(); }, [load]);

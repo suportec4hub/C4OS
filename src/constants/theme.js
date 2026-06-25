@@ -171,6 +171,8 @@ export const globalCSS = `
   @keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
   @keyframes spin{to{transform:rotate(360deg)}}
   @keyframes slideIn{from{transform:translateX(-100%)}to{transform:translateX(0)}}
+  @keyframes slideInRight{from{opacity:0;transform:translateX(100%)}to{opacity:1;transform:translateX(0)}}
+  @keyframes shrinkBar{from{width:100%}to{width:0%}}
   /* ── Responsive grid ── */
   .rg-auto{display:grid}
   .sidebar-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:14;animation:in .15s ease}
