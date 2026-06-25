@@ -353,7 +353,8 @@ function NodeCard({ no, selected, connecting, onClick, onEdit, onDelete, onConne
     preview = `${no.opcoes.filter(Boolean).length} opções`;
   } else if (no.tipo === "condicao") {
     const ct = CONDICAO_TIPOS.find(t => t.id === (no.condicao_tipo || "contem_palavra"));
-    preview = ct ? ct.label : "Condição";
+    const extra = no.numero_opcao ? ` ${no.numero_opcao}` : no.gatilhos ? `: ${no.gatilhos}` : "";
+    preview = ct ? ct.label + extra : "Condição";
   } else if (no.tipo === "transferir") {
     const dest = no.transferir_tipo || "fila";
     preview = dest === "setor" ? "🏢 → Setor" : dest === "usuario" ? "👤 → Atendente específico" : "🔄 → Fila automática";

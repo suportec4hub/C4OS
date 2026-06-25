@@ -534,12 +534,6 @@ async function executarNosSequencialmente(
     }
 
     case "transferir": {
-      if (proximoNo.mensagem?.trim()) {
-        await sendBot(interpolarVariaveis(proximoNo.mensagem, estado.variaveis));
-      } else {
-        await sendBot("Aguarde um momento, vou transferir para um de nossos atendentes. 👋");
-      }
-
       const transferFields: Record<string, unknown> = {
         bot_ativo: false,
         status: "aguardando",
@@ -553,9 +547,17 @@ async function executarNosSequencialmente(
       } else if (transferTipo === "usuario" && proximoNo.transferir_usuario_id) {
         transferFields.atendente_id = proximoNo.transferir_usuario_id;
       }
-      // "fila" → round-robin já acontece via trigger ou a conversa fica sem atendente para distribuição
 
+      // Update DB FIRST so any immediate webhook from the bot message below
+      // sees bot_ativo=false and skips the chatbot (prevents menu loop race condition)
       await supabase.from("conversas").update(transferFields).eq("id", convId);
+
+      if (proximoNo.mensagem?.trim()) {
+        await sendBot(interpolarVariaveis(proximoNo.mensagem, estado.variaveis));
+      } else {
+        await sendBot("Aguarde um momento, vou transferir para um de nossos atendentes. 👋");
+      }
+
       await logWA(supabase, {
         empresa_id, conversa_id: convId, tipo: "fluxo", nivel: "info",
         origem: "evolution-webhook", evento: "transferir",
@@ -568,6 +570,9 @@ async function executarNosSequencialmente(
           fields_applied: Object.keys(transferFields),
         },
       });
+
+      // Continue to the next node (e.g., Encerrar) so closing messages are sent
+      await executarNosSequencialmente(proximoNo.id, nos, conexoes, estado, convId, empresa_id, senderPhone, senderName, isNew, supabase, sendBot, profundidade + 1);
       break;
     }
 
