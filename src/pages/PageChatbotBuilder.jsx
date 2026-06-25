@@ -135,13 +135,14 @@ function FieldSelect({ label, value, onChange, options }) {
 }
 
 // ─── TriggerSelectorModal ────────────────────────────────────────────────────
-function TriggerSelectorModal({ no, onSave, onClose }) {
+function TriggerSelectorModal({ no, onSave, onClose, setores = [] }) {
   const [selected, setSelected] = useState(no.gatilho_tipo || "mensagem_recebida");
   const [palavras, setPalavras] = useState(no.gatilho_palavras || "");
   const [intervalo, setIntervalo] = useState(no.intervalo_reativacao || 0);
+  const [setorPadrao, setSetorPadrao] = useState(no.setor_padrao_id || "");
 
   const handleSave = () => {
-    onSave({ ...no, gatilho_tipo: selected, gatilho_palavras: palavras, intervalo_reativacao: Number(intervalo) });
+    onSave({ ...no, gatilho_tipo: selected, gatilho_palavras: palavras, intervalo_reativacao: Number(intervalo), setor_padrao_id: setorPadrao || null });
     onClose();
   };
 
@@ -285,6 +286,29 @@ function TriggerSelectorModal({ no, onSave, onClose }) {
               />
               <span style={{ fontSize: 12, color: L.t3 }}>minutos (0 = sempre reativar)</span>
             </div>
+          </div>
+
+          {/* Setor padrão */}
+          <div style={{ marginTop: 4, padding: "12px 14px", background: "#0f766e0a", border: "1.5px solid #0f766e33", borderRadius: 9 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "#0f766e", textTransform: "uppercase", letterSpacing: "1px", marginBottom: 7, fontFamily: "'JetBrains Mono',monospace" }}>
+              🏢 Setor Padrão
+            </div>
+            <div style={{ fontSize: 11.5, color: L.t3, marginBottom: 8, lineHeight: 1.4 }}>
+              Ao iniciar este fluxo, a conversa é atribuída automaticamente a este setor. Recomendado quando o fluxo apresenta um menu de opções de setores.
+            </div>
+            <select
+              value={setorPadrao}
+              onChange={e => setSetorPadrao(e.target.value)}
+              style={{ width: "100%", border: "1.5px solid #0f766e44", borderRadius: 8, padding: "7px 10px", fontSize: 12, outline: "none", fontFamily: "inherit", background: L.surface, color: L.t1, boxSizing: "border-box" }}
+            >
+              <option value="">— Nenhum setor padrão —</option>
+              {setores.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
+            </select>
+            {setores.length === 0 && (
+              <div style={{ fontSize: 10, color: L.red, marginTop: 4 }}>
+                Nenhum setor cadastrado. Crie setores em Configurações → Setores.
+              </div>
+            )}
           </div>
         </div>
 
@@ -1306,6 +1330,7 @@ export default function PageChatbotBuilder({ user }) {
       {triggerModal && (
         <TriggerSelectorModal
           no={triggerModal}
+          setores={setores}
           onSave={updated => {
             setNos(p => p.map(n => n.id === updated.id ? updated : n));
             setTriggerModal(null);

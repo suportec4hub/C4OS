@@ -253,6 +253,10 @@ interface FluxoNo {
   botao_1?: string; botao_2?: string; botao_3?: string;
   lista_titulo_botao?: string; lista_itens?: string;
   controle_tipo?: "reiniciar" | "encerrar";
+  transferir_tipo?: "setor" | "usuario" | "fila";
+  transferir_setor_id?: string;
+  transferir_usuario_id?: string;
+  setor_padrao_id?: string;
   intervalo_reativacao?: number;
   x?: number; y?: number;
 }
@@ -363,6 +367,10 @@ async function executarFluxo(
       ...(primeiraDia ? { _primeira_do_dia: "true" } : {}),
     },
   };
+
+  if (noInicioRaw.setor_padrao_id) {
+    await supabase.from("conversas").update({ setor_id: noInicioRaw.setor_padrao_id }).eq("id", convId);
+  }
 
   if (noInicioRaw.mensagem?.trim()) {
     await sendBot(interpolarVariaveis(noInicioRaw.mensagem, novoEstado.variaveis));
