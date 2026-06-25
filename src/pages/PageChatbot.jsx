@@ -32,6 +32,7 @@ export default function PageChatbot({ user }) {
 function TabConfig({ user }) {
   const [cfg, setCfg] = useState(null);
   const [fluxos, setFluxos] = useState([]);
+  const [setores, setSetores] = useState([]);
   const [saving, setSaving] = useState(false);
   const [succ, setSucc] = useState("");
   const [err, setErr] = useState("");
@@ -44,6 +45,7 @@ function TabConfig({ user }) {
           empresa_id: user.empresa_id,
           ativo: false,
           fluxo_ativo_id: null,
+          setor_padrao_id: null,
           mensagem_boas_vindas: "Olá! Em que posso ajudar?",
           mensagem_fora_horario: "Nosso atendimento está encerrado no momento. Retornaremos em breve!",
           horario_inicio: "08:00",
@@ -61,6 +63,8 @@ function TabConfig({ user }) {
     supabase.from("chatbot_fluxos").select("id, nome, ativo").eq("empresa_id", user.empresa_id)
       .order("created_at", { ascending: false })
       .then(({ data }) => setFluxos(data || []));
+    supabase.from("setores").select("id, nome").eq("empresa_id", user.empresa_id).order("nome")
+      .then(({ data }) => setSetores(data || []));
   }, [user.empresa_id]);
 
   const save = async () => {
@@ -150,6 +154,24 @@ function TabConfig({ user }) {
               <span style={{ width:7, height:7, borderRadius:"50%", background:L.teal, display:"inline-block" }}/>
               Fluxo selecionado será executado para cada nova mensagem recebida
             </div>
+          )}
+        </Card>
+
+        {/* Setor Padrão */}
+        <Card title="Setor Padrão">
+          <div style={{fontSize:11.5,color:L.t3,marginBottom:10,lineHeight:1.5}}>
+            Setor atribuído automaticamente ao criar ou reabrir uma conversa. Se o fluxo visual rotear para um setor específico, ele sobrescreve este padrão.
+          </div>
+          <select
+            value={cfg.setor_padrao_id || ""}
+            onChange={e => setCfg(p => ({ ...p, setor_padrao_id: e.target.value || null }))}
+            style={{ width:"100%", background:L.surface, border:`1.5px solid ${L.line}`, borderRadius:9, padding:"9px 12px", color:L.t1, fontSize:12.5, fontFamily:"'Instrument Sans',sans-serif", outline:"none", cursor:"pointer" }}
+          >
+            <option value="">— Sem setor padrão —</option>
+            {setores.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
+          </select>
+          {setores.length === 0 && (
+            <div style={{fontSize:11,color:L.red,marginTop:6}}>Nenhum setor cadastrado. Crie em Configurações → Setores.</div>
           )}
         </Card>
 

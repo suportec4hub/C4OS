@@ -654,6 +654,13 @@ async function processMessages(
   msgs: unknown[], empresa_id: string, supabase: ReturnType<typeof createClient>,
   GLOBAL_URL: string, now: string, isHistory: boolean
 ) {
+  // Load chatbot_config once per batch to get setor_padrao_id for auto-assignment
+  let cfgEarly: Record<string, unknown> | null = null;
+  if (!isHistory) {
+    const { data: cfgData } = await supabase.from("chatbot_config").select("setor_padrao_id, fluxo_ativo_id").eq("empresa_id", empresa_id).maybeSingle();
+    cfgEarly = cfgData ?? null;
+  }
+
   for (const msg of msgs) {
     if (!msg || typeof msg !== "object") continue;
     const m = msg as Record<string, unknown>;
@@ -735,16 +742,12 @@ async function processMessages(
     if (!conv) {
       isNew = true;
 
-      // Busca o setor "Vendas" da empresa para atribuir automaticamente
-      const { data: setorVendas } = await supabase.from("setores")
-        .select("id").eq("empresa_id", empresa_id).ilike("nome", "%Vendas%").maybeSingle();
-
       const { data: nova } = await supabase.from("conversas").insert({
         empresa_id, contato_nome: senderName, contato_telefone: senderPhone,
         ultima_mensagem: texto, ultima_hora: hora,
         nao_lidas: fromMe ? 0 : 1, status: "aberta", bot_ativo: null,
         whatsapp_numero: senderPhone, fluxo_estado: null,
-        ...(setorVendas?.id ? { setor_id: setorVendas.id } : {}),
+        ...(cfgEarly?.setor_padrao_id ? { setor_id: cfgEarly.setor_padrao_id } : {}),
       }).select("id, nao_lidas, contato_nome, status, bot_ativo, ultima_hora, fluxo_estado").single();
       conv = nova;
 
@@ -830,10 +833,7 @@ async function processMessages(
         reopenFields.bot_ativo = null;
         // Sync in-memory conv so the chatbot block below sees the cleared state
         conv = { ...conv, fluxo_estado: null, bot_ativo: null, status: "aberta" };
-        // Reaplica o setor Vendas ao reabrir
-        const { data: setorV } = await supabase.from("setores")
-          .select("id").eq("empresa_id", empresa_id).ilike("nome", "%Vendas%").maybeSingle();
-        if (setorV?.id) reopenFields.setor_id = setorV.id;
+        if (cfgEarly?.setor_padrao_id) reopenFields.setor_id = cfgEarly.setor_padrao_id;
       }
       await supabase.from("conversas").update(reopenFields).eq("id", conv.id);
 
