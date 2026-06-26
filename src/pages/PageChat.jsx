@@ -1287,7 +1287,7 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
       conversa_id: activeConv.id,
       empresa_id:  activeConv.empresa_id || user.empresa_id,
       de: "me", remetente: "me",
-      tipo, midia_url: publicUrl, nome_arquivo: file.name,
+      tipo, media_url: publicUrl, nome_arquivo: file.name,
       hora: new Date().toISOString(), status: "enviado",
     });
 
