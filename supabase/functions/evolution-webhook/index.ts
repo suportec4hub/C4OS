@@ -760,9 +760,14 @@ async function processMessages(
     const mediaObjMap: Record<string, Record<string,unknown>> = {
       audio: audioC, imagem: imgC, video: vidC, documento: docC,
     };
-    const mediaObj     = mediaObjMap[tipoMsg] ?? {};
+    const mediaObj = mediaObjMap[tipoMsg] ?? {};
     const mediaMimetype = (mediaObj.mimetype as string) || null;
-    const mediaBase64   = (mediaObj.base64   as string) || null;
+    // Evolution API v2 coloca base64 no nível do objeto de dados (m.base64), NÃO dentro de imageMessage.
+    // Também pode vir como data URL ("data:image/jpeg;base64,..."). Ambos os casos são tratados aqui.
+    const rawB64Payload = (m.base64 as string) || (mediaObj.base64 as string) || null;
+    const mediaBase64 = rawB64Payload?.startsWith("data:")
+      ? (rawB64Payload.indexOf(",") >= 0 ? rawB64Payload.slice(rawB64Payload.indexOf(",") + 1) : null)
+      : rawB64Payload;
 
     console.log(`[webhook] ${isHistory?"HIST":"MSG"} from:${senderPhone} fromMe:${fromMe} ts:${hora} tipo:${tipoMsg} text:${texto.slice(0,60)}`);
 
@@ -940,20 +945,51 @@ async function processMessages(
     if (["imagem","video","audio","documento"].includes(tipoMsg)) {
       try {
         let bytes: Uint8Array | null = null;
-        // Preferência: base64 do payload (Evolution API com base64:true — sem download de URL criptografada)
+        let resolvedMime: string | null = mediaMimetype;
+
+        // 1ª opção: base64 do payload (Evolution API com base64:true)
         if (mediaBase64) {
           bytes = Uint8Array.from(atob(mediaBase64), c => c.charCodeAt(0));
-        } else if (mediaUrl) {
-          const mediaRes = await fetch(mediaUrl, { signal: AbortSignal.timeout(8000) });
-          if (mediaRes.ok) bytes = new Uint8Array(await mediaRes.arrayBuffer());
+        } else if (wamid) {
+          // 2ª opção: buscar mídia descriptografada direto na Evolution API server-side.
+          // NUNCA baixamos a mediaUrl diretamente — ela retorna bytes criptografados inúteis.
+          try {
+            const { data: empInfo } = await supabase.from("empresas")
+              .select("evolution_instance_id, evolution_instance_token, evolution_api_url")
+              .eq("id", empresa_id).maybeSingle();
+            const evoInst  = empInfo?.evolution_instance_id  as string | null;
+            const evoToken = empInfo?.evolution_instance_token as string | null;
+            const evoBase  = ((empInfo?.evolution_api_url as string | null) || GLOBAL_URL).replace(/\/$/, "");
+            if (evoInst && evoToken) {
+              const fr = await fetch(`${evoBase}/message/getBase64FromMediaMessage/${evoInst}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "apikey": evoToken },
+                body: JSON.stringify({ id: wamid }),
+                signal: AbortSignal.timeout(12000),
+              });
+              if (fr.ok) {
+                const fd = await fr.json();
+                const b64 = (fd?.base64 ?? fd?.data?.base64 ?? fd?.media?.base64 ?? null) as string | null;
+                const mt  = (fd?.mimetype ?? fd?.data?.mimetype ?? fd?.type ?? null) as string | null;
+                if (b64) {
+                  bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+                  if (mt) resolvedMime = mt;
+                  console.log(`[webhook] getBase64FromMediaMessage ok: ${mt}`);
+                }
+              } else {
+                console.log("[webhook] getBase64FromMediaMessage failed:", fr.status);
+              }
+            }
+          } catch (fe) {
+            console.log("[webhook] getBase64FromMediaMessage err:", (fe as Error).message);
+          }
         }
 
         if (bytes) {
-          // Usa mimetype do payload (correto); fallback por tipo da mensagem
           const defaultMime: Record<string,string> = {
             imagem: "image/jpeg", audio: "audio/ogg", video: "video/mp4", documento: "application/pdf",
           };
-          const ct = mediaMimetype || defaultMime[tipoMsg] || "application/octet-stream";
+          const ct = resolvedMime || defaultMime[tipoMsg] || "application/octet-stream";
           const extMap: Record<string,string> = {
             "image/jpeg":"jpg","image/jpg":"jpg","image/png":"png","image/gif":"gif","image/webp":"webp",
             "video/mp4":"mp4","video/quicktime":"mov","video/webm":"webm",

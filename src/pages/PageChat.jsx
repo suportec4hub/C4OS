@@ -114,7 +114,7 @@ async function fetchMediaViaWamid(wamid, empresaId) {
   const blob  = new Blob([bytes], { type: data.mimetype || "application/octet-stream" });
   return { blobUrl: URL.createObjectURL(blob), mimetype: data.mimetype };
 }
-const isEncUrl = (u) => u && (u.includes(".enc") || u.includes("t62.7"));
+const isEncUrl = (u) => u && (u.includes(".enc") || u.includes("t62.7") || u.includes("mmg.whatsapp.net"));
 
 // ─── MediaImage — imagem com lazy-load/descriptografia automática ─────────────
 function MediaImage({ url, wamid, out, onImageClick, empresaId, caption }) {
