@@ -5,7 +5,6 @@ import { AwsClient } from "https://esm.sh/aws4fetch@1.0.19";
 const _R2_ENDPOINT   = Deno.env.get("R2_ENDPOINT")   || "https://1f59288cdc89e59b8a1027c6bc33205f.r2.cloudflarestorage.com";
 const _R2_BUCKET     = Deno.env.get("R2_BUCKET")     || "c4os";
 const _R2_PUBLIC_URL = Deno.env.get("R2_PUBLIC_URL") || "https://pub-702abeb54c2b46a6888cc69b17b364a7.r2.dev";
-
 let _awsClient: AwsClient | null = null;
 function getAwsClient(): AwsClient | null {
   const keyId  = Deno.env.get("R2_KEY_ID");
