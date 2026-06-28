@@ -1264,23 +1264,28 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
     setUploadingMedia(true);
     setSendErr("");
 
-    // 1. Upload to Supabase Storage
-    const ext  = file.name.split(".").pop().toLowerCase();
-    const path = `chat/${user.empresa_id}/${Date.now()}.${ext}`;
-    const { error: uploadErr } = await supabase.storage.from("midia").upload(path, file, { upsert: true });
-    if (uploadErr) {
-      setSendErr("Erro ao enviar arquivo: " + uploadErr.message);
+    // 1. Upload para Backblaze B2 via edge function media-upload
+    const form = new FormData();
+    form.append("file", file);
+    form.append("empresa_id", user.empresa_id);
+    form.append("path_prefix", "chat");
+
+    const { data: { session } } = await supabase.auth.getSession();
+    const uploadRes = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/media-upload`,
+      { method: "POST", headers: { Authorization: `Bearer ${session?.access_token}` }, body: form },
+    ).catch((e) => { setSendErr("Erro de rede: " + e.message); setUploadingMedia(false); return null; });
+    if (!uploadRes) return;
+
+    const uploadJson = await uploadRes.json().catch(() => ({}));
+    if (!uploadRes.ok || uploadJson.error) {
+      setSendErr("Erro ao enviar arquivo: " + (uploadJson.error || uploadRes.statusText));
       setUploadingMedia(false);
       return;
     }
-    const { data: { publicUrl } } = supabase.storage.from("midia").getPublicUrl(path);
 
-    // 2. Determine media type
-    const ft = file.type || "";
-    const tipo = ft.startsWith("image/") ? "imagem"
-               : ft.startsWith("audio/") ? "audio"
-               : ft.startsWith("video/") ? "video"
-               : "documento";
+    const publicUrl = uploadJson.publicUrl;
+    const tipo      = uploadJson.tipo || "documento";
 
     // 3. Persist message to DB
     await supabase.from("mensagens").insert({
