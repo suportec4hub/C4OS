@@ -6,31 +6,33 @@ const CORS = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const B2_KEY_ID   = Deno.env.get("B2_KEY_ID")!;
-const B2_APP_KEY  = Deno.env.get("B2_APP_KEY")!;
-const B2_BUCKET   = Deno.env.get("B2_BUCKET")   || "C4OS-Bucket";
-const B2_REGION   = Deno.env.get("B2_REGION")   || "us-west-004";
-const B2_ENDPOINT = Deno.env.get("B2_ENDPOINT") || `https://s3.${B2_REGION}.backblazeb2.com`;
+// Cloudflare R2 — S3-compatible, região sempre "auto"
+const R2_KEY_ID     = Deno.env.get("R2_KEY_ID")!;
+const R2_APP_KEY    = Deno.env.get("R2_APP_KEY")!;
+const R2_BUCKET     = Deno.env.get("R2_BUCKET")     || "c4os";
+const R2_ENDPOINT   = Deno.env.get("R2_ENDPOINT")   || "https://1f59288cdc89e59b8a1027c6bc33205f.r2.cloudflarestorage.com";
+const R2_PUBLIC_URL = Deno.env.get("R2_PUBLIC_URL") || "https://pub-702abeb54c2b46a6888cc69b17b364a7.r2.dev";
 
 const awsClient = new AwsClient({
-  accessKeyId: B2_KEY_ID,
-  secretAccessKey: B2_APP_KEY,
-  region: B2_REGION,
+  accessKeyId: R2_KEY_ID,
+  secretAccessKey: R2_APP_KEY,
+  region: "auto",
   service: "s3",
 });
 
-async function uploadToB2(key: string, body: Uint8Array, contentType: string): Promise<string> {
-  const url = `${B2_ENDPOINT}/${B2_BUCKET}/${key}`;
-  const res = await awsClient.fetch(url, {
+async function uploadToR2(key: string, body: Uint8Array, contentType: string): Promise<string> {
+  const uploadUrl = `${R2_ENDPOINT}/${R2_BUCKET}/${key}`;
+  const res = await awsClient.fetch(uploadUrl, {
     method: "PUT",
     body,
     headers: { "Content-Type": contentType },
   });
   if (!res.ok) {
     const err = await res.text();
-    throw new Error(`B2 upload ${res.status}: ${err.slice(0, 300)}`);
+    throw new Error(`R2 upload ${res.status}: ${err.slice(0, 300)}`);
   }
-  return url;
+  // Retorna URL pública (diferente da URL S3 de upload)
+  return `${R2_PUBLIC_URL}/${key}`;
 }
 
 Deno.serve(async (req) => {
@@ -68,7 +70,7 @@ Deno.serve(async (req) => {
     const key         = `${pathPrefix}/${empresaId}/${Date.now()}.${ext}`;
     const contentType = file.type || "application/octet-stream";
 
-    const publicUrl = await uploadToB2(key, bytes, contentType);
+    const publicUrl = await uploadToR2(key, bytes, contentType);
 
     const tipo = contentType.startsWith("image/") ? "imagem"
                : contentType.startsWith("audio/") ? "audio"

@@ -1,29 +1,29 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { AwsClient } from "https://esm.sh/aws4fetch@1.0.19";
 
-// ─── Backblaze B2 upload helper ───────────────────────────────────────────────
-const _B2_REGION   = Deno.env.get("B2_REGION")   || "us-west-004";
-const _B2_ENDPOINT = Deno.env.get("B2_ENDPOINT") || `https://s3.${_B2_REGION}.backblazeb2.com`;
-const _B2_BUCKET   = Deno.env.get("B2_BUCKET")   || "C4OS-Bucket";
+// ─── Cloudflare R2 upload helper — S3-compatible, região "auto" ───────────────
+const _R2_ENDPOINT   = Deno.env.get("R2_ENDPOINT")   || "https://1f59288cdc89e59b8a1027c6bc33205f.r2.cloudflarestorage.com";
+const _R2_BUCKET     = Deno.env.get("R2_BUCKET")     || "c4os";
+const _R2_PUBLIC_URL = Deno.env.get("R2_PUBLIC_URL") || "https://pub-702abeb54c2b46a6888cc69b17b364a7.r2.dev";
 
 let _awsClient: AwsClient | null = null;
 function getAwsClient(): AwsClient | null {
-  const keyId  = Deno.env.get("B2_KEY_ID");
-  const appKey = Deno.env.get("B2_APP_KEY");
+  const keyId  = Deno.env.get("R2_KEY_ID");
+  const appKey = Deno.env.get("R2_APP_KEY");
   if (!keyId || !appKey) return null;
   if (!_awsClient) {
-    _awsClient = new AwsClient({ accessKeyId: keyId, secretAccessKey: appKey, region: _B2_REGION, service: "s3" });
+    _awsClient = new AwsClient({ accessKeyId: keyId, secretAccessKey: appKey, region: "auto", service: "s3" });
   }
   return _awsClient;
 }
 
-async function uploadToB2(key: string, body: Uint8Array, contentType: string): Promise<string> {
+async function uploadToR2(key: string, body: Uint8Array, contentType: string): Promise<string> {
   const aws = getAwsClient();
-  if (!aws) throw new Error("B2 não configurado (B2_KEY_ID / B2_APP_KEY ausentes)");
-  const url = `${_B2_ENDPOINT}/${_B2_BUCKET}/${key}`;
-  const res = await aws.fetch(url, { method: "PUT", body, headers: { "Content-Type": contentType } });
-  if (!res.ok) throw new Error(`B2 ${res.status}: ${(await res.text()).slice(0, 200)}`);
-  return url;
+  if (!aws) throw new Error("R2 não configurado (R2_KEY_ID / R2_APP_KEY ausentes)");
+  const uploadUrl = `${_R2_ENDPOINT}/${_R2_BUCKET}/${key}`;
+  const res = await aws.fetch(uploadUrl, { method: "PUT", body, headers: { "Content-Type": contentType } });
+  if (!res.ok) throw new Error(`R2 ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  return `${_R2_PUBLIC_URL}/${key}`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -939,7 +939,7 @@ async function processMessages(
           const extMap: Record<string,string> = { "image/jpeg":"jpg","image/png":"png","image/webp":"webp","video/mp4":"mp4","audio/ogg":"ogg","audio/mpeg":"mp3","audio/webm":"webm" };
           const ext = extMap[ct] ?? ct.split("/")[1] ?? "bin";
           const key = `whatsapp/${empresa_id}/${conv.id}/${Date.now()}.${ext}`;
-          storedMediaUrl = await uploadToB2(key, bytes, ct);
+          storedMediaUrl = await uploadToR2(key, bytes, ct);
         }
       } catch (e) { console.log("[webhook] media re-host B2 err:", (e as Error).message); }
     }
