@@ -756,6 +756,14 @@ async function processMessages(
       tipoMsg = "sticker";
     }
 
+    // Extrai mimetype e base64 do payload (Evolution API envia quando base64:true está configurado)
+    const mediaObjMap: Record<string, Record<string,unknown>> = {
+      audio: audioC, imagem: imgC, video: vidC, documento: docC,
+    };
+    const mediaObj     = mediaObjMap[tipoMsg] ?? {};
+    const mediaMimetype = (mediaObj.mimetype as string) || null;
+    const mediaBase64   = (mediaObj.base64   as string) || null;
+
     console.log(`[webhook] ${isHistory?"HIST":"MSG"} from:${senderPhone} fromMe:${fromMe} ts:${hora} tipo:${tipoMsg} text:${texto.slice(0,60)}`);
 
     // ── Busca ou cria conversa ────────────────────────────────────────────────
@@ -927,20 +935,38 @@ async function processMessages(
 
     if (!conv?.id) continue;
 
-    // ── Re-hospedar mídia recebida no Backblaze B2 ───────────────────────────
+    // ── Re-hospedar mídia recebida no Cloudflare R2 ─────────────────────────
     let storedMediaUrl = mediaUrl;
-    if (mediaUrl && ["imagem","video","audio","documento"].includes(tipoMsg)) {
+    if (["imagem","video","audio","documento"].includes(tipoMsg)) {
       try {
-        const mediaRes = await fetch(mediaUrl, { signal: AbortSignal.timeout(8000) });
-        if (mediaRes.ok) {
-          const bytes = new Uint8Array(await mediaRes.arrayBuffer());
-          const ct = mediaRes.headers.get("content-type") || "image/jpeg";
-          const extMap: Record<string,string> = { "image/jpeg":"jpg","image/png":"png","image/webp":"webp","video/mp4":"mp4","audio/ogg":"ogg","audio/mpeg":"mp3","audio/webm":"webm" };
-          const ext = extMap[ct] ?? ct.split("/")[1] ?? "bin";
+        let bytes: Uint8Array | null = null;
+        // Preferência: base64 do payload (Evolution API com base64:true — sem download de URL criptografada)
+        if (mediaBase64) {
+          bytes = Uint8Array.from(atob(mediaBase64), c => c.charCodeAt(0));
+        } else if (mediaUrl) {
+          const mediaRes = await fetch(mediaUrl, { signal: AbortSignal.timeout(8000) });
+          if (mediaRes.ok) bytes = new Uint8Array(await mediaRes.arrayBuffer());
+        }
+
+        if (bytes) {
+          // Usa mimetype do payload (correto); fallback por tipo da mensagem
+          const defaultMime: Record<string,string> = {
+            imagem: "image/jpeg", audio: "audio/ogg", video: "video/mp4", documento: "application/pdf",
+          };
+          const ct = mediaMimetype || defaultMime[tipoMsg] || "application/octet-stream";
+          const extMap: Record<string,string> = {
+            "image/jpeg":"jpg","image/jpg":"jpg","image/png":"png","image/gif":"gif","image/webp":"webp",
+            "video/mp4":"mp4","video/quicktime":"mov","video/webm":"webm",
+            "audio/ogg":"ogg","audio/mpeg":"mp3","audio/mp4":"m4a","audio/webm":"webm",
+            "audio/opus":"ogg","audio/aac":"aac",
+            "application/pdf":"pdf",
+          };
+          const ext = extMap[ct] ?? ct.split("/")[1]?.split(";")[0] ?? "bin";
           const key = `whatsapp/${empresa_id}/${conv.id}/${Date.now()}.${ext}`;
           storedMediaUrl = await uploadToR2(key, bytes, ct);
+          console.log(`[webhook] R2 upload ok: ${key} (${ct})`);
         }
-      } catch (e) { console.log("[webhook] media re-host B2 err:", (e as Error).message); }
+      } catch (e) { console.log("[webhook] media re-host R2 err:", (e as Error).message); }
     }
 
     // ── Insert message — for wamid messages the unique index (mensagens_wamid_unique)
