@@ -770,6 +770,9 @@ async function processMessages(
       : rawB64Payload;
 
     console.log(`[webhook] ${isHistory?"HIST":"MSG"} from:${senderPhone} fromMe:${fromMe} ts:${hora} tipo:${tipoMsg} text:${texto.slice(0,60)}`);
+    if (["imagem","video","audio","documento"].includes(tipoMsg)) {
+      console.log(`[webhook] media keys m:${Object.keys(m).join(",")} | b64payload:${rawB64Payload ? rawB64Payload.slice(0,50) : "null"} | mime:${mediaMimetype}`);
+    }
 
     // ── Busca ou cria conversa ────────────────────────────────────────────────
     let isNew = false;
@@ -943,16 +946,36 @@ async function processMessages(
     // ── Re-hospedar mídia recebida no Cloudflare R2 ─────────────────────────
     let storedMediaUrl = mediaUrl;
     if (["imagem","video","audio","documento"].includes(tipoMsg)) {
-      try {
-        let bytes: Uint8Array | null = null;
-        let resolvedMime: string | null = mediaMimetype;
+      // Helper: strip data URL prefix e whitespace antes de atob
+      const cleanB64 = (raw: string): string => {
+        const stripped = raw.startsWith("data:")
+          ? (raw.indexOf(",") >= 0 ? raw.slice(raw.indexOf(",") + 1) : raw)
+          : raw;
+        return stripped.replace(/\s/g, "");
+      };
 
+      let bytes: Uint8Array | null = null;
+      let resolvedMime: string | null = mediaMimetype;
+      let debugStep = "start";
+
+      try {
         // 1ª opção: base64 do payload (Evolution API com base64:true)
         if (mediaBase64) {
-          bytes = Uint8Array.from(atob(mediaBase64), c => c.charCodeAt(0));
-        } else if (wamid) {
-          // 2ª opção: buscar mídia descriptografada direto na Evolution API server-side.
-          // NUNCA baixamos a mediaUrl diretamente — ela retorna bytes criptografados inúteis.
+          debugStep = "payload-b64";
+          const b64clean = cleanB64(mediaBase64);
+          try {
+            bytes = Uint8Array.from(atob(b64clean), c => c.charCodeAt(0));
+            debugStep = `payload-ok:${bytes.length}`;
+            console.log(`[webhook] payload base64 ok: ${bytes.length} bytes mime:${mediaMimetype}`);
+          } catch (ae) {
+            debugStep = `payload-atob-err:${(ae as Error).message.slice(0,40)}`;
+            console.log(`[webhook] payload atob err: ${(ae as Error).message} prefix:${b64clean.slice(0,30)}`);
+          }
+        }
+
+        // 2ª opção: buscar mídia descriptografada direto na Evolution API server-side
+        if (!bytes && wamid) {
+          debugStep = "getBase64-start";
           try {
             const { data: empInfo } = await supabase.from("empresas")
               .select("evolution_instance_id, evolution_instance_token, evolution_api_url")
@@ -960,31 +983,59 @@ async function processMessages(
             const evoInst  = empInfo?.evolution_instance_id  as string | null;
             const evoToken = empInfo?.evolution_instance_token as string | null;
             const evoBase  = ((empInfo?.evolution_api_url as string | null) || GLOBAL_URL).replace(/\/$/, "");
+            console.log(`[webhook] getBase64 inst:${evoInst} url:${evoBase}`);
             if (evoInst && evoToken) {
               const fr = await fetch(`${evoBase}/message/getBase64FromMediaMessage/${evoInst}`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json", "apikey": evoToken },
                 body: JSON.stringify({ id: wamid }),
-                signal: AbortSignal.timeout(12000),
+                signal: AbortSignal.timeout(15000),
               });
+              debugStep = `getBase64-http:${fr.status}`;
               if (fr.ok) {
                 const fd = await fr.json();
+                const fdKeys = Object.keys(fd || {}).join(",");
                 const rawB64 = (fd?.base64 ?? fd?.data?.base64 ?? fd?.media?.base64 ?? null) as string | null;
                 const mt  = (fd?.mimetype ?? fd?.data?.mimetype ?? fd?.type ?? null) as string | null;
-                // Evolution API pode retornar data URL ("data:audio/ogg;base64,...") — strip prefix
-                const b64 = rawB64?.startsWith("data:")
-                  ? (rawB64.indexOf(",") >= 0 ? rawB64.slice(rawB64.indexOf(",") + 1) : null)
-                  : rawB64;
-                if (b64) {
-                  bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
-                  if (mt) resolvedMime = mt;
-                  console.log(`[webhook] getBase64FromMediaMessage ok: ${mt}`);
+                console.log(`[webhook] getBase64 resp keys:${fdKeys} mime:${mt} b64len:${rawB64?.length ?? 0} b64prefix:${String(rawB64 ?? "").slice(0,50)}`);
+                await logWA(supabase, {
+                  empresa_id, conversa_id: conv.id, tipo: "webhook_recebido", nivel: "info",
+                  origem: "evolution-webhook", evento: "getBase64-debug",
+                  resumo: `getBase64 resp keys:${fdKeys} mime:${mt}`,
+                  payload: { keys: fdKeys, mime: mt, b64len: rawB64?.length ?? 0, b64prefix: String(rawB64 ?? "").slice(0,80) },
+                });
+                if (rawB64) {
+                  const b64clean = cleanB64(rawB64);
+                  try {
+                    bytes = Uint8Array.from(atob(b64clean), c => c.charCodeAt(0));
+                    if (mt) resolvedMime = mt;
+                    debugStep = `getBase64-ok:${bytes.length}`;
+                    console.log(`[webhook] getBase64FromMediaMessage ok: ${mt} bytes:${bytes.length}`);
+                  } catch (ae) {
+                    debugStep = `getBase64-atob-err:${(ae as Error).message.slice(0,40)}`;
+                    console.log(`[webhook] getBase64 atob err: ${(ae as Error).message} prefix:${b64clean.slice(0,30)}`);
+                  }
+                } else {
+                  debugStep = `getBase64-no-b64:keys=${fdKeys}`;
+                  console.log(`[webhook] getBase64 sem base64 no resp. keys=${fdKeys}`);
                 }
               } else {
-                console.log("[webhook] getBase64FromMediaMessage failed:", fr.status);
+                const errTxt = await fr.text().catch(() => "");
+                debugStep = `getBase64-http-err:${fr.status}`;
+                console.log(`[webhook] getBase64FromMediaMessage failed: ${fr.status} ${errTxt.slice(0,150)}`);
+                await logWA(supabase, {
+                  empresa_id, conversa_id: conv.id, tipo: "erro_api", nivel: "error",
+                  origem: "evolution-webhook", evento: "getBase64-failed",
+                  resumo: `getBase64 HTTP ${fr.status}: ${errTxt.slice(0,100)}`,
+                  payload: { status: fr.status, wamid, inst: evoInst },
+                });
               }
+            } else {
+              debugStep = "getBase64-no-inst";
+              console.log(`[webhook] sem inst/token para getBase64`);
             }
           } catch (fe) {
+            debugStep = `getBase64-exc:${(fe as Error).message.slice(0,40)}`;
             console.log("[webhook] getBase64FromMediaMessage err:", (fe as Error).message);
           }
         }
@@ -1005,8 +1056,24 @@ async function processMessages(
           const key = `whatsapp/${empresa_id}/${conv.id}/${Date.now()}.${ext}`;
           storedMediaUrl = await uploadToR2(key, bytes, ct);
           console.log(`[webhook] R2 upload ok: ${key} (${ct})`);
+        } else {
+          console.log(`[webhook] sem bytes para R2, step:${debugStep} tipo:${tipoMsg} wamid:${wamid}`);
+          await logWA(supabase, {
+            empresa_id, conversa_id: conv.id, tipo: "webhook_recebido", nivel: "warn",
+            origem: "evolution-webhook", evento: "r2-sem-bytes",
+            resumo: `R2 upload sem bytes. step:${debugStep}`,
+            payload: { debugStep, tipoMsg, wamid, mediaUrl: String(mediaUrl).slice(0,80) },
+          });
         }
-      } catch (e) { console.log("[webhook] media re-host R2 err:", (e as Error).message); }
+      } catch (e) {
+        console.log("[webhook] media re-host R2 err:", (e as Error).message);
+        await logWA(supabase, {
+          empresa_id, conversa_id: conv.id, tipo: "erro_api", nivel: "error",
+          origem: "evolution-webhook", evento: "r2-upload-err",
+          resumo: `R2 upload err: ${(e as Error).message.slice(0,100)}`,
+          payload: { debugStep, tipoMsg, wamid },
+        });
+      }
     }
 
     // ── Insert message — for wamid messages the unique index (mensagens_wamid_unique)
