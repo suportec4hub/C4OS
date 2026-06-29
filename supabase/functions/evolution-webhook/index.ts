@@ -799,7 +799,7 @@ async function processMessages(
         whatsapp_numero: senderPhone, fluxo_estado: null,
         // setor_padrao só se houver fluxo visual ativo (ele roteará o setor); senão, round-robin assume
         ...(cfgEarly?.setor_padrao_id && cfgEarly?.fluxo_ativo_id ? { setor_id: cfgEarly.setor_padrao_id } : {}),
-      }).select("id, nao_lidas, contato_nome, status, bot_ativo, ultima_hora, fluxo_estado").single();
+      }).select("id, nao_lidas, contato_nome, status, bot_ativo, ultima_hora, fluxo_estado, atendente_id").single();
       conv = nova;
 
       await logWA(supabase, {
@@ -871,6 +871,8 @@ async function processMessages(
                   .insert({ empresa_id, ativo: true, vendedores_ids: [], proximo_indice: 1 });
               }
 
+              // Reflect assigned seller in memory so per-seller flow lookup sees it below
+              conv = { ...conv, atendente_id: assignedSeller.id };
               console.log(`[round-robin] Conversa ${conv.id} → ${assignedSeller.nome} (idx ${idx}) setor:${setorVendas?.id ?? "nenhum"}`);
             }
           }
@@ -892,7 +894,7 @@ async function processMessages(
         reopenFields.fluxo_estado = null;
         reopenFields.bot_ativo = null;
         // Sync in-memory conv so the chatbot block below sees the cleared state
-        conv = { ...conv, fluxo_estado: null, bot_ativo: null, status: "aberta" };
+        conv = { ...conv, fluxo_estado: null, bot_ativo: null, status: "aberta", atendente_id: null };
         // setor_padrao só se houver fluxo visual ativo; senão round-robin assume o roteamento
         if (cfgEarly?.setor_padrao_id && cfgEarly?.fluxo_ativo_id) reopenFields.setor_id = cfgEarly.setor_padrao_id;
       }
@@ -941,6 +943,8 @@ async function processMessages(
                   .update({ proximo_indice: (dist.proximo_indice ?? 0) + 1, updated_at: new Date().toISOString() })
                   .eq("id", dist.id);
               }
+              // Reflect assigned seller in memory so per-seller flow lookup sees it below
+              conv = { ...conv, atendente_id: assignedSeller.id };
               console.log(`[round-robin] Re-open: conversa ${conv.id} → ${assignedSeller.nome} setor:${setorVendas?.id ?? "nenhum"}`);
             }
           }
@@ -1188,7 +1192,9 @@ async function processMessages(
         // nao_responder_aberta only silences the bot for conversations with no active flow —
         // an ongoing flow must always continue even if status is "aberta"
         const hasActiveFlow = !!(conv.fluxo_estado as { fluxo_id?: string } | null)?.fluxo_id;
-        if (cfg?.nao_responder_aberta && conv.status === "aberta" && !hasActiveFlow) continue;
+        // Per-seller flows must run even when nao_responder_aberta is set — the seller's
+        // automation should not be silenced by a company-wide "don't reply to open chats" rule.
+        if (cfg?.nao_responder_aberta && conv.status === "aberta" && !hasActiveFlow && !vendedorFluxoId) continue;
 
         const { data: empData } = await supabase.from("empresas")
           .select("evolution_instance_id, evolution_instance_token, evolution_api_url")
