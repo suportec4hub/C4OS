@@ -510,10 +510,90 @@ function NodeBtn({ color, title, onClick, children }) {
 }
 
 // ─── Node Edit Panel ──────────────────────────────────────────────────────────
-function NodeEditPanel({ no, onSave, onClose, onGenerateRoutes, setores = [], usuarios = [] }) {
+function NodeEditPanel({ no, onSave, onClose, onGenerateRoutes, setores = [], usuarios = [], empresaId }) {
   const [form, setForm] = useState({ ...no });
   const tipo = NODE_TYPES[form.tipo] || NODE_TYPES.mensagem;
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
+
+  // ── Áudio: estado de gravação/upload ──────────────────────────────────────
+  const [audioMode,    setAudioMode]    = useState("url");   // "url" | "arquivo" | "gravar"
+  const [recording,    setRecording]    = useState(false);
+  const [recSeconds,   setRecSeconds]   = useState(0);
+  const [audioUploading, setAudioUploading] = useState(false);
+  const [audioErr,     setAudioErr]     = useState("");
+  const recChunksRef   = useRef([]);
+  const recTimerRef    = useRef(null);
+  const mediaRecRef    = useRef(null);
+  const audioFileRef   = useRef(null);
+
+  const uploadAudioFile = async (file) => {
+    setAudioErr("");
+    setAudioUploading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("empresa_id", empresaId || "");
+      fd.append("path_prefix", "fluxo");
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/media-upload`,
+        { method: "POST", headers: { Authorization: `Bearer ${session?.access_token}` }, body: fd },
+      );
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json.error) { setAudioErr(json.error || "Erro no upload"); return; }
+      set("media_url", json.publicUrl);
+    } catch (e) {
+      setAudioErr(e.message || "Erro ao enviar");
+    } finally {
+      setAudioUploading(false);
+    }
+  };
+
+  const startRecording = async () => {
+    setAudioErr("");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "audio/webm";
+      const mr = new MediaRecorder(stream, { mimeType });
+      recChunksRef.current = [];
+      mr.ondataavailable = e => { if (e.data.size > 0) recChunksRef.current.push(e.data); };
+      mr.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop());
+        clearInterval(recTimerRef.current);
+        setRecSeconds(0);
+        setRecording(false);
+        const blob = new Blob(recChunksRef.current, { type: mr.mimeType });
+        const ext  = mr.mimeType.includes("webm") ? "webm" : "ogg";
+        await uploadAudioFile(new File([blob], `audio_fluxo_${Date.now()}.${ext}`, { type: mr.mimeType }));
+      };
+      mr.start(250);
+      mediaRecRef.current = mr;
+      setRecording(true);
+      setRecSeconds(0);
+      recTimerRef.current = setInterval(() => setRecSeconds(s => s + 1), 1000);
+    } catch (e) {
+      setAudioErr("Microfone não disponível: " + e.message);
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecRef.current && recording) mediaRecRef.current.stop();
+  };
+
+  const cancelRecording = () => {
+    if (mediaRecRef.current && recording) {
+      mediaRecRef.current.ondataavailable = null;
+      mediaRecRef.current.onstop = () => {
+        mediaRecRef.current.stream?.getTracks().forEach(t => t.stop());
+        clearInterval(recTimerRef.current);
+        setRecSeconds(0);
+        setRecording(false);
+      };
+      mediaRecRef.current.stop();
+    }
+  };
+
+  const fmtSec = s => `${String(Math.floor(s/60)).padStart(2,"0")}:${String(s%60).padStart(2,"0")}`;
 
   return (
     <div style={{ width: 290, minWidth: 290, borderLeft: `1px solid ${L.line}`,
@@ -816,7 +896,98 @@ function NodeEditPanel({ no, onSave, onClose, onGenerateRoutes, setores = [], us
 
         {/* ── ÁUDIO ── */}
         {form.tipo === "audio" && (
-          <FieldInput label="URL do áudio" value={form.media_url} onChange={v => set("media_url", v)} placeholder="https://exemplo.com/audio.mp3" />
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: L.t2, marginBottom: 6 }}>Áudio</div>
+
+            {/* Abas de modo */}
+            <div style={{ display: "flex", gap: 4, marginBottom: 10 }}>
+              {[
+                { id: "url",     label: "URL",     ico: "🔗" },
+                { id: "arquivo", label: "Arquivo", ico: "📁" },
+                { id: "gravar",  label: "Gravar",  ico: "🎙" },
+              ].map(m => (
+                <button key={m.id} type="button"
+                  onClick={() => { setAudioMode(m.id); setAudioErr(""); }}
+                  style={{ flex: 1, padding: "5px 4px", borderRadius: 7, fontSize: 11, fontWeight: 600,
+                    cursor: "pointer", fontFamily: "inherit",
+                    border: `1.5px solid ${audioMode === m.id ? L.accent : L.line}`,
+                    background: audioMode === m.id ? L.accent + "18" : L.surface,
+                    color: audioMode === m.id ? L.accent : L.t3 }}>
+                  {m.ico} {m.label}
+                </button>
+              ))}
+            </div>
+
+            {/* URL */}
+            {audioMode === "url" && (
+              <input
+                value={form.media_url || ""}
+                onChange={e => set("media_url", e.target.value)}
+                placeholder="https://exemplo.com/audio.mp3"
+                style={{ width: "100%", padding: "7px 10px", borderRadius: 7, border: `1px solid ${L.line}`,
+                  fontSize: 12, color: L.t1, background: L.surface, fontFamily: "inherit", boxSizing: "border-box" }}
+              />
+            )}
+
+            {/* Arquivo */}
+            {audioMode === "arquivo" && (
+              <>
+                <input ref={audioFileRef} type="file" accept="audio/*" style={{ display: "none" }}
+                  onChange={async e => { const f = e.target.files?.[0]; if (f) await uploadAudioFile(f); e.target.value = ""; }} />
+                <button type="button" disabled={audioUploading}
+                  onClick={() => audioFileRef.current?.click()}
+                  style={{ width: "100%", padding: "8px 10px", borderRadius: 7, fontSize: 12, fontWeight: 600,
+                    cursor: audioUploading ? "not-allowed" : "pointer", fontFamily: "inherit",
+                    border: `1.5px dashed ${L.line}`, background: L.surface, color: L.t2 }}>
+                  {audioUploading ? "⟳ Enviando..." : "📁 Selecionar arquivo de áudio"}
+                </button>
+              </>
+            )}
+
+            {/* Gravar */}
+            {audioMode === "gravar" && (
+              <div style={{ textAlign: "center" }}>
+                {!recording ? (
+                  <button type="button" disabled={audioUploading}
+                    onClick={startRecording}
+                    style={{ width: "100%", padding: "10px", borderRadius: 8, fontSize: 12, fontWeight: 700,
+                      cursor: audioUploading ? "not-allowed" : "pointer", fontFamily: "inherit",
+                      border: "none", background: "#dc2626", color: "white" }}>
+                    {audioUploading ? "⟳ Enviando..." : "🎙 Iniciar gravação"}
+                  </button>
+                ) : (
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#dc2626", marginBottom: 8 }}>
+                      ● {fmtSec(recSeconds)}
+                    </div>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button type="button" onClick={stopRecording}
+                        style={{ flex: 1, padding: "8px", borderRadius: 7, fontSize: 12, fontWeight: 700,
+                          cursor: "pointer", fontFamily: "inherit", border: "none", background: "#16a34a", color: "white" }}>
+                        ✓ Concluir
+                      </button>
+                      <button type="button" onClick={cancelRecording}
+                        style={{ padding: "8px 12px", borderRadius: 7, fontSize: 12, fontWeight: 600,
+                          cursor: "pointer", fontFamily: "inherit", border: `1px solid ${L.line}`, background: L.surface, color: L.t3 }}>
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Erro */}
+            {audioErr && <div style={{ fontSize: 11, color: "#dc2626", marginTop: 6 }}>{audioErr}</div>}
+
+            {/* Preview URL atual */}
+            {form.media_url && (
+              <div style={{ marginTop: 8, padding: "6px 8px", background: "#16a34a12",
+                borderRadius: 6, fontSize: 10, color: "#16a34a", wordBreak: "break-all" }}>
+                ✓ {form.media_url.length > 60 ? "..." + form.media_url.slice(-50) : form.media_url}
+              </div>
+            )}
+          </div>
         )}
 
         {/* ── DOCUMENTO ── */}
@@ -1631,6 +1802,7 @@ export default function PageChatbotBuilder({ user }) {
             onGenerateRoutes={generateRoutes}
             setores={setores}
             usuarios={vendedores}
+            empresaId={user?.empresa_id}
           />
         )}
       </div>
