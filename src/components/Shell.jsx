@@ -8,41 +8,51 @@ import { L } from "../constants/theme";
 import { supabase } from "../lib/supabase";
 import { injectMetaPixel, injectGA4 } from "../lib/analytics";
 
-// Lazy load: cada página vira chunk separado — carregado só quando o usuário navega até ela
-const PageDashboard        = lazy(() => import("../pages/PageDashboard"));
-const PageLeads            = lazy(() => import("../pages/PageLeads"));
-const PagePipeline         = lazy(() => import("../pages/PagePipeline"));
-const PageChat             = lazy(() => import("../pages/PageChat"));
-const PageBroadcast        = lazy(() => import("../pages/PageBroadcast"));
-const PageChatbot          = lazy(() => import("../pages/PageChatbot"));
-const PageFollowUp         = lazy(() => import("../pages/PageFollowUp"));
-const PageReports          = lazy(() => import("../pages/PageReports"));
-const PageAI               = lazy(() => import("../pages/PageAI"));
-const PageEmpresa          = lazy(() => import("../pages/PageEmpresa"));
-const PageEquipe           = lazy(() => import("../pages/PageEquipe"));
-const PageDeps             = lazy(() => import("../pages/PageDeps"));
-const PageFinanceiro       = lazy(() => import("../pages/PageFinanceiro"));
-const PageRH               = lazy(() => import("../pages/PageRH"));
-const PageMarketing        = lazy(() => import("../pages/PageMarketing"));
-const PageDigital          = lazy(() => import("../pages/PageDigital"));
-const PageWorkspace        = lazy(() => import("../pages/PageWorkspace"));
-const PageAgenda           = lazy(() => import("../pages/PageAgenda"));
-const PageContratos        = lazy(() => import("../pages/PageContratos"));
-const PagePropostas        = lazy(() => import("../pages/PagePropostas"));
-const PageEstoque          = lazy(() => import("../pages/PageEstoque"));
-const PageClientes         = lazy(() => import("../pages/PageClientes"));
-const PageLogs             = lazy(() => import("../pages/PageLogs"));
-const PageSuporte          = lazy(() => import("../pages/PageSuporte"));
-const PageUsers            = lazy(() => import("../pages/PageUsers"));
-const PagePlanos           = lazy(() => import("../pages/PagePlanos"));
-const PageSetores          = lazy(() => import("../pages/PageSetores"));
-const PageEtiquetas        = lazy(() => import("../pages/PageEtiquetas"));
-const PageChatbotBuilder   = lazy(() => import("../pages/PageChatbotBuilder"));
-const PageDisparos         = lazy(() => import("../pages/PageDisparos"));
-const PageRelatoriosAtend  = lazy(() => import("../pages/PageRelatoriosAtend"));
-const PageMeta             = lazy(() => import("../pages/PageMeta"));
-const PageCheckoutAdmin        = lazy(() => import("../pages/PageCheckoutAdmin"));
-const PageNotificacoesAdmin    = lazy(() => import("../pages/PageNotificacoesAdmin"));
+// After a new deploy, chunk hashes change. If the old chunk no longer exists on
+// the server the dynamic import rejects. This wrapper retries once then reloads
+// the page so the browser fetches the updated manifest automatically.
+function lazyLoad(factory) {
+  return lazy(() =>
+    factory().catch(() =>
+      factory().catch(() => { window.location.reload(); return new Promise(() => {}); })
+    )
+  );
+}
+
+const PageDashboard        = lazyLoad(() => import("../pages/PageDashboard"));
+const PageLeads            = lazyLoad(() => import("../pages/PageLeads"));
+const PagePipeline         = lazyLoad(() => import("../pages/PagePipeline"));
+const PageChat             = lazyLoad(() => import("../pages/PageChat"));
+const PageBroadcast        = lazyLoad(() => import("../pages/PageBroadcast"));
+const PageChatbot          = lazyLoad(() => import("../pages/PageChatbot"));
+const PageFollowUp         = lazyLoad(() => import("../pages/PageFollowUp"));
+const PageReports          = lazyLoad(() => import("../pages/PageReports"));
+const PageAI               = lazyLoad(() => import("../pages/PageAI"));
+const PageEmpresa          = lazyLoad(() => import("../pages/PageEmpresa"));
+const PageEquipe           = lazyLoad(() => import("../pages/PageEquipe"));
+const PageDeps             = lazyLoad(() => import("../pages/PageDeps"));
+const PageFinanceiro       = lazyLoad(() => import("../pages/PageFinanceiro"));
+const PageRH               = lazyLoad(() => import("../pages/PageRH"));
+const PageMarketing        = lazyLoad(() => import("../pages/PageMarketing"));
+const PageDigital          = lazyLoad(() => import("../pages/PageDigital"));
+const PageWorkspace        = lazyLoad(() => import("../pages/PageWorkspace"));
+const PageAgenda           = lazyLoad(() => import("../pages/PageAgenda"));
+const PageContratos        = lazyLoad(() => import("../pages/PageContratos"));
+const PagePropostas        = lazyLoad(() => import("../pages/PagePropostas"));
+const PageEstoque          = lazyLoad(() => import("../pages/PageEstoque"));
+const PageClientes         = lazyLoad(() => import("../pages/PageClientes"));
+const PageLogs             = lazyLoad(() => import("../pages/PageLogs"));
+const PageSuporte          = lazyLoad(() => import("../pages/PageSuporte"));
+const PageUsers            = lazyLoad(() => import("../pages/PageUsers"));
+const PagePlanos           = lazyLoad(() => import("../pages/PagePlanos"));
+const PageSetores          = lazyLoad(() => import("../pages/PageSetores"));
+const PageEtiquetas        = lazyLoad(() => import("../pages/PageEtiquetas"));
+const PageChatbotBuilder   = lazyLoad(() => import("../pages/PageChatbotBuilder"));
+const PageDisparos         = lazyLoad(() => import("../pages/PageDisparos"));
+const PageRelatoriosAtend  = lazyLoad(() => import("../pages/PageRelatoriosAtend"));
+const PageMeta             = lazyLoad(() => import("../pages/PageMeta"));
+const PageCheckoutAdmin    = lazyLoad(() => import("../pages/PageCheckoutAdmin"));
+const PageNotificacoesAdmin = lazyLoad(() => import("../pages/PageNotificacoesAdmin"));
 
 const NAV_ITEMS = [
   {id:"dashboard",  label:"Dashboard",      ico:"▦", g:"principal"},

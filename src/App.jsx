@@ -37,10 +37,20 @@ class ErrorBoundary extends Component {
   }
 }
 
-const PageLanding  = lazy(() => import("./pages/PageLanding"));
-const PageBlog     = lazy(() => import("./pages/PageBlog"));
-const PageDocs     = lazy(() => import("./pages/PageDocs"));
-const PageObrigado = lazy(() => import("./pages/PageObrigado"));
+// Retries a failed dynamic import once; if it still fails, reloads the page
+// so the browser fetches the new chunk manifest after a deploy.
+function lazyLoad(factory) {
+  return lazy(() =>
+    factory().catch(() =>
+      factory().catch(() => { window.location.reload(); return new Promise(() => {}); })
+    )
+  );
+}
+
+const PageLanding  = lazyLoad(() => import("./pages/PageLanding"));
+const PageBlog     = lazyLoad(() => import("./pages/PageBlog"));
+const PageDocs     = lazyLoad(() => import("./pages/PageDocs"));
+const PageObrigado = lazyLoad(() => import("./pages/PageObrigado"));
 
 const PATH_MAP  = { "/c4os": "login", "/c4blog": "blog", "/c4docs": "docs", "/obrigado": "obrigado" };
 const PAGE_PATH = { landing: "/", login: "/C4OS", blog: "/C4BLOG", docs: "/C4DOCS", obrigado: "/obrigado" };
