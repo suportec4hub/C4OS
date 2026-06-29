@@ -518,17 +518,21 @@ function NodeEditPanel({ no, onSave, onClose, onGenerateRoutes, setores = [], us
   // ── Mídia: estados de upload/gravação ─────────────────────────────────────
   const [audioMode,    setAudioMode]    = useState("url");
   const [videoMode,    setVideoMode]    = useState("url");
+  const [imgMode,      setImgMode]      = useState("url");
   const [recording,    setRecording]    = useState(false);
   const [recSeconds,   setRecSeconds]   = useState(0);
   const [audioUploading, setAudioUploading] = useState(false);
   const [videoUploading, setVideoUploading] = useState(false);
+  const [imgUploading,   setImgUploading]   = useState(false);
   const [audioErr,     setAudioErr]     = useState("");
   const [videoErr,     setVideoErr]     = useState("");
+  const [imgErr,       setImgErr]       = useState("");
   const recChunksRef   = useRef([]);
   const recTimerRef    = useRef(null);
   const mediaRecRef    = useRef(null);
   const audioFileRef   = useRef(null);
   const videoFileRef   = useRef(null);
+  const imgFileRef     = useRef(null);
 
   const uploadMediaFile = async (file, setUploading, setErr) => {
     setErr("");
@@ -887,7 +891,64 @@ function NodeEditPanel({ no, onSave, onClose, onGenerateRoutes, setores = [], us
         {/* ── IMAGEM ── */}
         {form.tipo === "imagem" && (
           <>
-            <FieldInput label="URL da mídia" value={form.media_url} onChange={v => set("media_url", v)} placeholder="https://exemplo.com/imagem.jpg" />
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: L.t2, marginBottom: 6 }}>Imagem</div>
+
+              <div style={{ display: "flex", gap: 4, marginBottom: 10 }}>
+                {[
+                  { id: "url",     label: "URL",     ico: "🔗" },
+                  { id: "arquivo", label: "Arquivo", ico: "📁" },
+                ].map(m => (
+                  <button key={m.id} type="button"
+                    onClick={() => { setImgMode(m.id); setImgErr(""); }}
+                    style={{ flex: 1, padding: "5px 4px", borderRadius: 7, fontSize: 11, fontWeight: 600,
+                      cursor: "pointer", fontFamily: "inherit",
+                      border: `1.5px solid ${imgMode === m.id ? L.accent : L.line}`,
+                      background: imgMode === m.id ? L.accent + "18" : L.surface,
+                      color: imgMode === m.id ? L.accent : L.t3 }}>
+                    {m.ico} {m.label}
+                  </button>
+                ))}
+              </div>
+
+              {imgMode === "url" && (
+                <input
+                  value={form.media_url || ""}
+                  onChange={e => set("media_url", e.target.value)}
+                  placeholder="https://exemplo.com/imagem.jpg"
+                  style={{ width: "100%", padding: "7px 10px", borderRadius: 7, border: `1px solid ${L.line}`,
+                    fontSize: 12, color: L.t1, background: L.surface, fontFamily: "inherit", boxSizing: "border-box" }}
+                />
+              )}
+
+              {imgMode === "arquivo" && (
+                <>
+                  <input ref={imgFileRef} type="file" accept="image/*" style={{ display: "none" }}
+                    onChange={async e => { const f = e.target.files?.[0]; if (f) await uploadMediaFile(f, setImgUploading, setImgErr); e.target.value = ""; }} />
+                  <button type="button" disabled={imgUploading}
+                    onClick={() => imgFileRef.current?.click()}
+                    style={{ width: "100%", padding: "8px 10px", borderRadius: 7, fontSize: 12, fontWeight: 600,
+                      cursor: imgUploading ? "not-allowed" : "pointer", fontFamily: "inherit",
+                      border: `1.5px dashed ${L.line}`, background: L.surface, color: L.t2 }}>
+                    {imgUploading ? "⟳ Enviando..." : "📁 Selecionar imagem"}
+                  </button>
+                </>
+              )}
+
+              {imgErr && <div style={{ fontSize: 11, color: "#dc2626", marginTop: 6 }}>{imgErr}</div>}
+
+              {form.media_url && (
+                <div style={{ marginTop: 8 }}>
+                  <img src={form.media_url} alt="preview"
+                    style={{ maxWidth: "100%", maxHeight: 120, borderRadius: 6, display: "block", objectFit: "cover" }}
+                    onError={e => { e.currentTarget.style.display = "none"; }} />
+                  <div style={{ marginTop: 4, padding: "4px 8px", background: "#16a34a12",
+                    borderRadius: 6, fontSize: 10, color: "#16a34a", wordBreak: "break-all" }}>
+                    ✓ {form.media_url.length > 60 ? "..." + form.media_url.slice(-50) : form.media_url}
+                  </div>
+                </div>
+              )}
+            </div>
             <FieldInput label="Legenda (opcional)" value={form.mensagem} onChange={v => set("mensagem", v)} placeholder="Texto da legenda..." />
           </>
         )}
