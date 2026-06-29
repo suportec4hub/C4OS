@@ -384,6 +384,7 @@ async function executarFluxo(
         estado.variaveis["_ultima_msg"] = texto;
         if (noAtual.tipo === "aguardar" && noAtual.variavel) {
           estado.variaveis[noAtual.variavel] = texto;
+          console.log(`[fluxo] aguardar: variavel "${noAtual.variavel}" = "${texto.slice(0, 60)}"`);
         }
         if (["opcoes", "respostas", "lista"].includes(noAtual.tipo)) {
           const num = parseInt(texto.trim(), 10);
@@ -1255,8 +1256,12 @@ async function processMessages(
           }
         };
 
+        // Transfer word: only intercept when no visual flow is actively waiting for input.
+        // If a flow is paused at an "aguardar" node, the user's message is their flow answer
+        // and forcing a transfer here would permanently break the flow state.
         const transferWord = (cfg.transferir_palavra || "atendente").toLowerCase().trim();
-        if (texto.toLowerCase().includes(transferWord)) {
+        const hasActiveFlowForTransfer = !!(conv.fluxo_estado as { fluxo_id?: string } | null)?.fluxo_id;
+        if (texto.toLowerCase().includes(transferWord) && !hasActiveFlowForTransfer) {
           await supabase.from("conversas").update({ bot_ativo: false, status: "aguardando", fluxo_estado: null }).eq("id", conv!.id);
           await sendBot("Aguarde, vou transferir para um atendente. 👋");
           continue;
@@ -1270,7 +1275,11 @@ async function processMessages(
         const diasOk = (cfg.dias_semana || [1,2,3,4,5]).includes(dia);
         const dentroHorario = diasOk && hAtu >= (hI*60+mI) && hAtu < (hF*60+mF);
 
-        if (!dentroHorario) {
+        // Active flows must continue regardless of business hours —
+        // if the user responds to an "aguardar" question outside hours, the flow must resume.
+        // Only block new flow initiations and standalone chatbot rules outside business hours.
+        const hasActiveFlowForHours = !!(conv.fluxo_estado as { fluxo_id?: string } | null)?.fluxo_id;
+        if (!dentroHorario && !hasActiveFlowForHours) {
           if (isNew && cfg.mensagem_fora_horario) await sendBot(cfg.mensagem_fora_horario);
           continue;
         }
