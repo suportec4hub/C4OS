@@ -515,20 +515,24 @@ function NodeEditPanel({ no, onSave, onClose, onGenerateRoutes, setores = [], us
   const tipo = NODE_TYPES[form.tipo] || NODE_TYPES.mensagem;
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
-  // ── Áudio: estado de gravação/upload ──────────────────────────────────────
-  const [audioMode,    setAudioMode]    = useState("url");   // "url" | "arquivo" | "gravar"
+  // ── Mídia: estados de upload/gravação ─────────────────────────────────────
+  const [audioMode,    setAudioMode]    = useState("url");
+  const [videoMode,    setVideoMode]    = useState("url");
   const [recording,    setRecording]    = useState(false);
   const [recSeconds,   setRecSeconds]   = useState(0);
   const [audioUploading, setAudioUploading] = useState(false);
+  const [videoUploading, setVideoUploading] = useState(false);
   const [audioErr,     setAudioErr]     = useState("");
+  const [videoErr,     setVideoErr]     = useState("");
   const recChunksRef   = useRef([]);
   const recTimerRef    = useRef(null);
   const mediaRecRef    = useRef(null);
   const audioFileRef   = useRef(null);
+  const videoFileRef   = useRef(null);
 
-  const uploadAudioFile = async (file) => {
-    setAudioErr("");
-    setAudioUploading(true);
+  const uploadMediaFile = async (file, setUploading, setErr) => {
+    setErr("");
+    setUploading(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const fd = new FormData();
@@ -540,14 +544,16 @@ function NodeEditPanel({ no, onSave, onClose, onGenerateRoutes, setores = [], us
         { method: "POST", headers: { Authorization: `Bearer ${session?.access_token}` }, body: fd },
       );
       const json = await res.json().catch(() => ({}));
-      if (!res.ok || json.error) { setAudioErr(json.error || "Erro no upload"); return; }
+      if (!res.ok || json.error) { setErr(json.error || "Erro no upload"); return; }
       set("media_url", json.publicUrl);
     } catch (e) {
-      setAudioErr(e.message || "Erro ao enviar");
+      setErr(e.message || "Erro ao enviar");
     } finally {
-      setAudioUploading(false);
+      setUploading(false);
     }
   };
+
+  const uploadAudioFile = (file) => uploadMediaFile(file, setAudioUploading, setAudioErr);
 
   const startRecording = async () => {
     setAudioErr("");
@@ -889,7 +895,62 @@ function NodeEditPanel({ no, onSave, onClose, onGenerateRoutes, setores = [], us
         {/* ── VÍDEO ── */}
         {form.tipo === "video" && (
           <>
-            <FieldInput label="URL da mídia" value={form.media_url} onChange={v => set("media_url", v)} placeholder="https://exemplo.com/video.mp4" />
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: L.t2, marginBottom: 6 }}>Vídeo</div>
+
+              {/* Abas de modo */}
+              <div style={{ display: "flex", gap: 4, marginBottom: 10 }}>
+                {[
+                  { id: "url",     label: "URL",     ico: "🔗" },
+                  { id: "arquivo", label: "Arquivo", ico: "📁" },
+                ].map(m => (
+                  <button key={m.id} type="button"
+                    onClick={() => { setVideoMode(m.id); setVideoErr(""); }}
+                    style={{ flex: 1, padding: "5px 4px", borderRadius: 7, fontSize: 11, fontWeight: 600,
+                      cursor: "pointer", fontFamily: "inherit",
+                      border: `1.5px solid ${videoMode === m.id ? L.accent : L.line}`,
+                      background: videoMode === m.id ? L.accent + "18" : L.surface,
+                      color: videoMode === m.id ? L.accent : L.t3 }}>
+                    {m.ico} {m.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* URL */}
+              {videoMode === "url" && (
+                <input
+                  value={form.media_url || ""}
+                  onChange={e => set("media_url", e.target.value)}
+                  placeholder="https://exemplo.com/video.mp4"
+                  style={{ width: "100%", padding: "7px 10px", borderRadius: 7, border: `1px solid ${L.line}`,
+                    fontSize: 12, color: L.t1, background: L.surface, fontFamily: "inherit", boxSizing: "border-box" }}
+                />
+              )}
+
+              {/* Arquivo */}
+              {videoMode === "arquivo" && (
+                <>
+                  <input ref={videoFileRef} type="file" accept="video/*" style={{ display: "none" }}
+                    onChange={async e => { const f = e.target.files?.[0]; if (f) await uploadMediaFile(f, setVideoUploading, setVideoErr); e.target.value = ""; }} />
+                  <button type="button" disabled={videoUploading}
+                    onClick={() => videoFileRef.current?.click()}
+                    style={{ width: "100%", padding: "8px 10px", borderRadius: 7, fontSize: 12, fontWeight: 600,
+                      cursor: videoUploading ? "not-allowed" : "pointer", fontFamily: "inherit",
+                      border: `1.5px dashed ${L.line}`, background: L.surface, color: L.t2 }}>
+                    {videoUploading ? "⟳ Enviando..." : "📁 Selecionar arquivo de vídeo"}
+                  </button>
+                </>
+              )}
+
+              {videoErr && <div style={{ fontSize: 11, color: "#dc2626", marginTop: 6 }}>{videoErr}</div>}
+
+              {form.media_url && (
+                <div style={{ marginTop: 8, padding: "6px 8px", background: "#16a34a12",
+                  borderRadius: 6, fontSize: 10, color: "#16a34a", wordBreak: "break-all" }}>
+                  ✓ {form.media_url.length > 60 ? "..." + form.media_url.slice(-50) : form.media_url}
+                </div>
+              )}
+            </div>
             <FieldInput label="Legenda (opcional)" value={form.mensagem} onChange={v => set("mensagem", v)} placeholder="Texto da legenda..." />
           </>
         )}
