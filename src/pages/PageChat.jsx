@@ -119,6 +119,18 @@ async function fetchMediaViaWamid(wamid, empresaId) {
 }
 const isEncUrl = (u) => u && (u.includes(".enc") || u.includes("t62.7") || u.includes("mmg.whatsapp.net"));
 
+// ─── Helper de download de mídia ─────────────────────────────────────────────
+async function triggerDownload(directUrl, blobUrl, wamid, empresaId, filename = "download") {
+  let href = blobUrl || (!isEncUrl(directUrl) && directUrl ? directUrl : null);
+  if (!href && wamid && empresaId) {
+    try { const r = await fetchMediaViaWamid(wamid, empresaId); href = r.blobUrl; } catch { return; }
+  }
+  if (!href) return;
+  const a = document.createElement("a");
+  a.href = href; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+}
+
 // ─── MediaImage — imagem com lazy-load/descriptografia automática ─────────────
 function MediaImage({ url, wamid, out, onImageClick, empresaId, caption }) {
   const needsFetch = isEncUrl(url) || !url;
@@ -156,13 +168,21 @@ function MediaImage({ url, wamid, out, onImageClick, empresaId, caption }) {
     </button>
   );
 
+  const dlStyle = { position:"absolute", bottom:6, right:6, background:"rgba(0,0,0,.45)",
+    border:"none", borderRadius:6, color:"#fff", fontSize:11, fontWeight:600,
+    cursor:"pointer", padding:"3px 8px", backdropFilter:"blur(4px)", lineHeight:1.4 };
+
   return (
-    <div>
+    <div style={{ position:"relative", display:"inline-block", maxWidth:"100%" }}>
       <img src={displayUrl} alt="imagem"
         onClick={() => onImageClick?.(displayUrl)}
         onError={() => { if (!blobUrl && wamid) load(); else setFailed(true); }}
         style={{ maxWidth:"100%", borderRadius:8, marginBottom: caption ? 4 : 0,
           cursor:"zoom-in", display:"block" }} />
+      <button style={dlStyle}
+        onClick={e => { e.stopPropagation(); triggerDownload(url, blobUrl, wamid, empresaId, "imagem"); }}>
+        ⬇ Baixar
+      </button>
       {caption && <div style={{ fontSize:12, marginTop:2 }}>{caption}</div>}
     </div>
   );
@@ -275,8 +295,17 @@ function AudioPlayer({ src, wamid, out, empresaId }) {
               background: filled ? accent : track, transition:"background .08s" }} />;
           })}
         </div>
-        <div style={{ fontSize:10, color:dimColor, fontFamily:"'JetBrains Mono',monospace", letterSpacing:".5px" }}>
-          {fmt(current)} / {fmt(duration || 0)}
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+          <div style={{ fontSize:10, color:dimColor, fontFamily:"'JetBrains Mono',monospace", letterSpacing:".5px" }}>
+            {fmt(current)} / {fmt(duration || 0)}
+          </div>
+          <button
+            onClick={() => triggerDownload(src, blobSrc, wamid, empresaId, "audio")}
+            title="Baixar áudio"
+            style={{ background:"none", border:"none", cursor:"pointer", color:dimColor,
+              fontSize:12, padding:"0 2px", lineHeight:1 }}>
+            ⬇
+          </button>
         </div>
       </div>
     </div>
@@ -323,10 +352,19 @@ function VideoPlayer({ src, wamid, out, empresaId, caption }) {
 
   return (
     <div>
-      <video controls src={activeSrc} onClick={e => e.stopPropagation()}
-        onError={() => { if (!blobSrc && wamid) load(); else setFailed(true); }}
-        style={{ maxWidth:"100%", maxHeight:220, borderRadius:8, marginBottom: caption ? 4 : 0, display:"block" }} />
-      {caption && <div style={{ fontSize:12, marginTop:2 }}>{caption}</div>}
+      <div style={{ position:"relative", display:"inline-block", maxWidth:"100%" }}>
+        <video controls src={activeSrc} onClick={e => e.stopPropagation()}
+          onError={() => { if (!blobSrc && wamid) load(); else setFailed(true); }}
+          style={{ maxWidth:"100%", maxHeight:220, borderRadius:8, display:"block" }} />
+        <button
+          onClick={e => { e.stopPropagation(); triggerDownload(src, blobSrc, wamid, empresaId, "video.mp4"); }}
+          style={{ position:"absolute", bottom:6, right:6, background:"rgba(0,0,0,.45)",
+            border:"none", borderRadius:6, color:"#fff", fontSize:11, fontWeight:600,
+            cursor:"pointer", padding:"3px 8px", backdropFilter:"blur(4px)" }}>
+          ⬇ Baixar
+        </button>
+      </div>
+      {caption && <div style={{ fontSize:12, marginTop:4 }}>{caption}</div>}
     </div>
   );
 }
