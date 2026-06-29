@@ -1161,8 +1161,10 @@ async function processMessages(
     // Pre-check: look up a per-seller flow for conversations assigned to a seller.
     // This runs before the em_atendimento gate so seller flows can activate even
     // when a human agent is assigned (status = em_atendimento).
+    // Always look up a per-seller flow regardless of bot_ativo — seller flows
+    // bypass the global bot toggle because they are assigned to a specific agent.
     let vendedorFluxoId: string | null = null;
-    if (!fromMe && !isHistory && conv.bot_ativo !== false) {
+    if (!fromMe && !isHistory) {
       const convAtendenteId = (conv as Record<string, unknown>).atendente_id as string | null;
       if (convAtendenteId) {
         const { data: vf } = await supabase.from("chatbot_fluxos")
@@ -1173,7 +1175,9 @@ async function processMessages(
     }
 
     const hasActiveFlowState = !!(conv.fluxo_estado as { fluxo_id?: string } | null)?.fluxo_id;
-    if (!fromMe && !isHistory && conv.bot_ativo !== false &&
+    // Allow chatbot block when bot is enabled OR when a per-seller flow is configured
+    // (seller flows bypass bot_ativo=false since they are seller-managed automations).
+    if (!fromMe && !isHistory && (conv.bot_ativo !== false || !!vendedorFluxoId) &&
         (conv.status !== "em_atendimento" || hasActiveFlowState || vendedorFluxoId)) {
       try {
         const { data: cfg } = await supabase.from("chatbot_config").select("*").eq("empresa_id", empresa_id).maybeSingle();
