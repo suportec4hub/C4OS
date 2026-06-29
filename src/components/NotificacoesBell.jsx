@@ -223,38 +223,51 @@ export default function NotificacoesBell({ user }) {
                 return (
                   <div key={n.id}
                     style={{
-                      padding: "12px 16px",
+                      padding: "13px 16px 12px",
                       borderBottom: `1px solid ${L.lineSoft}`,
                       display: "flex",
                       alignItems: "flex-start",
-                      gap: 10,
+                      gap: 11,
                       background: nova ? L.tealBg : "transparent",
                       transition: "background .15s",
                     }}>
                     {/* Ícone tipo */}
                     <div style={{
-                      width: 30, height: 30, borderRadius: 8,
-                      background: tc.bg, border: `1px solid ${tc.cor}33`,
+                      width: 32, height: 32, borderRadius: 9,
+                      background: tc.bg, border: `1px solid ${tc.cor}40`,
                       display: "flex", alignItems: "center", justifyContent: "center",
-                      fontSize: 13, color: tc.cor, flexShrink: 0,
+                      fontSize: 14, color: tc.cor, flexShrink: 0, marginTop: 1,
                     }}>
                       {tc.ico}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <span style={{ fontSize: 12.5, fontWeight: nova ? 700 : 500, color: L.t1 }}>
+                      {/* Título + badge "nova" */}
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: n.conteudo ? 5 : 4 }}>
+                        <span style={{ fontSize: 12.5, fontWeight: nova ? 700 : 600, color: L.t1, lineHeight: 1.3 }}>
                           {n.titulo}
                         </span>
                         {nova && (
                           <span style={{ width: 6, height: 6, borderRadius: "50%", background: L.teal, flexShrink: 0 }} />
                         )}
                       </div>
+                      {/* Conteúdo com suporte a quebras de linha */}
                       {n.conteudo && (
-                        <p style={{ fontSize: 11, color: L.t3, lineHeight: 1.5, marginTop: 2 }}>{n.conteudo}</p>
+                        <p style={{
+                          fontSize: 11.5,
+                          color: L.t2,
+                          lineHeight: 1.6,
+                          margin: 0,
+                          marginBottom: 5,
+                          whiteSpace: "pre-line",
+                          wordBreak: "break-word",
+                        }}>
+                          {n.conteudo}
+                        </p>
                       )}
-                      <div style={{ fontSize: 10, color: L.t4, marginTop: 3 }}>
+                      {/* Data */}
+                      <div style={{ fontSize: 10, color: L.t4, marginTop: 2 }}>
                         {new Date(n.created_at).toLocaleDateString("pt-BR", {
-                          day: "2-digit", month: "short",
+                          day: "2-digit", month: "short", year: "numeric",
                           hour: "2-digit", minute: "2-digit",
                         })}
                       </div>

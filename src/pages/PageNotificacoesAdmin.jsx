@@ -203,7 +203,11 @@ export default function PageNotificacoesAdmin({ user }) {
                     {!n.ativo && <span style={{ fontSize: 10, color: L.t4, background: L.surface, border: `1px solid ${L.line}`, borderRadius: 6, padding: "1px 7px" }}>Inativa</span>}
                     {expirado && <span style={{ fontSize: 10, color: L.red, background: L.redBg, border: `1px solid ${L.redA}`, borderRadius: 6, padding: "1px 7px" }}>Expirada</span>}
                   </div>
-                  {n.conteudo && <p style={{ fontSize: 12, color: L.t3, lineHeight: 1.5, marginBottom: 4 }}>{n.conteudo}</p>}
+                  {n.conteudo && (
+                    <p style={{ fontSize: 12, color: L.t2, lineHeight: 1.6, marginBottom: 5, marginTop: 3, whiteSpace: "pre-line", wordBreak: "break-word" }}>
+                      {n.conteudo}
+                    </p>
+                  )}
                   <div style={{ fontSize: 10, color: L.t4, display: "flex", gap: 12, flexWrap: "wrap" }}>
                     <span>Criado por {n.usuarios?.nome || "—"}</span>
                     <span>{new Date(n.created_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
