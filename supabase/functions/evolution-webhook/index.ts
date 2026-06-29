@@ -1294,9 +1294,10 @@ async function processMessages(
 
         // Active flows must continue regardless of business hours —
         // if the user responds to an "aguardar" question outside hours, the flow must resume.
+        // Per-seller flows also bypass company hours (seller manages their own availability).
         // Only block new flow initiations and standalone chatbot rules outside business hours.
         const hasActiveFlowForHours = !!(conv.fluxo_estado as { fluxo_id?: string } | null)?.fluxo_id;
-        if (!dentroHorario && !hasActiveFlowForHours) {
+        if (!dentroHorario && !hasActiveFlowForHours && !vendedorFluxoId) {
           if (isNew && cfg?.mensagem_fora_horario) await sendBot(cfg.mensagem_fora_horario as string);
           continue;
         }
