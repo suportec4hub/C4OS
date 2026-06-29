@@ -1182,8 +1182,12 @@ Deno.serve(async (req) => {
         }
         const d = await r.json();
         // Evolution pode retornar em diferentes formatos dependendo da versão
-        const base64   = d?.base64   ?? d?.data?.base64   ?? d?.media?.base64   ?? null;
+        const rawB64   = d?.base64   ?? d?.data?.base64   ?? d?.media?.base64   ?? null;
         const mimetype = d?.mimetype ?? d?.data?.mimetype ?? d?.media?.mimetype ?? d?.type ?? "application/octet-stream";
+        // Pode vir como data URL ("data:audio/ogg;base64,...") — strip prefix
+        const base64 = typeof rawB64 === "string" && rawB64.startsWith("data:")
+          ? (rawB64.indexOf(",") >= 0 ? rawB64.slice(rawB64.indexOf(",") + 1) : null)
+          : rawB64;
         if (base64) return json({ success: true, base64, mimetype });
         return json({ success: false, error: "Mídia não disponível ou expirada" });
       } catch (e) {

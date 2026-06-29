@@ -110,7 +110,10 @@ async function fetchMediaViaWamid(wamid, empresaId) {
     body: { action: "fetchMedia", empresa_id: empresaId, wamid },
   });
   if (!data?.base64) throw new Error(data?.error || "Sem base64");
-  const bytes = Uint8Array.from(atob(data.base64), c => c.charCodeAt(0));
+  const raw = data.base64;
+  const b64str = raw.startsWith("data:") ? (raw.includes(",") ? raw.slice(raw.indexOf(",") + 1) : null) : raw;
+  if (!b64str) throw new Error("base64 inválido");
+  const bytes = Uint8Array.from(atob(b64str), c => c.charCodeAt(0));
   const blob  = new Blob([bytes], { type: data.mimetype || "application/octet-stream" });
   return { blobUrl: URL.createObjectURL(blob), mimetype: data.mimetype };
 }

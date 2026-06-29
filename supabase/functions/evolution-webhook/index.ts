@@ -969,8 +969,12 @@ async function processMessages(
               });
               if (fr.ok) {
                 const fd = await fr.json();
-                const b64 = (fd?.base64 ?? fd?.data?.base64 ?? fd?.media?.base64 ?? null) as string | null;
+                const rawB64 = (fd?.base64 ?? fd?.data?.base64 ?? fd?.media?.base64 ?? null) as string | null;
                 const mt  = (fd?.mimetype ?? fd?.data?.mimetype ?? fd?.type ?? null) as string | null;
+                // Evolution API pode retornar data URL ("data:audio/ogg;base64,...") — strip prefix
+                const b64 = rawB64?.startsWith("data:")
+                  ? (rawB64.indexOf(",") >= 0 ? rawB64.slice(rawB64.indexOf(",") + 1) : null)
+                  : rawB64;
                 if (b64) {
                   bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
                   if (mt) resolvedMime = mt;
