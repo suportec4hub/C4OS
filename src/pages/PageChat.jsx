@@ -283,6 +283,54 @@ function AudioPlayer({ src, wamid, out, empresaId }) {
   );
 }
 
+// ─── VideoPlayer — vídeo com fallback wamid igual ao áudio/imagem ────────────
+function VideoPlayer({ src, wamid, out, empresaId, caption }) {
+  const needsFetch = isEncUrl(src) || !src;
+  const [blobSrc,  setBlobSrc]  = useState(null);
+  const [loading,  setLoading]  = useState(false);
+  const [failed,   setFailed]   = useState(false);
+
+  const activeSrc = blobSrc || (!needsFetch ? src : null);
+
+  const load = async () => {
+    if (loading || blobSrc || !wamid || !empresaId) { if (!wamid) setFailed(true); return; }
+    setLoading(true);
+    try {
+      const { blobUrl } = await fetchMediaViaWamid(wamid, empresaId);
+      setBlobSrc(blobUrl);
+    } catch { setFailed(true); }
+    setLoading(false);
+  };
+
+  const accent = out ? "rgba(255,255,255,.9)" : L.teal;
+
+  if (failed) return (
+    <div style={{ fontSize:12, color: out ? "rgba(255,255,255,.5)" : L.t4, padding:"6px 0" }}>⚠ Vídeo indisponível</div>
+  );
+
+  if (!activeSrc) return (
+    <button onClick={load} disabled={loading}
+      style={{ display:"flex", alignItems:"center", gap:8, padding:"10px 14px",
+        background: out ? "rgba(255,255,255,.14)" : L.surface,
+        border: `1px solid ${out ? "rgba(255,255,255,.22)" : L.line}`,
+        borderRadius:10, cursor: loading ? "wait" : "pointer",
+        color: accent, fontSize:12.5, fontFamily:"inherit", outline:"none" }}>
+      {loading
+        ? <><span style={{ display:"inline-block", animation:"spin .7s linear infinite" }}>⟳</span> Carregando...</>
+        : <>🎬 Ver vídeo</>}
+    </button>
+  );
+
+  return (
+    <div>
+      <video controls src={activeSrc} onClick={e => e.stopPropagation()}
+        onError={() => { if (!blobSrc && wamid) load(); else setFailed(true); }}
+        style={{ maxWidth:"100%", maxHeight:220, borderRadius:8, marginBottom: caption ? 4 : 0, display:"block" }} />
+      {caption && <div style={{ fontSize:12, marginTop:2 }}>{caption}</div>}
+    </div>
+  );
+}
+
 // ─── Media message renderer ──────────────────────────────────────────────────
 function renderMsgContent(m, out, onImageClick, empresaId) {
   const t      = msgTexto(m);
@@ -308,13 +356,7 @@ function renderMsgContent(m, out, onImageClick, empresaId) {
       {t && <div style={{ fontSize:11, marginTop:3, opacity:.8 }}>{t}</div>}
     </div>
   );
-  if (isVideo) return (
-    <div>
-      <video controls src={url} onClick={e => e.stopPropagation()}
-        style={{ maxWidth:"100%", maxHeight:220, borderRadius:8, marginBottom: t ? 4 : 0, display:"block" }}/>
-      {t && <div style={{ fontSize:12, marginTop:2 }}>{t}</div>}
-    </div>
-  );
+  if (isVideo) return <VideoPlayer src={url} wamid={wamid} out={out} empresaId={empresaId} caption={t} />;
   if (isDoc) return (
     <a href={url} target="_blank" rel="noopener noreferrer"
       style={{ color: out ? "rgba(255,255,255,.9)" : L.blue, display:"flex", alignItems:"center", gap:5, textDecoration:"none" }}>
