@@ -762,16 +762,24 @@ async function processMessages(
     };
     const mediaObj = mediaObjMap[tipoMsg] ?? {};
     const mediaMimetype = (mediaObj.mimetype as string) || null;
-    // Evolution API v2 coloca base64 no nível do objeto de dados (m.base64), NÃO dentro de imageMessage.
-    // Também pode vir como data URL ("data:image/jpeg;base64,..."). Ambos os casos são tratados aqui.
-    const rawB64Payload = (m.base64 as string) || (mediaObj.base64 as string) || null;
+    // Evolution API pode colocar base64 em diferentes campos dependendo da versão:
+    // - m.base64 (nível do payload de dados)
+    // - mediaObj.base64 (dentro de audioMessage/imageMessage/etc)
+    // - msgContent.base64 (dentro de message)
+    // - m.media?.base64 (campo media separado)
+    const _mMedia = (m.media || {}) as Record<string,unknown>;
+    const rawB64Payload = (m.base64 as string)
+      || (mediaObj.base64 as string)
+      || (msgContent.base64 as string)
+      || (_mMedia.base64 as string)
+      || null;
     const mediaBase64 = rawB64Payload?.startsWith("data:")
       ? (rawB64Payload.indexOf(",") >= 0 ? rawB64Payload.slice(rawB64Payload.indexOf(",") + 1) : null)
       : rawB64Payload;
 
     console.log(`[webhook] ${isHistory?"HIST":"MSG"} from:${senderPhone} fromMe:${fromMe} ts:${hora} tipo:${tipoMsg} text:${texto.slice(0,60)}`);
     if (["imagem","video","audio","documento"].includes(tipoMsg)) {
-      console.log(`[webhook] media keys m:${Object.keys(m).join(",")} | b64payload:${rawB64Payload ? rawB64Payload.slice(0,50) : "null"} | mime:${mediaMimetype}`);
+      console.log(`[webhook] media mKeys:${Object.keys(m).join(",")} | msgKeys:${Object.keys(msgContent).join(",")} | mediaObjKeys:${Object.keys(mediaObj).join(",")} | b64payload:${rawB64Payload ? rawB64Payload.slice(0,50) : "null"} | mime:${mediaMimetype}`);
     }
 
     // ── Busca ou cria conversa ────────────────────────────────────────────────
@@ -946,6 +954,24 @@ async function processMessages(
     // ── Re-hospedar mídia recebida no Cloudflare R2 ─────────────────────────
     let storedMediaUrl = mediaUrl;
     if (["imagem","video","audio","documento"].includes(tipoMsg)) {
+      // Log de estrutura do payload para diagnóstico de onde o base64 está
+      await logWA(supabase, {
+        empresa_id, conversa_id: conv.id, tipo: "webhook_recebido", nivel: "info",
+        origem: "evolution-webhook", evento: "media-struct-debug",
+        resumo: `media payload struct tipo:${tipoMsg}`,
+        payload: {
+          mKeys: Object.keys(m).join(","),
+          msgKeys: Object.keys(msgContent).join(","),
+          mediaObjKeys: Object.keys(mediaObj).join(","),
+          hasB64_m: !!m.base64,
+          hasB64_mediaObj: !!mediaObj.base64,
+          hasB64_msgContent: !!msgContent.base64,
+          hasB64_media: !!_mMedia.base64,
+          rawB64prefix: String(rawB64Payload || "").slice(0, 80),
+          wamid,
+        },
+      });
+
       // Helper: strip data URL prefix e whitespace antes de atob
       const cleanB64 = (raw: string): string => {
         const stripped = raw.startsWith("data:")
@@ -985,12 +1011,24 @@ async function processMessages(
             const evoBase  = ((empInfo?.evolution_api_url as string | null) || GLOBAL_URL).replace(/\/$/, "");
             console.log(`[webhook] getBase64 inst:${evoInst} url:${evoBase}`);
             if (evoInst && evoToken) {
-              const fr = await fetch(`${evoBase}/message/getBase64FromMediaMessage/${evoInst}`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json", "apikey": evoToken },
-                body: JSON.stringify({ id: wamid }),
-                signal: AbortSignal.timeout(15000),
-              });
+              // Evolution API pode ter o endpoint em diferentes caminhos dependendo da versão.
+              // Tenta /message/getBase64FromMediaMessage (v2 padrão), depois /chat/getBase64FromMediaMessage (v1/fork).
+              const endpoints = [
+                `${evoBase}/message/getBase64FromMediaMessage/${evoInst}`,
+                `${evoBase}/chat/getBase64FromMediaMessage/${evoInst}`,
+              ];
+              let fr: Response | null = null;
+              for (const ep of endpoints) {
+                const r = await fetch(ep, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json", "apikey": evoToken },
+                  body: JSON.stringify({ id: wamid }),
+                  signal: AbortSignal.timeout(15000),
+                });
+                console.log(`[webhook] getBase64 ${ep} → ${r.status}`);
+                if (r.ok || r.status !== 404) { fr = r; break; }
+              }
+              if (!fr) fr = new Response("{}", { status: 404 });
               debugStep = `getBase64-http:${fr.status}`;
               if (fr.ok) {
                 const fd = await fr.json();
