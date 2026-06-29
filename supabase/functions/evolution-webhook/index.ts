@@ -1158,16 +1158,33 @@ async function processMessages(
     }
 
     // ── Chatbot ──────────────────────────────────────────────────────────────
-    if (!fromMe && !isHistory && conv.status !== "em_atendimento" && conv.bot_ativo !== false) {
+    // Pre-check: look up a per-seller flow for conversations assigned to a seller.
+    // This runs before the em_atendimento gate so seller flows can activate even
+    // when a human agent is assigned (status = em_atendimento).
+    let vendedorFluxoId: string | null = null;
+    if (!fromMe && !isHistory && conv.bot_ativo !== false) {
+      const convAtendenteId = (conv as Record<string, unknown>).atendente_id as string | null;
+      if (convAtendenteId) {
+        const { data: vf } = await supabase.from("chatbot_fluxos")
+          .select("id").eq("empresa_id", empresa_id)
+          .eq("usuario_id", convAtendenteId).eq("ativo", true).maybeSingle();
+        vendedorFluxoId = vf?.id ?? null;
+      }
+    }
+
+    const hasActiveFlowState = !!(conv.fluxo_estado as { fluxo_id?: string } | null)?.fluxo_id;
+    if (!fromMe && !isHistory && conv.bot_ativo !== false &&
+        (conv.status !== "em_atendimento" || hasActiveFlowState || vendedorFluxoId)) {
       try {
         const { data: cfg } = await supabase.from("chatbot_config").select("*").eq("empresa_id", empresa_id).maybeSingle();
-        if (!cfg?.ativo) continue;
+        // Skip if chatbot is disabled AND there is no per-seller flow to run
+        if (!cfg?.ativo && !vendedorFluxoId) continue;
 
-        if (isGroup && !cfg.responder_grupos) continue;
+        if (isGroup && !cfg?.responder_grupos) continue;
         // nao_responder_aberta only silences the bot for conversations with no active flow —
         // an ongoing flow must always continue even if status is "aberta"
         const hasActiveFlow = !!(conv.fluxo_estado as { fluxo_id?: string } | null)?.fluxo_id;
-        if (cfg.nao_responder_aberta && conv.status === "aberta" && !hasActiveFlow) continue;
+        if (cfg?.nao_responder_aberta && conv.status === "aberta" && !hasActiveFlow) continue;
 
         const { data: empData } = await supabase.from("empresas")
           .select("evolution_instance_id, evolution_instance_token, evolution_api_url")
@@ -1259,7 +1276,7 @@ async function processMessages(
         // Transfer word: only intercept when no visual flow is actively waiting for input.
         // If a flow is paused at an "aguardar" node, the user's message is their flow answer
         // and forcing a transfer here would permanently break the flow state.
-        const transferWord = (cfg.transferir_palavra || "atendente").toLowerCase().trim();
+        const transferWord = ((cfg?.transferir_palavra as string | null) || "atendente").toLowerCase().trim();
         const hasActiveFlowForTransfer = !!(conv.fluxo_estado as { fluxo_id?: string } | null)?.fluxo_id;
         if (texto.toLowerCase().includes(transferWord) && !hasActiveFlowForTransfer) {
           await supabase.from("conversas").update({ bot_ativo: false, status: "aguardando", fluxo_estado: null }).eq("id", conv!.id);
@@ -1270,9 +1287,9 @@ async function processMessages(
         const agora = new Date();
         const dia   = agora.getDay();
         const hAtu  = agora.getHours() * 60 + agora.getMinutes();
-        const [hI, mI] = (cfg.horario_inicio || "08:00").split(":").map(Number);
-        const [hF, mF] = (cfg.horario_fim   || "18:00").split(":").map(Number);
-        const diasOk = (cfg.dias_semana || [1,2,3,4,5]).includes(dia);
+        const [hI, mI] = ((cfg?.horario_inicio as string | null) || "08:00").split(":").map(Number);
+        const [hF, mF] = ((cfg?.horario_fim   as string | null) || "18:00").split(":").map(Number);
+        const diasOk = ((cfg?.dias_semana as number[] | null) || [1,2,3,4,5]).includes(dia);
         const dentroHorario = diasOk && hAtu >= (hI*60+mI) && hAtu < (hF*60+mF);
 
         // Active flows must continue regardless of business hours —
@@ -1280,7 +1297,7 @@ async function processMessages(
         // Only block new flow initiations and standalone chatbot rules outside business hours.
         const hasActiveFlowForHours = !!(conv.fluxo_estado as { fluxo_id?: string } | null)?.fluxo_id;
         if (!dentroHorario && !hasActiveFlowForHours) {
-          if (isNew && cfg.mensagem_fora_horario) await sendBot(cfg.mensagem_fora_horario);
+          if (isNew && cfg?.mensagem_fora_horario) await sendBot(cfg.mensagem_fora_horario as string);
           continue;
         }
 
@@ -1317,15 +1334,20 @@ async function processMessages(
               : null,
           };
 
+          // If a per-seller flow is configured, override the company-wide fluxo_ativo_id
+          const effectiveCfg = vendedorFluxoId
+            ? { ...(cfg as Record<string, unknown>), fluxo_ativo_id: vendedorFluxoId }
+            : cfg as Record<string, unknown>;
+
           const fluxoExecutado = await executarFluxo(
-            cfg as Record<string, unknown>,
+            effectiveCfg,
             texto, senderPhone, senderName,
             convComMsg as Record<string, unknown>,
             empresa_id, isNew, supabase, sendBot,
           );
 
           if (!fluxoExecutado) {
-            if (isNew && cfg.mensagem_boas_vindas) await sendBot(cfg.mensagem_boas_vindas);
+            if (isNew && cfg?.mensagem_boas_vindas) await sendBot(cfg.mensagem_boas_vindas);
           }
         }
 
