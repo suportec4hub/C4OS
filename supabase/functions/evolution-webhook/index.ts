@@ -326,6 +326,27 @@ interface FluxoConexao {
   label?: string;
 }
 
+// Returns true only when a visual flow has "opcoes" nodes whose connections lead to
+// "transferir" nodes with transferir_tipo === "setor".
+// Only in this case should round-robin be skipped — all other flow configurations
+// (menus for data collection, branching, etc.) allow normal automatic lead distribution.
+function fluxoTemMenuParaSetor(nos: FluxoNo[], conexoes: FluxoConexao[]): boolean {
+  const opcoesIds = new Set(nos.filter(n => n.tipo === "opcoes").map(n => n.id));
+  if (opcoesIds.size === 0) return false;
+  const setorTransferIds = new Set(
+    nos.filter(n => n.tipo === "transferir" && n.transferir_tipo === "setor").map(n => n.id)
+  );
+  if (setorTransferIds.size === 0) return false;
+  // Direct path: opcoes → transferir(setor)
+  if (conexoes.some(c => opcoesIds.has(c.de) && setorTransferIds.has(c.para))) return true;
+  // One hop via condicao: opcoes → condicao → transferir(setor)
+  const condicaoIds = new Set(nos.filter(n => n.tipo === "condicao").map(n => n.id));
+  return conexoes.some(c => {
+    if (!opcoesIds.has(c.de) || !condicaoIds.has(c.para)) return false;
+    return conexoes.some(c2 => c2.de === c.para && setorTransferIds.has(c2.para));
+  });
+}
+
 interface FluxoEstado {
   fluxo_id: string;
   no_atual_id: string;
@@ -682,9 +703,19 @@ async function processMessages(
 ) {
   // Load chatbot_config once per batch to get setor_padrao_id for auto-assignment
   let cfgEarly: Record<string, unknown> | null = null;
+  // true only when an active flow (company or seller) routes via menu → sector.
+  // Only in this case is round-robin skipped; all other flow configurations allow
+  // normal automatic lead distribution by seller.
+  let roundRobinBloqueadoPorFluxo = false;
   if (!isHistory) {
-    const { data: cfgData } = await supabase.from("chatbot_config").select("setor_padrao_id, fluxo_ativo_id").eq("empresa_id", empresa_id).maybeSingle();
+    const [{ data: cfgData }, { data: fluxosAtivos }] = await Promise.all([
+      supabase.from("chatbot_config").select("setor_padrao_id, fluxo_ativo_id").eq("empresa_id", empresa_id).maybeSingle(),
+      supabase.from("chatbot_fluxos").select("nos, conexoes").eq("empresa_id", empresa_id).eq("ativo", true),
+    ]);
     cfgEarly = cfgData ?? null;
+    roundRobinBloqueadoPorFluxo = (fluxosAtivos || []).some(f =>
+      fluxoTemMenuParaSetor((f.nos || []) as FluxoNo[], (f.conexoes || []) as FluxoConexao[])
+    );
   }
 
   for (const msg of msgs) {
@@ -819,8 +850,9 @@ async function processMessages(
       }
 
       // ── Round-robin: distribui novo cliente para o próximo vendedor ──────────
-      // Só corre quando não há fluxo visual ativo (o fluxo visual é quem roteia setores/atendente)
-      if (!fromMe && conv?.id && !cfgEarly?.fluxo_ativo_id) {
+      // Só é bloqueado quando algum fluxo ativo tem menu de opções levando a setores;
+      // qualquer outra configuração de fluxo visual permite distribuição normal por vendedor.
+      if (!fromMe && conv?.id && !roundRobinBloqueadoPorFluxo) {
         try {
           const [{ data: dist }, { data: setorVendas }] = await Promise.all([
             supabase.from("distribuicao_atendimento")
@@ -900,8 +932,8 @@ async function processMessages(
       }
       await supabase.from("conversas").update(reopenFields).eq("id", conv.id);
 
-      // Round-robin para conversas sem atendente — só se não houver fluxo visual ativo
-      const precisaAtribuir = !cfgEarly?.fluxo_ativo_id &&
+      // Round-robin para conversas sem atendente — só bloqueado quando fluxo tem menu → setor
+      const precisaAtribuir = !roundRobinBloqueadoPorFluxo &&
         (conv.status === "resolvida" || !(conv as Record<string, unknown>).atendente_id);
       if (precisaAtribuir) {
         try {
