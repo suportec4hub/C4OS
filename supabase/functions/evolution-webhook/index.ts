@@ -1200,13 +1200,34 @@ async function processMessages(
     // Always look up a per-seller flow regardless of bot_ativo — seller flows
     // bypass the global bot toggle because they are assigned to a specific agent.
     let vendedorFluxoId: string | null = null;
+    // true when chatbot_config.fluxo_ativo_id points to a per-seller flow (has usuario_id set).
+    // In that case the company-wide flow is suppressed; it runs only for the specific seller
+    // it was created for — not for every incoming conversation.
+    let suppressCompanyFlow = false;
     if (!fromMe && !isHistory) {
       const convAtendenteId = (conv as Record<string, unknown>).atendente_id as string | null;
-      if (convAtendenteId) {
-        const { data: vf } = await supabase.from("chatbot_fluxos")
-          .select("id").eq("empresa_id", empresa_id)
-          .eq("usuario_id", convAtendenteId).eq("ativo", true).maybeSingle();
-        vendedorFluxoId = vf?.id ?? null;
+      const cfgFluxoId = cfgEarly?.fluxo_ativo_id as string | null;
+
+      const [sellerFlowRes, companyFlowMetaRes] = await Promise.all([
+        convAtendenteId
+          ? supabase.from("chatbot_fluxos").select("id").eq("empresa_id", empresa_id)
+              .eq("usuario_id", convAtendenteId).eq("ativo", true).maybeSingle()
+          : Promise.resolve({ data: null }),
+        cfgFluxoId
+          ? supabase.from("chatbot_fluxos").select("usuario_id").eq("id", cfgFluxoId).maybeSingle()
+          : Promise.resolve({ data: null }),
+      ]);
+
+      vendedorFluxoId = (sellerFlowRes as { data: { id: string } | null }).data?.id ?? null;
+
+      const companyFlowVendedorId = (companyFlowMetaRes as { data: { usuario_id: string | null } | null }).data?.usuario_id ?? null;
+      if (companyFlowVendedorId) {
+        // fluxo_ativo_id is a per-seller flow — suppress it as a company-wide flow
+        suppressCompanyFlow = true;
+        if (!vendedorFluxoId && convAtendenteId === companyFlowVendedorId) {
+          // Conversation is assigned to exactly that seller — allow the flow
+          vendedorFluxoId = cfgFluxoId;
+        }
       }
     }
 
@@ -1377,10 +1398,13 @@ async function processMessages(
               : null,
           };
 
-          // If a per-seller flow is configured, override the company-wide fluxo_ativo_id
+          // Per-seller flow overrides company flow; if company flow is actually a seller flow,
+          // null it out so it doesn't run for unrelated sellers.
           const effectiveCfg = vendedorFluxoId
             ? { ...(cfg as Record<string, unknown>), fluxo_ativo_id: vendedorFluxoId }
-            : cfg as Record<string, unknown>;
+            : suppressCompanyFlow
+              ? { ...(cfg as Record<string, unknown>), fluxo_ativo_id: null }
+              : cfg as Record<string, unknown>;
 
           const fluxoExecutado = await executarFluxo(
             effectiveCfg,
