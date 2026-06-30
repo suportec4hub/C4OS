@@ -373,8 +373,17 @@ async function executarFluxo(
   if (!fluxoId) return false;
 
   const { data: fluxoData } = await supabase.from("chatbot_fluxos")
-    .select("nos, conexoes, ativo").eq("id", fluxoId).single();
+    .select("nos, conexoes, ativo, usuario_id").eq("id", fluxoId).single();
   if (!fluxoData?.ativo) return false;
+
+  // Per-seller flows (usuario_id set) must only run for the exact seller they were created for.
+  // If this flow belongs to a specific seller but the conversation is assigned to someone else
+  // (or unassigned), skip it entirely — prevents seller A's flow from greeting seller B's leads.
+  const fluxoVendedorId = fluxoData.usuario_id as string | null;
+  if (fluxoVendedorId) {
+    const convAtendenteId = conv.atendente_id as string | null;
+    if (convAtendenteId !== fluxoVendedorId) return false;
+  }
 
   const nos: FluxoNo[]          = fluxoData.nos     || [];
   const conexoes: FluxoConexao[] = fluxoData.conexoes || [];
