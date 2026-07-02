@@ -75,6 +75,12 @@ export default function PageClientes({ user }) {
   const [err, setErr]       = useState("");
   const [succ, setSucc]     = useState("");
 
+  // Bloqueio manual modal state
+  const [bloqueioModal,   setBloqueioModal]   = useState(false);
+  const [bloqueioEmpresa, setBloqueioEmpresa] = useState(null);
+  const [bloqueioMsg,     setBloqueioMsg]     = useState("");
+  const [bloqueioSaving,  setBloqueioSaving]  = useState(false);
+
   // Cobrança modal state
   const [cobrancaModal,   setCobrancaModal]   = useState(false);
   const [cobrancaEmpresa, setCobrancaEmpresa] = useState(null); // {id, nome, telefone, mrr}
@@ -92,12 +98,30 @@ export default function PageClientes({ user }) {
     setEdit(e.id); setErr(""); setSucc(""); setModal(true);
   };
 
-  const toggleBloqueio = useCallback(async (emp) => {
-    const bloquear = !emp.bloqueado;
-    const payload = bloquear
-      ? { bloqueado: true,  bloqueado_por: "manual", bloqueado_em: new Date().toISOString() }
-      : { bloqueado: false, bloqueado_por: null,     bloqueado_em: null };
-    const { error } = await supabase.from("empresas").update(payload).eq("id", emp.id);
+  const openBloqueio = (emp) => {
+    setBloqueioEmpresa(emp);
+    setBloqueioMsg(emp.bloqueio_msg || "");
+    setBloqueioModal(true);
+  };
+
+  const confirmarBloqueio = async () => {
+    if (!bloqueioEmpresa) return;
+    setBloqueioSaving(true);
+    const { error } = await supabase.from("empresas").update({
+      bloqueado:     true,
+      bloqueado_por: "manual",
+      bloqueado_em:  new Date().toISOString(),
+      bloqueio_msg:  bloqueioMsg.trim() || null,
+    }).eq("id", bloqueioEmpresa.id);
+    setBloqueioSaving(false);
+    if (error) alert(error.message);
+    else { setBloqueioModal(false); refetch(); }
+  };
+
+  const desbloquear = useCallback(async (emp) => {
+    const { error } = await supabase.from("empresas").update({
+      bloqueado: false, bloqueado_por: null, bloqueado_em: null,
+    }).eq("id", emp.id);
     if (error) alert(error.message);
     else refetch();
   }, [refetch]);
@@ -286,11 +310,10 @@ export default function PageClientes({ user }) {
                   <Row gap={5}>
                     <IBtn c={L.teal}   onClick={()=>openEdit(emp)}>✎ Editar</IBtn>
                     <IBtn c={L.copper} onClick={()=>openCobranca(emp)}>💳 Cobrança</IBtn>
-                    <IBtn
-                      c={emp.bloqueado ? L.green : L.red}
-                      onClick={()=>{ if(confirm(emp.bloqueado?`Desbloquear ${emp.nome}?`:`Bloquear acesso de ${emp.nome}?`)) toggleBloqueio(emp); }}
-                      title={emp.bloqueado?"Desbloquear acesso":"Bloquear acesso"}
-                    >{emp.bloqueado ? "🔓 Desbloquear" : "🔒 Bloquear"}</IBtn>
+                    {emp.bloqueado
+                      ? <IBtn c={L.green} onClick={()=>{ if(confirm(`Desbloquear ${emp.nome}?`)) desbloquear(emp); }} title="Desbloquear acesso">🔓 Desbloquear</IBtn>
+                      : <IBtn c={L.red}   onClick={()=>openBloqueio(emp)} title="Bloquear acesso">🔒 Bloquear</IBtn>
+                    }
                     <IBtn c={L.red}    onClick={()=>{if(confirm("Excluir empresa?"))remove(emp.id);}}>⊗</IBtn>
                   </Row>
                 </td>
@@ -373,6 +396,30 @@ export default function PageClientes({ user }) {
               <ModalFooter onClose={()=>setModal(false)} onSave={save} loading={saving} label={edit?"Salvar Alterações":"Criar Empresa"}/>
             </>
           )}
+        </Modal>
+      )}
+
+      {/* ── Modal: Bloqueio Manual ─────────────────────────────────────────── */}
+      {bloqueioModal && bloqueioEmpresa && (
+        <Modal title={`Bloquear acesso — ${bloqueioEmpresa.nome}`} onClose={()=>setBloqueioModal(false)} width={480}>
+          <div style={{fontSize:13,color:L.t2,marginBottom:16,lineHeight:1.6}}>
+            O cliente ainda poderá fazer login, mas verá a mensagem abaixo no lugar do sistema e não conseguirá realizar nenhuma ação.
+          </div>
+          <Field label="Mensagem para o cliente">
+            <Textarea
+              value={bloqueioMsg}
+              onChange={setBloqueioMsg}
+              placeholder="Seu acesso está temporariamente suspenso por inadimplência. Entre em contato com a C4HUB para regularizar sua situação e reativar o acesso."
+              rows={4}
+            />
+          </Field>
+          <div style={{fontSize:11,color:L.t4,marginTop:6}}>Deixe em branco para usar a mensagem padrão da C4HUB.</div>
+          <ModalFooter
+            onClose={()=>setBloqueioModal(false)}
+            onSave={confirmarBloqueio}
+            loading={bloqueioSaving}
+            label="🔒 Confirmar Bloqueio"
+          />
         </Modal>
       )}
 
