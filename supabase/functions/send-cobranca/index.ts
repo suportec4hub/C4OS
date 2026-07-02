@@ -169,6 +169,15 @@ Deno.serve(async (req) => {
 
       const ok = !sendResp.error;
 
+      // Auto-block on D+5 if send succeeded
+      if (tipo === "5d_apos" && ok) {
+        await db.from("empresas").update({
+          bloqueado:     true,
+          bloqueado_por: "auto",
+          bloqueado_em:  new Date().toISOString(),
+        }).eq("id", cfg.empresa_id as string);
+      }
+
       // Log the send attempt
       await db.from("cobranca_log").insert({
         empresa_id:     cfg.empresa_id,

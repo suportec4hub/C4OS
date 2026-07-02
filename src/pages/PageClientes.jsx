@@ -6,7 +6,7 @@ import { Fade, Row, Grid, PBtn, DataTable, Tag, ScBar, IBtn, TD } from "../compo
 import Modal, { Field, Input, Select, ModalFooter } from "../components/Modal";
 
 const VAZIO = { nome:"", cnpj:"", segmento:"", telefone:"", website:"", plano_id:"", status:"trial", mrr:"",
-                admin_nome:"", admin_email:"", admin_senha:"", must_change_password: false };
+                admin_nome:"", admin_email:"", admin_senha:"", must_change_password: false, bloqueio_msg:"" };
 
 const COBRANCA_VAZIO = {
   dia_vencimento: "10",
@@ -88,9 +88,19 @@ export default function PageClientes({ user }) {
 
   const openNew  = () => { setForm(VAZIO); setEdit(null); setErr(""); setSucc(""); setModal(true); };
   const openEdit = (e) => {
-    setForm({ ...VAZIO, ...e, plano_id: e.plano_id||"", admin_nome:"", admin_email:"", admin_senha:"" });
+    setForm({ ...VAZIO, ...e, plano_id: e.plano_id||"", admin_nome:"", admin_email:"", admin_senha:"", bloqueio_msg: e.bloqueio_msg||"" });
     setEdit(e.id); setErr(""); setSucc(""); setModal(true);
   };
+
+  const toggleBloqueio = useCallback(async (emp) => {
+    const bloquear = !emp.bloqueado;
+    const payload = bloquear
+      ? { bloqueado: true,  bloqueado_por: "manual", bloqueado_em: new Date().toISOString() }
+      : { bloqueado: false, bloqueado_por: null,     bloqueado_em: null };
+    const { error } = await supabase.from("empresas").update(payload).eq("id", emp.id);
+    if (error) alert(error.message);
+    else refetch();
+  }, [refetch]);
 
   const openCobranca = useCallback(async (emp) => {
     setCobrancaEmpresa(emp);
@@ -172,10 +182,11 @@ export default function PageClientes({ user }) {
     }
     setSaving(true); setErr("");
 
-    const { admin_nome, admin_email, admin_senha, must_change_password, ...empresaFields } = form;
+    const { admin_nome, admin_email, admin_senha, must_change_password, bloqueio_msg, ...empresaFields } = form;
     const payload = {
       ...empresaFields,
       is_c4hub: false,
+      bloqueio_msg: bloqueio_msg?.trim() || null,
       assinatura_ativa: form.status === "ativo",
       cnpj:     form.cnpj?.trim()    || null,
       telefone: form.telefone?.trim()|| null,
@@ -257,7 +268,10 @@ export default function PageClientes({ user }) {
                 onMouseEnter={e=>e.currentTarget.style.background=L.surface}
                 onMouseLeave={e=>e.currentTarget.style.background="transparent"}
               >
-                <td style={{...TD,fontWeight:500,color:L.t1,fontSize:12.5}}>{emp.nome}</td>
+                <td style={{...TD,fontWeight:500,color:emp.bloqueado?L.red:L.t1,fontSize:12.5}}>
+                  {emp.bloqueado && <span style={{marginRight:5}} title="Acesso bloqueado">🔒</span>}
+                  {emp.nome}
+                </td>
                 <td style={TD}><Tag color={pc[pn]?.c||L.t3} bg={pc[pn]?.bg||L.surface}>{pn}</Tag></td>
                 <td style={TD}><Tag color={emp.status==="ativo"?L.green:emp.status==="trial"?L.yellow:L.red} bg={emp.status==="ativo"?L.greenBg:emp.status==="trial"?L.yellowBg:L.redBg}>{emp.status}</Tag></td>
                 <td style={{...TD,fontWeight:600,color:L.green}}>R$ {parseFloat(emp.mrr||0).toLocaleString("pt-BR",{minimumFractionDigits:2})}</td>
@@ -272,6 +286,11 @@ export default function PageClientes({ user }) {
                   <Row gap={5}>
                     <IBtn c={L.teal}   onClick={()=>openEdit(emp)}>✎ Editar</IBtn>
                     <IBtn c={L.copper} onClick={()=>openCobranca(emp)}>💳 Cobrança</IBtn>
+                    <IBtn
+                      c={emp.bloqueado ? L.green : L.red}
+                      onClick={()=>{ if(confirm(emp.bloqueado?`Desbloquear ${emp.nome}?`:`Bloquear acesso de ${emp.nome}?`)) toggleBloqueio(emp); }}
+                      title={emp.bloqueado?"Desbloquear acesso":"Bloquear acesso"}
+                    >{emp.bloqueado ? "🔓 Desbloquear" : "🔒 Bloquear"}</IBtn>
                     <IBtn c={L.red}    onClick={()=>{if(confirm("Excluir empresa?"))remove(emp.id);}}>⊗</IBtn>
                   </Row>
                 </td>
@@ -316,6 +335,18 @@ export default function PageClientes({ user }) {
                 </Field>
                 <Field label="MRR (R$)"><Input value={form.mrr||""} onChange={F("mrr")} type="number" placeholder="0,00"/></Field>
               </div>
+              {edit && (
+                <div style={{marginTop:12}}>
+                  <Field label="Mensagem de bloqueio (deixe em branco para usar o padrão)">
+                    <Textarea
+                      value={form.bloqueio_msg}
+                      onChange={F("bloqueio_msg")}
+                      placeholder="Seu acesso está temporariamente suspenso. Entre em contato com a C4HUB para regularizar sua situação."
+                      rows={3}
+                    />
+                  </Field>
+                </div>
+              )}
 
               {!edit && temPlano && (
                 <div style={{marginTop:16,paddingTop:16,borderTop:`1px solid ${L.lineSoft}`}}>

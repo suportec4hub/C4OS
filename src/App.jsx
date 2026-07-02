@@ -6,6 +6,43 @@ import { globalCSS, L } from "./constants/theme";
 import { ThemeProvider, useTheme } from "./context/ThemeContext";
 import { supabase } from "./lib/supabase";
 
+const BLOQUEIO_MSG_PADRAO =
+  "Seu acesso está temporariamente suspenso por inadimplência. Entre em contato com a C4HUB para regularizar sua situação e reativar o acesso.";
+
+function BloqueioScreen({ user, onLogout }) {
+  const msg = user?.bloqueio_msg_empresa || BLOQUEIO_MSG_PADRAO;
+  return (
+    <div style={{
+      minHeight:"100dvh", display:"flex", flexDirection:"column",
+      alignItems:"center", justifyContent:"center",
+      background:"#f9fafb", padding:24, fontFamily:"sans-serif",
+    }}>
+      <div style={{
+        maxWidth:480, width:"100%", background:"#fff", borderRadius:20,
+        border:"1px solid #e5e7eb", padding:"40px 36px", boxShadow:"0 8px 32px rgba(0,0,0,.10)",
+        textAlign:"center",
+      }}>
+        <div style={{ fontSize:52, marginBottom:16 }}>🔒</div>
+        <h2 style={{ margin:"0 0 12px", fontSize:20, color:"#111827", fontWeight:700 }}>Acesso Suspenso</h2>
+        <p style={{ margin:"0 0 28px", fontSize:14, color:"#6b7280", lineHeight:1.7, whiteSpace:"pre-line" }}>
+          {msg}
+        </p>
+        <div style={{ fontSize:12, color:"#9ca3af", marginBottom:24 }}>
+          Conta: <strong style={{ color:"#374151" }}>{user?.email || user?.nome}</strong>
+        </div>
+        <button onClick={onLogout}
+          style={{
+            background:"#f3f4f6", color:"#374151", border:"1px solid #e5e7eb",
+            borderRadius:10, padding:"10px 28px", fontSize:13, fontWeight:600,
+            cursor:"pointer",
+          }}>
+          Sair da conta
+        </button>
+      </div>
+    </div>
+  );
+}
+
 class ErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { error: null }; }
   static getDerivedStateFromError(e) { return { error: e }; }
@@ -105,7 +142,7 @@ function AppInner() {
     try {
       const { data, error } = await supabase
         .from("usuarios")
-        .select("*, empresas(nome, is_c4hub, status)")
+        .select("*, empresas(nome, is_c4hub, status, bloqueado, bloqueio_msg)")
         .eq("id", userId)
         .single();
 
@@ -128,6 +165,8 @@ function AppInner() {
           empresa:              data.empresas?.nome ?? "—",
           empresa_id:           data.empresa_id,
           is_c4hub:             data.empresas?.is_c4hub ?? false,
+          bloqueado:            data.empresas?.bloqueado ?? false,
+          bloqueio_msg_empresa: data.empresas?.bloqueio_msg ?? null,
           cor:                  data.role === "c4hub_admin" ? "#111827" : "#6b7280",
           avatar:               data.nome.split(" ").map(n => n[0]).slice(0,2).join(""),
           foto_url:             data.foto_url ?? null,
@@ -197,6 +236,9 @@ function AppInner() {
           onDone={() => setProfile(p => ({ ...p, must_change_password: false }))}
         />
       );
+    }
+    if (profile.bloqueado && !profile.is_c4hub) {
+      return <BloqueioScreen user={profile} onLogout={handleLogout} />;
     }
     return (
       <Shell
