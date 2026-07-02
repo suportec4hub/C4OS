@@ -180,10 +180,11 @@ function AppInner() {
   }
 
   // Páginas públicas com prioridade sobre auth (acessíveis mesmo logado)
-  if (publicPage === "obrigado") {
+  if (publicPage === "obrigado" || publicPage === "docs") {
     return (
       <Suspense fallback={publicFallback}>
-        <PageObrigado onNavigate={goPublic} />
+        {publicPage === "obrigado" && <PageObrigado onNavigate={goPublic} />}
+        {publicPage === "docs"     && <PageDocs     onNavigate={goPublic} />}
       </Suspense>
     );
   }
