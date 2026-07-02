@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { L } from "../constants/theme";
 import { useTable, usePlanos, criarUsuario } from "../hooks/useData";
 import { supabase } from "../lib/supabase";
@@ -7,6 +7,23 @@ import Modal, { Field, Input, Select, ModalFooter } from "../components/Modal";
 
 const VAZIO = { nome:"", cnpj:"", segmento:"", telefone:"", website:"", plano_id:"", status:"trial", mrr:"",
                 admin_nome:"", admin_email:"", admin_senha:"", must_change_password: false };
+
+const COBRANCA_VAZIO = {
+  dia_vencimento: "10",
+  whatsapp_cobranca: "",
+  ativo: true,
+  msg_2_dias_antes: "",
+  msg_dia_vencimento: "",
+  msg_5_dias_apos: "",
+  msg_20_dias_apos: "",
+};
+
+const MSG_PLACEHOLDERS = {
+  msg_2_dias_antes:   "Olá {nome}! Sua fatura de {valor} vence em 2 dias ({data_vencimento}). Efetue o pagamento para manter seu acesso.",
+  msg_dia_vencimento: "Olá {nome}! Hoje é o dia de vencimento da sua fatura ({valor}). Efetue o pagamento para manter seu acesso ativo.",
+  msg_5_dias_apos:    "Olá {nome}! Sua fatura de {valor} (venc. {data_vencimento}) está em aberto. Regularize para evitar suspensão.",
+  msg_20_dias_apos:   "Atenção {nome}! Sua fatura de {valor} está em atraso há 20 dias. Entre em contato para evitar o cancelamento.",
+};
 
 const Checkbox = ({ checked, onChange, label }) => (
   <label style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer", marginTop:10, userSelect:"none" }}>
@@ -22,6 +39,32 @@ const Checkbox = ({ checked, onChange, label }) => (
   </label>
 );
 
+const SectionLabel = ({ children, color }) => (
+  <div style={{
+    fontSize:10, fontWeight:700, color: color || L.t3, textTransform:"uppercase",
+    letterSpacing:"1.5px", marginBottom:10, marginTop:16,
+    fontFamily:"'JetBrains Mono',monospace", display:"flex", alignItems:"center", gap:6,
+  }}>
+    <span style={{ width:6, height:6, borderRadius:"50%", background: color || L.t3, display:"inline-block" }}/>
+    {children}
+  </div>
+);
+
+const Textarea = ({ value, onChange, placeholder, rows = 3 }) => (
+  <textarea
+    value={value}
+    onChange={e => onChange(e.target.value)}
+    placeholder={placeholder}
+    rows={rows}
+    style={{
+      width:"100%", boxSizing:"border-box", padding:"8px 10px", fontSize:12,
+      border:`1px solid ${L.line}`, borderRadius:8, background:L.surface,
+      color:L.t1, resize:"vertical", fontFamily:"inherit", lineHeight:1.5,
+      outline:"none",
+    }}
+  />
+);
+
 export default function PageClientes({ user }) {
   const { data: empresas, loading, insert, update, remove, refetch } = useTable("empresas");
   const { planos } = usePlanos();
@@ -32,12 +75,93 @@ export default function PageClientes({ user }) {
   const [err, setErr]       = useState("");
   const [succ, setSucc]     = useState("");
 
+  // Cobrança modal state
+  const [cobrancaModal,   setCobrancaModal]   = useState(false);
+  const [cobrancaEmpresa, setCobrancaEmpresa] = useState(null); // {id, nome, telefone, mrr}
+  const [cobrancaForm,    setCobrancaForm]    = useState(COBRANCA_VAZIO);
+  const [cobrancaSaving,  setCobrancaSaving]  = useState(false);
+  const [cobrancaErr,     setCobrancaErr]     = useState("");
+  const [cobrancaLog,     setCobrancaLog]     = useState([]);
+  const [cobrancaTab,     setCobrancaTab]     = useState("config"); // "config" | "historico"
+
   const pc = { Enterprise:{c:L.teal,bg:L.tealBg}, Starter:{c:L.copper,bg:L.copperBg}, "C4HUB":{c:L.green,bg:L.greenBg} };
 
   const openNew  = () => { setForm(VAZIO); setEdit(null); setErr(""); setSucc(""); setModal(true); };
   const openEdit = (e) => {
     setForm({ ...VAZIO, ...e, plano_id: e.plano_id||"", admin_nome:"", admin_email:"", admin_senha:"" });
     setEdit(e.id); setErr(""); setSucc(""); setModal(true);
+  };
+
+  const openCobranca = useCallback(async (emp) => {
+    setCobrancaEmpresa(emp);
+    setCobrancaErr("");
+    setCobrancaTab("config");
+    setCobrancaLog([]);
+    setCobrancaModal(true);
+
+    // Load existing config
+    const { data: cfg } = await supabase
+      .from("cobranca_config")
+      .select("*")
+      .eq("empresa_id", emp.id)
+      .maybeSingle();
+
+    if (cfg) {
+      setCobrancaForm({
+        dia_vencimento:    String(cfg.dia_vencimento || "10"),
+        whatsapp_cobranca: cfg.whatsapp_cobranca || "",
+        ativo:             cfg.ativo ?? true,
+        msg_2_dias_antes:  cfg.msg_2_dias_antes || "",
+        msg_dia_vencimento:cfg.msg_dia_vencimento || "",
+        msg_5_dias_apos:   cfg.msg_5_dias_apos || "",
+        msg_20_dias_apos:  cfg.msg_20_dias_apos || "",
+      });
+    } else {
+      setCobrancaForm({ ...COBRANCA_VAZIO });
+    }
+
+    // Load recent log
+    const { data: logs } = await supabase
+      .from("cobranca_log")
+      .select("tipo, mes_referencia, enviado_em, status, telefone")
+      .eq("empresa_id", emp.id)
+      .order("enviado_em", { ascending: false })
+      .limit(20);
+    setCobrancaLog(logs || []);
+  }, []);
+
+  const saveCobranca = async () => {
+    if (!cobrancaEmpresa) return;
+    const dia = parseInt(cobrancaForm.dia_vencimento);
+    if (isNaN(dia) || dia < 1 || dia > 28) {
+      setCobrancaErr("Dia de vencimento deve ser entre 1 e 28.");
+      return;
+    }
+    setCobrancaSaving(true);
+    setCobrancaErr("");
+
+    const payload = {
+      empresa_id:         cobrancaEmpresa.id,
+      dia_vencimento:     dia,
+      whatsapp_cobranca:  cobrancaForm.whatsapp_cobranca?.trim() || null,
+      ativo:              cobrancaForm.ativo,
+      msg_2_dias_antes:   cobrancaForm.msg_2_dias_antes?.trim()  || null,
+      msg_dia_vencimento: cobrancaForm.msg_dia_vencimento?.trim() || null,
+      msg_5_dias_apos:    cobrancaForm.msg_5_dias_apos?.trim()    || null,
+      msg_20_dias_apos:   cobrancaForm.msg_20_dias_apos?.trim()   || null,
+      updated_at:         new Date().toISOString(),
+    };
+
+    const { error } = await supabase
+      .from("cobranca_config")
+      .upsert(payload, { onConflict: "empresa_id" });
+
+    if (error) {
+      setCobrancaErr(error.message);
+    } else {
+      setCobrancaModal(false);
+    }
+    setCobrancaSaving(false);
   };
 
   const save = async () => {
@@ -63,7 +187,6 @@ export default function PageClientes({ user }) {
     const { data: novaEmpresa, error } = edit ? await update(edit, payload) : await insert(payload);
     if (error) { setErr(error.message || "Erro ao salvar."); setSaving(false); return; }
 
-    // Criar primeiro usuário admin se novo cadastro com plano
     if (!edit && form.plano_id && form.admin_email.trim()) {
       const res = await criarUsuario({
         email: form.admin_email.trim().toLowerCase(),
@@ -93,11 +216,14 @@ export default function PageClientes({ user }) {
     setSaving(false);
   };
 
-  const F = k => v => setForm(p => ({ ...p, [k]: v }));
+  const F  = k => v => setForm(p => ({ ...p, [k]: v }));
+  const FC = k => v => setCobrancaForm(p => ({ ...p, [k]: v }));
 
   const mrr = empresas.filter(e=>e.status==="ativo").reduce((s,e)=>s+parseFloat(e.mrr||0),0);
   const planoNome = (pid) => planos.find(p=>p.id===pid)?.nome || "—";
-  const temPlano = !!form.plano_id;
+  const temPlano  = !!form.plano_id;
+
+  const tipoLabel = { "2d_antes":"2 dias antes","vencimento":"No vencimento","5d_apos":"5 dias após","20d_apos":"20 dias após" };
 
   return (
     <Fade>
@@ -144,8 +270,9 @@ export default function PageClientes({ user }) {
                 </td>
                 <td style={TD}>
                   <Row gap={5}>
-                    <IBtn c={L.teal} onClick={()=>openEdit(emp)}>✎ Editar</IBtn>
-                    <IBtn c={L.red}  onClick={()=>{if(confirm("Excluir empresa?"))remove(emp.id);}}>⊗</IBtn>
+                    <IBtn c={L.teal}   onClick={()=>openEdit(emp)}>✎ Editar</IBtn>
+                    <IBtn c={L.copper} onClick={()=>openCobranca(emp)}>💳 Cobrança</IBtn>
+                    <IBtn c={L.red}    onClick={()=>{if(confirm("Excluir empresa?"))remove(emp.id);}}>⊗</IBtn>
                   </Row>
                 </td>
               </tr>
@@ -154,6 +281,7 @@ export default function PageClientes({ user }) {
         </DataTable>
       )}
 
+      {/* ── Modal: Editar / Nova Empresa ───────────────────────────────────── */}
       {modal && (
         <Modal title={edit ? "Editar Empresa" : "Nova Empresa"} onClose={()=>setModal(false)} width={560}>
           {succ ? (
@@ -168,8 +296,7 @@ export default function PageClientes({ user }) {
             </div>
           ) : (
             <>
-              {/* Dados da empresa */}
-              <div style={{fontSize:10,fontWeight:700,color:L.t3,textTransform:"uppercase",letterSpacing:"1.5px",marginBottom:10,fontFamily:"'JetBrains Mono',monospace"}}>Dados da empresa</div>
+              <SectionLabel>Dados da empresa</SectionLabel>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
                 <Field label="Nome da Empresa *"><Input value={form.nome}      onChange={F("nome")}      placeholder="Razão social / nome fantasia"/></Field>
                 <Field label="CNPJ">             <Input value={form.cnpj}      onChange={F("cnpj")}      placeholder="XX.XXX.XXX/XXXX-XX"/></Field>
@@ -190,13 +317,9 @@ export default function PageClientes({ user }) {
                 <Field label="MRR (R$)"><Input value={form.mrr||""} onChange={F("mrr")} type="number" placeholder="0,00"/></Field>
               </div>
 
-              {/* Acesso ao sistema — só para novo cadastro com plano */}
               {!edit && temPlano && (
                 <div style={{marginTop:16,paddingTop:16,borderTop:`1px solid ${L.lineSoft}`}}>
-                  <div style={{fontSize:10,fontWeight:700,color:L.teal,textTransform:"uppercase",letterSpacing:"1.5px",marginBottom:10,fontFamily:"'JetBrains Mono',monospace",display:"flex",alignItems:"center",gap:6}}>
-                    <span style={{width:6,height:6,borderRadius:"50%",background:L.teal,display:"inline-block"}}/>
-                    Acesso ao sistema
-                  </div>
+                  <SectionLabel color={L.teal}>Acesso ao sistema</SectionLabel>
                   <div style={{fontSize:11.5,color:L.t3,marginBottom:12,lineHeight:1.5}}>
                     Crie as credenciais para o administrador da empresa acessar o sistema e gerenciar a equipe.
                   </div>
@@ -218,6 +341,118 @@ export default function PageClientes({ user }) {
               {err && <div style={{padding:"8px 12px",background:L.redBg,borderRadius:8,fontSize:12,color:L.red,marginBottom:4,marginTop:8}}>{err}</div>}
               <ModalFooter onClose={()=>setModal(false)} onSave={save} loading={saving} label={edit?"Salvar Alterações":"Criar Empresa"}/>
             </>
+          )}
+        </Modal>
+      )}
+
+      {/* ── Modal: Configuração de Cobrança ────────────────────────────────── */}
+      {cobrancaModal && cobrancaEmpresa && (
+        <Modal title={`Cobrança — ${cobrancaEmpresa.nome}`} onClose={()=>setCobrancaModal(false)} width={600}>
+          {/* Tabs */}
+          <div style={{display:"flex",gap:4,marginBottom:16,borderBottom:`1px solid ${L.lineSoft}`,paddingBottom:0}}>
+            {[["config","⚙️ Configuração"],["historico","📋 Histórico"]].map(([id,label])=>(
+              <button key={id} onClick={()=>setCobrancaTab(id)} style={{
+                padding:"8px 14px", fontSize:12, fontWeight:600, cursor:"pointer", border:"none",
+                background:"transparent", color: cobrancaTab===id ? L.teal : L.t4,
+                borderBottom: cobrancaTab===id ? `2px solid ${L.teal}` : "2px solid transparent",
+                transition:"all .12s",
+              }}>{label}</button>
+            ))}
+          </div>
+
+          {cobrancaTab === "config" && (
+            <>
+              <SectionLabel color={L.teal}>Configuração de Cobrança</SectionLabel>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
+                <Field label="Dia de Vencimento (1–28)">
+                  <Input
+                    value={cobrancaForm.dia_vencimento}
+                    onChange={FC("dia_vencimento")}
+                    type="number" min="1" max="28"
+                    placeholder="Ex: 10"
+                  />
+                </Field>
+                <Field label="WhatsApp de Cobrança">
+                  <Input
+                    value={cobrancaForm.whatsapp_cobranca}
+                    onChange={FC("whatsapp_cobranca")}
+                    placeholder={cobrancaEmpresa.telefone || "Padrão: telefone da empresa"}
+                  />
+                </Field>
+              </div>
+              <Checkbox
+                checked={cobrancaForm.ativo}
+                onChange={v => setCobrancaForm(p=>({...p, ativo:v}))}
+                label="Cobrança automática ativa (mensagens serão enviadas automaticamente)"
+              />
+
+              <div style={{marginTop:20,paddingTop:16,borderTop:`1px solid ${L.lineSoft}`}}>
+                <SectionLabel color={L.copper}>Mensagens de Cobrança</SectionLabel>
+                <div style={{fontSize:11,color:L.t3,marginBottom:12,lineHeight:1.6,padding:"8px 12px",background:L.surface,borderRadius:8,border:`1px solid ${L.lineSoft}`}}>
+                  Variáveis disponíveis: <code style={{fontFamily:"'JetBrains Mono',monospace",background:L.line,padding:"1px 5px",borderRadius:4}}>{"{nome}"}</code>{" "}
+                  <code style={{fontFamily:"'JetBrains Mono',monospace",background:L.line,padding:"1px 5px",borderRadius:4}}>{"{valor}"}</code>{" "}
+                  <code style={{fontFamily:"'JetBrains Mono',monospace",background:L.line,padding:"1px 5px",borderRadius:4}}>{"{data_vencimento}"}</code>{" "}
+                  — deixe em branco para usar a mensagem padrão.
+                </div>
+
+                {[
+                  ["msg_2_dias_antes",   "2 dias antes do vencimento"],
+                  ["msg_dia_vencimento", "No dia do vencimento"],
+                  ["msg_5_dias_apos",    "5 dias após o vencimento"],
+                  ["msg_20_dias_apos",   "20 dias após o vencimento"],
+                ].map(([field, label]) => (
+                  <Field key={field} label={label}>
+                    <Textarea
+                      value={cobrancaForm[field]}
+                      onChange={FC(field)}
+                      placeholder={MSG_PLACEHOLDERS[field]}
+                      rows={3}
+                    />
+                  </Field>
+                ))}
+              </div>
+
+              {cobrancaErr && (
+                <div style={{padding:"8px 12px",background:L.redBg,borderRadius:8,fontSize:12,color:L.red,marginTop:8}}>{cobrancaErr}</div>
+              )}
+              <ModalFooter
+                onClose={()=>setCobrancaModal(false)}
+                onSave={saveCobranca}
+                loading={cobrancaSaving}
+                label="Salvar Configuração"
+              />
+            </>
+          )}
+
+          {cobrancaTab === "historico" && (
+            <div>
+              <SectionLabel>Histórico de Envios</SectionLabel>
+              {cobrancaLog.length === 0 ? (
+                <div style={{textAlign:"center",padding:"32px 0",color:L.t4,fontSize:13}}>Nenhum envio registrado ainda.</div>
+              ) : (
+                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  {cobrancaLog.map((log, i) => (
+                    <div key={i} style={{
+                      display:"flex",alignItems:"center",justifyContent:"space-between",
+                      padding:"10px 14px",borderRadius:8,border:`1px solid ${L.lineSoft}`,
+                      background:L.surface,fontSize:12,
+                    }}>
+                      <div>
+                        <span style={{fontWeight:600,color:L.t1,marginRight:8}}>{tipoLabel[log.tipo] || log.tipo}</span>
+                        <span style={{color:L.t4,fontFamily:"'JetBrains Mono',monospace",fontSize:11}}>{log.mes_referencia}</span>
+                      </div>
+                      <div style={{display:"flex",alignItems:"center",gap:10}}>
+                        <span style={{color:L.t4,fontSize:11}}>{new Date(log.enviado_em).toLocaleString("pt-BR")}</span>
+                        <Tag
+                          color={log.status==="enviado"?L.green:L.red}
+                          bg={log.status==="enviado"?L.greenBg:L.redBg}
+                        >{log.status}</Tag>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
         </Modal>
       )}

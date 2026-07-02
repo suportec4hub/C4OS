@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { supabase } from "../lib/supabase";
 
 function useW() {
   const [w, setW] = useState(() => window.innerWidth);
@@ -47,86 +48,14 @@ const TipBox = ({ children }) => (
   </div>
 );
 
-const CHANGELOG = [
-  {
-    version: "v2.3.0",
-    date: "Abr 2025",
-    type: "Novidade",
-    typeColor: "#1d4ed8",
-    typeBg: "#eff6ff",
-    items: [
-      "Logs de WhatsApp e sistema na tela de Suporte (por empresa)",
-      "Auditoria completa de eventos: webhook, bot, conexão e erros de API",
-      "Novo helper logWA() em todos os Edge Functions",
-    ],
-  },
-  {
-    version: "v2.2.1",
-    date: "Abr 2025",
-    type: "Correção",
-    typeColor: "#b45309",
-    typeBg: "#fff7ed",
-    items: [
-      "Corrigido bug onde mini-card 'Últimas Atividades' ficava vazio na overview",
-      "SID de sessão parou de recomputar a cada re-render",
-      "Políticas RLS de INSERT com WITH CHECK adicionadas em conversas, mensagens e leads",
-    ],
-  },
-  {
-    version: "v2.2.0",
-    date: "Mar 2025",
-    type: "Melhoria",
-    typeColor: "#15803d",
-    typeBg: "#dcfce7",
-    items: [
-      "9 novos índices de performance no banco de dados (carregamento 40% mais rápido)",
-      "Índices parciais para a fila de mensagens agendadas (WHERE status='pendente')",
-      "RLS de logs_whatsapp restrito por empresa_id",
-    ],
-  },
-  {
-    version: "v2.1.0",
-    date: "Fev 2025",
-    type: "Novidade",
-    typeColor: "#1d4ed8",
-    typeBg: "#eff6ff",
-    items: [
-      "Módulo de Disparos em massa com personalização por variáveis",
-      "Agendamento de mensagens com fuso horário configurável",
-      "Relatório de entrega em tempo real (enviado / entregue / lido / respondido)",
-    ],
-  },
-  {
-    version: "v2.0.0",
-    date: "Jan 2025",
-    type: "Novidade",
-    typeColor: "#1d4ed8",
-    typeBg: "#eff6ff",
-    items: [
-      "Chatbot Builder visual com arrastar e soltar (fluxos ilimitados)",
-      "Nós de condição, pergunta, transferência e tag",
-      "Ativação de fluxos por palavra-chave ou horário",
-      "Pipeline Kanban com etapas personalizáveis e valor por deal",
-    ],
-  },
-  {
-    version: "v1.5.0",
-    date: "Dez 2024",
-    type: "Melhoria",
-    typeColor: "#15803d",
-    typeBg: "#dcfce7",
-    items: [
-      "Follow-up automático com sequências configuráveis por canal",
-      "Lead scoring baseado em comportamento de resposta",
-      "Importação de leads via CSV com relatório de validação",
-    ],
-  },
+// Changelog is now loaded from DB; this is only a fallback for rendering
+const CHANGELOG_FALLBACK = [
   {
     version: "v1.0.0",
-    date: "Out 2024",
+    date_label: "Out 2024",
     type: "Lançamento",
-    typeColor: "#7e22ce",
-    typeBg: "#faf5ff",
+    type_color: "#7e22ce",
+    type_bg: "#faf5ff",
     items: [
       "Lançamento oficial do C4 OS",
       "Integração com WhatsApp Business (QR Code e API oficial)",
@@ -310,38 +239,8 @@ const CONTENT = {
     </div>
   ),
 
-  changelog: (
-    <div>
-      <h2 style={{ fontSize: 28, fontWeight: 800, color: C.greenDark, marginBottom: 6, letterSpacing: "-0.5px" }}>Changelog</h2>
-      <p style={{ fontSize: 15, color: "#6b7280", marginBottom: 32, lineHeight: 1.6 }}>
-        Histórico de atualizações, novas funcionalidades e correções da plataforma C4 OS (CRM).
-      </p>
-      <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-        {CHANGELOG.map((release, i) => (
-          <div key={release.version} style={{ display: "flex", gap: 28, paddingBottom: 36, position: "relative" }}>
-            {/* Timeline line */}
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0, width: 16 }}>
-              <div style={{ width: 14, height: 14, borderRadius: "50%", background: C.green, border: `3px solid ${C.greenLight}`, flexShrink: 0, marginTop: 4 }} />
-              {i < CHANGELOG.length - 1 && <div style={{ width: 2, flex: 1, background: C.border, marginTop: 4 }} />}
-            </div>
-            {/* Content */}
-            <div style={{ flex: 1, paddingBottom: i < CHANGELOG.length - 1 ? 0 : 0 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
-                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, fontSize: 15, color: C.greenDark }}>{release.version}</span>
-                <span style={{ fontSize: 12, fontWeight: 600, color: release.typeColor, background: release.typeBg, borderRadius: 6, padding: "2px 10px" }}>{release.type}</span>
-                <span style={{ fontSize: 13, color: "#9ca3af" }}>{release.date}</span>
-              </div>
-              <ul style={{ paddingLeft: 18, margin: 0 }}>
-                {release.items.map((item, j) => (
-                  <li key={j} style={{ fontSize: 14, color: C.body, lineHeight: 1.75, marginBottom: 2 }}>{item}</li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  ),
+  // changelog is rendered dynamically by PageDocs (see ChangelogSection)
+  changelog: null,
 
   faq: (
     <div>
@@ -416,10 +315,202 @@ const SharedHeader = ({ onNavigate }) => {
   );
 };
 
+const TYPE_OPTIONS = [
+  { label: "Novidade",   color: "#1d4ed8", bg: "#eff6ff" },
+  { label: "Melhoria",   color: "#15803d", bg: "#dcfce7" },
+  { label: "Correção",   color: "#b45309", bg: "#fff7ed" },
+  { label: "Lançamento", color: "#7e22ce", bg: "#faf5ff" },
+];
+
+const EDIT_VAZIO = { version: "", date_label: "", type: "Novidade", type_color: "#1d4ed8", type_bg: "#eff6ff", items: [""], sort_order: 0 };
+
+function ChangelogSection({ isAdmin, onRefresh }) {
+  const [entries, setEntries]     = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [editModal, setEditModal] = useState(false);
+  const [editEntry, setEditEntry] = useState(null);
+  const [saving, setSaving]       = useState(false);
+  const [err, setErr]             = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const { data } = await supabase.from("changelog").select("*").order("sort_order", { ascending: true });
+    setEntries(data?.length ? data : CHANGELOG_FALLBACK);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const openNew = () => {
+    setEditEntry({ ...EDIT_VAZIO, sort_order: entries.length });
+    setErr("");
+    setEditModal(true);
+  };
+
+  const openEdit = (entry) => {
+    setEditEntry({
+      ...entry,
+      items: Array.isArray(entry.items) ? [...entry.items] : [],
+    });
+    setErr("");
+    setEditModal(true);
+  };
+
+  const saveEntry = async () => {
+    if (!editEntry.version.trim()) { setErr("Versão é obrigatória."); return; }
+    if (!editEntry.date_label.trim()) { setErr("Data é obrigatória."); return; }
+    setSaving(true); setErr("");
+
+    const payload = {
+      version:    editEntry.version.trim(),
+      date_label: editEntry.date_label.trim(),
+      type:       editEntry.type,
+      type_color: editEntry.type_color,
+      type_bg:    editEntry.type_bg,
+      items:      editEntry.items.filter(i => i.trim()),
+      sort_order: parseInt(editEntry.sort_order) || 0,
+    };
+
+    let error;
+    if (editEntry.id) {
+      ({ error } = await supabase.from("changelog").update(payload).eq("id", editEntry.id));
+    } else {
+      ({ error } = await supabase.from("changelog").insert(payload));
+    }
+
+    if (error) { setErr(error.message); setSaving(false); return; }
+    setEditModal(false);
+    load();
+    setSaving(false);
+  };
+
+  const deleteEntry = async (id) => {
+    if (!confirm("Excluir esta versão do changelog?")) return;
+    await supabase.from("changelog").delete().eq("id", id);
+    load();
+  };
+
+  const setItem = (idx, val) => setEditEntry(e => ({ ...e, items: e.items.map((it, i) => i === idx ? val : it) }));
+  const addItem = () => setEditEntry(e => ({ ...e, items: [...e.items, ""] }));
+  const removeItem = (idx) => setEditEntry(e => ({ ...e, items: e.items.filter((_, i) => i !== idx) }));
+  const setType = (label) => {
+    const t = TYPE_OPTIONS.find(o => o.label === label) || TYPE_OPTIONS[0];
+    setEditEntry(e => ({ ...e, type: t.label, type_color: t.color, type_bg: t.bg }));
+  };
+
+  const inputStyle = { width: "100%", boxSizing: "border-box", padding: "8px 10px", fontSize: 13, border: `1px solid ${C.border}`, borderRadius: 7, outline: "none", fontFamily: "inherit", marginBottom: 8 };
+  const labelStyle = { fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.8px", display: "block", marginBottom: 4 };
+
+  if (loading) return <div style={{ textAlign: "center", padding: 40, color: "#9ca3af" }}>Carregando changelog...</div>;
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 28, flexWrap: "wrap", gap: 12 }}>
+        <div>
+          <h2 style={{ fontSize: 28, fontWeight: 800, color: C.greenDark, marginBottom: 6, letterSpacing: "-0.5px" }}>Changelog</h2>
+          <p style={{ fontSize: 15, color: "#6b7280", lineHeight: 1.6, margin: 0 }}>
+            Histórico de atualizações, novas funcionalidades e correções da plataforma C4 OS.
+          </p>
+        </div>
+        {isAdmin && (
+          <button onClick={openNew} style={{ background: C.green, color: "#fff", border: "none", borderRadius: 8, padding: "9px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
+            + Nova versão
+          </button>
+        )}
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+        {entries.map((release, i) => (
+          <div key={release.id || release.version} style={{ display: "flex", gap: 28, paddingBottom: 36, position: "relative" }}>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0, width: 16 }}>
+              <div style={{ width: 14, height: 14, borderRadius: "50%", background: C.green, border: `3px solid ${C.greenLight}`, flexShrink: 0, marginTop: 4 }} />
+              {i < entries.length - 1 && <div style={{ width: 2, flex: 1, background: C.border, marginTop: 4 }} />}
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, fontSize: 15, color: C.greenDark }}>{release.version}</span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: release.type_color || release.typeColor, background: release.type_bg || release.typeBg, borderRadius: 6, padding: "2px 10px" }}>{release.type}</span>
+                <span style={{ fontSize: 13, color: "#9ca3af" }}>{release.date_label || release.date}</span>
+                {isAdmin && release.id && (
+                  <div style={{ display: "flex", gap: 6, marginLeft: 4 }}>
+                    <button onClick={() => openEdit(release)} style={{ fontSize: 11, color: C.green, background: C.greenLight, border: `1px solid ${C.green}`, borderRadius: 5, padding: "2px 8px", cursor: "pointer", fontWeight: 600 }}>✎ Editar</button>
+                    <button onClick={() => deleteEntry(release.id)} style={{ fontSize: 11, color: "#dc2626", background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 5, padding: "2px 8px", cursor: "pointer", fontWeight: 600 }}>⊗</button>
+                  </div>
+                )}
+              </div>
+              <ul style={{ paddingLeft: 18, margin: 0 }}>
+                {(Array.isArray(release.items) ? release.items : []).map((item, j) => (
+                  <li key={j} style={{ fontSize: 14, color: C.body, lineHeight: 1.75, marginBottom: 2 }}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Edit / New Modal */}
+      {editModal && editEntry && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ background: "#fff", borderRadius: 14, width: "100%", maxWidth: 560, maxHeight: "90vh", overflowY: "auto", padding: 28, boxShadow: "0 8px 40px rgba(0,0,0,.18)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+              <span style={{ fontSize: 16, fontWeight: 700, color: C.greenDark }}>{editEntry.id ? "Editar versão" : "Nova versão"}</span>
+              <button onClick={() => setEditModal(false)} style={{ background: "none", border: "none", fontSize: 20, cursor: "pointer", color: "#9ca3af" }}>×</button>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px" }}>
+              <div><label style={labelStyle}>Versão *</label><input style={inputStyle} value={editEntry.version} onChange={e => setEditEntry(v => ({...v, version: e.target.value}))} placeholder="v2.5.0"/></div>
+              <div><label style={labelStyle}>Data</label><input style={inputStyle} value={editEntry.date_label} onChange={e => setEditEntry(v => ({...v, date_label: e.target.value}))} placeholder="Jul 2026"/></div>
+              <div>
+                <label style={labelStyle}>Tipo</label>
+                <select style={{...inputStyle, cursor:"pointer"}} value={editEntry.type} onChange={e => setType(e.target.value)}>
+                  {TYPE_OPTIONS.map(o => <option key={o.label} value={o.label}>{o.label}</option>)}
+                </select>
+              </div>
+              <div><label style={labelStyle}>Ordem</label><input style={inputStyle} type="number" value={editEntry.sort_order} onChange={e => setEditEntry(v => ({...v, sort_order: e.target.value}))}/></div>
+            </div>
+
+            <label style={labelStyle}>Itens do changelog</label>
+            {editEntry.items.map((item, i) => (
+              <div key={i} style={{ display: "flex", gap: 8, marginBottom: 6 }}>
+                <input
+                  style={{ ...inputStyle, marginBottom: 0, flex: 1 }}
+                  value={item}
+                  onChange={e => setItem(i, e.target.value)}
+                  placeholder={`Item ${i + 1}...`}
+                />
+                <button onClick={() => removeItem(i)} style={{ background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 6, padding: "0 10px", cursor: "pointer", color: "#dc2626", fontSize: 14 }}>×</button>
+              </div>
+            ))}
+            <button onClick={addItem} style={{ fontSize: 12, color: C.green, background: C.greenLight, border: `1px solid ${C.green}`, borderRadius: 6, padding: "6px 14px", cursor: "pointer", fontWeight: 600, marginTop: 4, marginBottom: 16 }}>+ Adicionar item</button>
+
+            {err && <div style={{ padding: "8px 12px", background: "#fef2f2", borderRadius: 7, fontSize: 12, color: "#dc2626", marginBottom: 12 }}>{err}</div>}
+
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button onClick={() => setEditModal(false)} style={{ background: "#f3f4f6", border: "none", borderRadius: 8, padding: "9px 20px", fontSize: 13, fontWeight: 600, cursor: "pointer", color: "#374151" }}>Cancelar</button>
+              <button onClick={saveEntry} disabled={saving} style={{ background: saving ? "#9ca3af" : C.green, color: "#fff", border: "none", borderRadius: 8, padding: "9px 24px", fontSize: 13, fontWeight: 700, cursor: saving ? "not-allowed" : "pointer" }}>
+                {saving ? "Salvando..." : "Salvar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const PageDocs = ({ onNavigate }) => {
   const [activeSection, setActiveSection] = useState("intro");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const { isMobile } = useW();
+
+  useEffect(() => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (!session?.user) return;
+      const { data } = await supabase.from("usuarios").select("role").eq("id", session.user.id).maybeSingle();
+      setIsAdmin(data?.role === "c4hub_admin");
+    });
+  }, []);
 
   const handleSection = (id) => { setActiveSection(id); setMenuOpen(false); if (isMobile) window.scrollTo({ top: 64, behavior: "smooth" }); };
 
@@ -464,7 +555,10 @@ const PageDocs = ({ onNavigate }) => {
         {/* Content */}
         <main style={{ flex: 1, padding: isMobile ? "24px 16px 60px" : "48px 64px", maxWidth: isMobile ? "100%" : 780, minWidth: 0 }}>
           <div style={{ background: C.white, borderRadius: 14, padding: isMobile ? "24px 20px" : "40px 48px", border: `1px solid ${C.border}`, boxShadow: "0 2px 8px rgba(0,0,0,.04)" }}>
-            {CONTENT[activeSection]}
+            {activeSection === "changelog"
+              ? <ChangelogSection isAdmin={isAdmin} />
+              : CONTENT[activeSection]
+            }
           </div>
 
           {/* Bottom nav */}
