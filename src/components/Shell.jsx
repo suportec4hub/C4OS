@@ -53,6 +53,7 @@ const PageRelatoriosAtend  = lazyLoad(() => import("../pages/PageRelatoriosAtend
 const PageMeta             = lazyLoad(() => import("../pages/PageMeta"));
 const PageCheckoutAdmin    = lazyLoad(() => import("../pages/PageCheckoutAdmin"));
 const PageNotificacoesAdmin = lazyLoad(() => import("../pages/PageNotificacoesAdmin"));
+const PageTrafico          = lazyLoad(() => import("../pages/PageTrafico"));
 
 const NAV_ITEMS = [
   {id:"dashboard",  label:"Dashboard",      ico:"▦", g:"principal"},
@@ -68,6 +69,7 @@ const NAV_ITEMS = [
   {id:"financeiro", label:"Financeiro",     ico:"◈", g:"gestão"},
   {id:"rh",         label:"RH / Pessoas",   ico:"◉", g:"gestão"},
   {id:"marketing",  label:"Marketing",      ico:"◎", g:"crescimento", c4hubOnly:true},
+  {id:"trafico",    label:"Tráfego Pago",   ico:"◉", g:"crescimento", c4hubOnly:true},
   {id:"digital",    label:"Digital - TI",   ico:"⊞", g:"crescimento"},
   {id:"propostas",  label:"Propostas",      ico:"◎", g:"negócios"},
   {id:"contratos",  label:"Contratos",      ico:"◫", g:"negócios"},
@@ -450,6 +452,7 @@ export default function Shell({user,onLogout,onProfileUpdate,theme,toggleTheme})
           {safe==="financeiro" && <PageFinanceiro user={user}/>}
           {safe==="rh"        && <PageRH        user={user}/>}
           {safe==="marketing" && <PageMarketing user={user} isAdmin={isAdmin}/>}
+          {safe==="trafico"  && <PageTrafico  user={user}/>}
           {safe==="digital"   && <PageDigital   user={user} isAdmin={isAdmin}/>}
           {safe==="workspace" && <PageWorkspace user={user}/>}
           {safe==="agenda"    && <PageAgenda    user={user}/>}
