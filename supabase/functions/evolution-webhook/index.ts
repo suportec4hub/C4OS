@@ -65,7 +65,7 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
-  const GLOBAL_URL = "https://evolution-evolution-api.ng5obv.easypanel.host";
+  const GLOBAL_URL = Deno.env.get("EVOLUTION_GLOBAL_URL") ?? "https://evolutionapi-evolution-api.kwjuno.easypanel.host";
 
   try {
     const reqUrl       = new URL(req.url);
