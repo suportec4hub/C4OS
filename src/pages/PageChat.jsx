@@ -590,8 +590,8 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
   const [setorFiltro,    setSetorFiltro]    = useState("");
   const [vendedorFiltro, setVendedorFiltro] = useState("");
 
-  // SDR só enxerga as próprias conversas
-  const isSDR = (user?.cargo || "").toLowerCase().includes("sdr");
+  // SDR só enxerga as próprias conversas; client_admin nunca é tratado como SDR
+  const isSDR = user?.role !== "client_admin" && (user?.cargo || "").toLowerCase().includes("sdr");
 
   // ── sidebar data ──────────────────────────────────────────────────────────
   const [evoConnected, setEvoConnected] = useState(null);
