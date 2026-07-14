@@ -66,6 +66,7 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
   const GLOBAL_URL = Deno.env.get("EVOLUTION_GLOBAL_URL") ?? "https://evolutionapi-evolution-api.kwjuno.easypanel.host";
+  const GLOBAL_KEY = Deno.env.get("EVOLUTION_GLOBAL_KEY") ?? "";
 
   try {
     const reqUrl       = new URL(req.url);
@@ -224,7 +225,7 @@ Deno.serve(async (req) => {
           if (Array.isArray(conv?.messages)) allMsgs.push(...conv.messages);
         }
       }
-      if (allMsgs.length > 0) await processMessages(allMsgs, empresa_id, supabase, GLOBAL_URL, now, true);
+      if (allMsgs.length > 0) await processMessages(allMsgs, empresa_id, supabase, GLOBAL_URL, GLOBAL_KEY, now, true);
       return new Response("OK");
     }
 
@@ -235,7 +236,7 @@ Deno.serve(async (req) => {
         resumo: `Webhook de mensagem recebido (${event})`,
       });
       const msgs = Array.isArray(data) ? data : [data];
-      await processMessages(msgs, empresa_id, supabase, GLOBAL_URL, now, false);
+      await processMessages(msgs, empresa_id, supabase, GLOBAL_URL, GLOBAL_KEY, now, false);
 
       // ── CSAT: verifica se alguma mensagem recebida é resposta de satisfação ──
       for (const msg of msgs) {
@@ -708,7 +709,7 @@ function interpolarVariaveis(texto: string, variaveis: Record<string, string>): 
 // ─────────────────────────────────────────────────────────────────────────────
 async function processMessages(
   msgs: unknown[], empresa_id: string, supabase: ReturnType<typeof createClient>,
-  GLOBAL_URL: string, now: string, isHistory: boolean
+  GLOBAL_URL: string, GLOBAL_KEY: string, now: string, isHistory: boolean
 ) {
   // Load chatbot_config once per batch to get setor_padrao_id for auto-assignment
   let cfgEarly: Record<string, unknown> | null = null;
@@ -1053,9 +1054,9 @@ async function processMessages(
               .select("evolution_instance_id, evolution_instance_token, evolution_api_url")
               .eq("id", empresa_id).maybeSingle();
             const evoInst  = empInfo?.evolution_instance_id  as string | null;
-            const evoToken = empInfo?.evolution_instance_token as string | null;
+            const evoToken = (empInfo?.evolution_instance_token as string | null) || GLOBAL_KEY;
             const evoBase  = ((empInfo?.evolution_api_url as string | null) || GLOBAL_URL).replace(/\/$/, "");
-            console.log(`[webhook] getBase64 inst:${evoInst} url:${evoBase}`);
+            console.log(`[webhook] getBase64 inst:${evoInst} url:${evoBase} hasToken:${!!evoToken}`);
             if (evoInst && evoToken) {
               // Evolution API pode ter o endpoint em diferentes caminhos dependendo da versão.
               // Tenta /message/getBase64FromMediaMessage (v2 padrão), depois /chat/getBase64FromMediaMessage (v1/fork).
@@ -1063,16 +1064,25 @@ async function processMessages(
                 `${evoBase}/message/getBase64FromMediaMessage/${evoInst}`,
                 `${evoBase}/chat/getBase64FromMediaMessage/${evoInst}`,
               ];
+              // Tenta diferentes payloads — formato varia entre versões da Evolution API
+              const payloads = [
+                { id: wamid },
+                { message: { key: { id: wamid } } },
+              ];
               let fr: Response | null = null;
+              outer:
               for (const ep of endpoints) {
-                const r = await fetch(ep, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json", "apikey": evoToken },
-                  body: JSON.stringify({ id: wamid }),
-                  signal: AbortSignal.timeout(15000),
-                });
-                console.log(`[webhook] getBase64 ${ep} → ${r.status}`);
-                if (r.ok || r.status !== 404) { fr = r; break; }
+                for (const payload of payloads) {
+                  const r = await fetch(ep, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", "apikey": evoToken },
+                    body: JSON.stringify(payload),
+                    signal: AbortSignal.timeout(15000),
+                  });
+                  console.log(`[webhook] getBase64 ${ep} payload:${JSON.stringify(payload).slice(0,60)} → ${r.status}`);
+                  if (r.ok) { fr = r; break outer; }
+                  if (r.status !== 404 && r.status !== 400) { fr = r; break outer; }
+                }
               }
               if (!fr) fr = new Response("{}", { status: 404 });
               debugStep = `getBase64-http:${fr.status}`;
