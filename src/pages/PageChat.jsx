@@ -253,13 +253,22 @@ function AudioPlayer({ src, wamid, out, empresaId }) {
   const track    = out ? "rgba(255,255,255,.28)" : L.line;
   const dimColor = out ? "rgba(255,255,255,.65)" : L.t4;
 
-  if (errored) return (
-    <a href={src || "#"} download target="_blank" rel="noreferrer"
-      style={{ display:"flex", alignItems:"center", gap:7, fontSize:12,
-        color: out ? "rgba(255,255,255,.85)" : L.teal, textDecoration:"none" }}>
-      <span style={{ fontSize:18 }}>⬇</span> Baixar áudio
-    </a>
-  );
+  if (errored) {
+    // Encrypted .enc URLs cannot be downloaded directly — show unavailability instead of a broken link
+    if (!src || isEncUrl(src)) return (
+      <div style={{ display:"flex", alignItems:"center", gap:7, fontSize:12,
+        color: out ? "rgba(255,255,255,.45)" : L.t4 }}>
+        <span>⚠</span> Áudio indisponível
+      </div>
+    );
+    return (
+      <a href={src} download target="_blank" rel="noreferrer"
+        style={{ display:"flex", alignItems:"center", gap:7, fontSize:12,
+          color: out ? "rgba(255,255,255,.85)" : L.teal, textDecoration:"none" }}>
+        <span style={{ fontSize:18 }}>⬇</span> Baixar áudio
+      </a>
+    );
+  }
 
   return (
     <div style={{ display:"flex", alignItems:"center", gap:10, minWidth:200, maxWidth:260, padding:"2px 0" }}>

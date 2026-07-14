@@ -1181,28 +1181,48 @@ Deno.serve(async (req) => {
     if (action === "fetchMedia") {
       const { wamid } = body;
       if (!wamid) return json({ error: "wamid obrigatório" }, 400);
-      try {
-        const r = await iFetch(`/message/getBase64FromMediaMessage/${instName}`, {
-          method: "POST",
-          body: JSON.stringify({ id: String(wamid) }),
-        });
-        if (!r.ok) {
-          const errTxt = await r.text().catch(() => "");
-          return json({ error: `Evolution ${r.status}: ${errTxt.slice(0, 120)}` }, 502);
-        }
-        const d = await r.json();
-        // Evolution pode retornar em diferentes formatos dependendo da versão
-        const rawB64   = d?.base64   ?? d?.data?.base64   ?? d?.media?.base64   ?? null;
-        const mimetype = d?.mimetype ?? d?.data?.mimetype ?? d?.media?.mimetype ?? d?.type ?? "application/octet-stream";
-        // Pode vir como data URL ("data:audio/ogg;base64,...") — strip prefix
+
+      const extractB64 = (d: Record<string, unknown>) => {
+        type Nested = { base64?: string; mimetype?: string };
+        const rawB64 = (d?.base64 ?? (d?.data as Nested)?.base64 ?? (d?.media as Nested)?.base64 ?? null) as string | null;
+        const mimetype = ((d?.mimetype ?? (d?.data as Nested)?.mimetype ?? (d?.media as Nested)?.mimetype ?? d?.type ?? "application/octet-stream") as string);
         const base64 = typeof rawB64 === "string" && rawB64.startsWith("data:")
           ? (rawB64.indexOf(",") >= 0 ? rawB64.slice(rawB64.indexOf(",") + 1) : null)
           : rawB64;
-        if (base64) return json({ success: true, base64, mimetype });
-        return json({ success: false, error: "Mídia não disponível ou expirada" });
-      } catch (e) {
-        return json({ error: (e as Error).message }, 500);
+        return base64 ? { base64, mimetype } : null;
+      };
+
+      // Try standard payload first, then legacy nested format as fallback
+      const payloads = [
+        { id: String(wamid) },
+        { message: { key: { id: String(wamid) } } },
+      ];
+
+      let lastErr = "Mídia não disponível ou expirada";
+      for (const payload of payloads) {
+        try {
+          const r = await iFetch(`/message/getBase64FromMediaMessage/${instName}`, {
+            method: "POST",
+            body: JSON.stringify(payload),
+          });
+          if (!r.ok) {
+            const errTxt = await r.text().catch(() => "");
+            lastErr = `Evolution ${r.status}: ${errTxt.slice(0, 120)}`;
+            console.warn(`fetchMedia attempt failed (${JSON.stringify(payload)}): ${lastErr}`);
+            continue;
+          }
+          const d = await r.json() as Record<string, unknown>;
+          const result = extractB64(d);
+          if (result) return json({ success: true, ...result });
+          lastErr = "Mídia não disponível ou expirada";
+        } catch (e) {
+          lastErr = (e as Error).message;
+          console.warn(`fetchMedia attempt threw: ${lastErr}`);
+        }
       }
+
+      console.error(`fetchMedia falhou para wamid=${wamid} inst=${instName}: ${lastErr}`);
+      return json({ success: false, error: lastErr });
     }
 
     // ────────────────────────────────────────────────────────────────────────
