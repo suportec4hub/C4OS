@@ -86,6 +86,16 @@ Deno.serve(async (req) => {
     const apiKey       = (emp as Record<string, string>).evolution_api_key?.trim() || GLOBAL_KEY;
 
     console.log("[config] evoUrl:", evoUrl, "| apiKey set:", !!apiKey, "| action:", action);
+
+    // Desconectar/logout: limpa o banco SEMPRE, independente de URL configurada
+    if ((action === "disconnect" || action === "logout") && !evoUrl) {
+      await supabase.from("empresas").update({
+        evolution_connected: false,
+        evolution_qr_temp:   null,
+      }).eq("id", empresa_id);
+      return json({ success: true });
+    }
+
     if (!evoUrl) return json({ error: "Servidor Evolution não configurado. Verifique as Secrets EVOLUTION_GLOBAL_URL e EVOLUTION_GLOBAL_KEY no Supabase." });
 
     /** Fetch autenticado com global apikey */
