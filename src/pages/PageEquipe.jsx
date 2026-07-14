@@ -140,7 +140,16 @@ export default function PageEquipe({ user }) {
     setSaving(false);
   };
 
-  const toggleAtivo = async (m) => { await update(m.id, { ativo: !m.ativo }); };
+  const toggleAtivo = async (m) => {
+    await update(m.id, { ativo: !m.ativo });
+    // Se desativando: limpa atendente_id em conversas abertas/aguardando deste usuário
+    if (m.ativo) {
+      await supabase.from("conversas")
+        .update({ atendente_id: null })
+        .eq("atendente_id", m.id)
+        .not("status", "eq", "resolvida");
+    }
+  };
 
   const excluirConfirmado = async () => {
     if (!confirmDelete) return;

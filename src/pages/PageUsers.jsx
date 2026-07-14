@@ -114,7 +114,16 @@ export default function PageUsers({ user }) {
   };
 
   /* ── toggle ativo ── */
-  const toggleAtivo = async (u) => { await update(u.id, { ativo: !u.ativo }); };
+  const toggleAtivo = async (u) => {
+    await update(u.id, { ativo: !u.ativo });
+    // Se desativando: limpa atendente_id em conversas abertas/aguardando deste usuário
+    if (u.ativo) {
+      await supabase.from("conversas")
+        .update({ atendente_id: null })
+        .eq("atendente_id", u.id)
+        .not("status", "eq", "resolvida");
+    }
+  };
 
   const F  = k => v => setForm(p => ({ ...p, [k]: v }));
   const EF = k => v => setEditForm(p => ({ ...p, [k]: v }));
