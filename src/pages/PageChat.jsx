@@ -576,9 +576,13 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
   const [sendErr,      setSendErr]      = useState("");
 
   // ── filters ───────────────────────────────────────────────────────────────
-  const [busca,        setBusca]        = useState("");
-  const [statusTab,    setStatusTab]    = useState("todas");
-  const [setorFiltro,  setSetorFiltro]  = useState("");
+  const [busca,          setBusca]          = useState("");
+  const [statusTab,      setStatusTab]      = useState("todas");
+  const [setorFiltro,    setSetorFiltro]    = useState("");
+  const [vendedorFiltro, setVendedorFiltro] = useState("");
+
+  // SDR só enxerga as próprias conversas
+  const isSDR = (user?.cargo || "").toLowerCase().includes("sdr");
 
   // ── sidebar data ──────────────────────────────────────────────────────────
   const [evoConnected, setEvoConnected] = useState(null);
@@ -866,6 +870,8 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
       .eq("empresa_id", user.empresa_id)
       .order("ultima_hora", { ascending: false, nullsFirst: false });
     if (tab !== "todas") q = q.eq("status", tab);
+    // SDR: restringe ao servidor para que nunca carreguem conversas de outros
+    if (isSDR) q = q.eq("atendente_id", user.id);
 
     const { data, error } = await q;
     if (error) { if (!silent) setLoading(false); return; }
@@ -1613,15 +1619,20 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
       c.contato_nome?.toLowerCase().includes(busca.toLowerCase()) ||
       c.contato_empresa?.toLowerCase().includes(busca.toLowerCase()) ||
       c.contato_telefone?.includes(busca);
-    const matchSetor = !setorFiltro || c.setor_id === setorFiltro;
+    const matchSetor    = !setorFiltro    || c.setor_id    === setorFiltro;
+    const matchVendedor = !vendedorFiltro
+      ? true
+      : vendedorFiltro === "__sem__"
+        ? !c.atendente_id
+        : c.atendente_id === vendedorFiltro;
     const isGrpC = c.contato_telefone?.endsWith("@g.us");
     const matchTipo  = tipoFiltro === "todos"    ? true
                      : tipoFiltro === "grupos"   ? !!isGrpC
                      : /* contatos */              !isGrpC;
     const matchEtiqueta = !etiquetaFiltro ||
       (convEtiquetasMap[c.id] || []).includes(etiquetaFiltro);
-    return matchSearch && matchSetor && matchTipo && matchEtiqueta;
-  }), [conversas, busca, setorFiltro, tipoFiltro, etiquetaFiltro, convEtiquetasMap]);
+    return matchSearch && matchSetor && matchVendedor && matchTipo && matchEtiqueta;
+  }), [conversas, busca, setorFiltro, vendedorFiltro, tipoFiltro, etiquetaFiltro, convEtiquetasMap]);
 
   const filteredQuick = quickReplies.filter(r =>
     r.titulo?.toLowerCase().includes(quickFilter) ||
@@ -1746,6 +1757,17 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
                         fontSize: 11, color: L.t2, background: L.white, outline: "none", fontFamily: "inherit", marginBottom: 8 }}>
                       <option value="">🏢 Todos os setores</option>
                       {setores.map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
+                    </select>
+                  )}
+
+                  {/* Filtro por vendedor — visível apenas para quem não é SDR */}
+                  {!isSDR && atendentes.length > 0 && (
+                    <select value={vendedorFiltro} onChange={e => setVendedorFiltro(e.target.value)}
+                      style={{ width: "100%", border: `1px solid ${L.line}`, borderRadius: 7, padding: "4px 8px",
+                        fontSize: 11, color: L.t2, background: L.white, outline: "none", fontFamily: "inherit", marginBottom: 8 }}>
+                      <option value="">👤 Todos os vendedores</option>
+                      <option value="__sem__">— Sem atribuição</option>
+                      {atendentes.map(a => <option key={a.id} value={a.id}>{a.nome}</option>)}
                     </select>
                   )}
 
