@@ -930,7 +930,8 @@ async function processMessages(
         contato_nome: senderName || conv.contato_nome,
       };
       // Reabre conversa resolvida automaticamente quando cliente envia nova mensagem
-      if (conv.status === "resolvida") {
+      const wasResolvida = conv.status === "resolvida";
+      if (wasResolvida) {
         reopenFields.status = "aberta";
         reopenFields.atendente_id = null;
         reopenFields.fluxo_estado = null;
@@ -943,8 +944,17 @@ async function processMessages(
       await supabase.from("conversas").update(reopenFields).eq("id", conv.id);
 
       // Round-robin para conversas sem atendente — só bloqueado quando fluxo tem menu → setor
-      const precisaAtribuir = !roundRobinBloqueadoPorFluxo &&
-        (conv.status === "resolvida" || !(conv as Record<string, unknown>).atendente_id);
+      let precisaAtribuir = !roundRobinBloqueadoPorFluxo &&
+        (wasResolvida || !(conv as Record<string, unknown>).atendente_id);
+      // Também atribui se o atendente atual foi excluído/desativado
+      if (!precisaAtribuir && !roundRobinBloqueadoPorFluxo && conv.atendente_id) {
+        const { data: atendenteOk } = await supabase.from("usuarios")
+          .select("id").eq("id", String(conv.atendente_id)).eq("ativo", true).maybeSingle();
+        if (!atendenteOk) {
+          precisaAtribuir = true;
+          console.log(`[round-robin] atendente ${conv.atendente_id} não encontrado/inativo → forçando atribuição`);
+        }
+      }
       if (precisaAtribuir) {
         try {
           const [{ data: dist }, { data: setorVendas }] = await Promise.all([
