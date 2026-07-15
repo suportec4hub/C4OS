@@ -450,6 +450,9 @@ function MultiInstanciaCard({ user }) {
   const [errMsg,     setErrMsg]     = useState("");
   // qr state por instancia_id
   const [qrState,    setQrState]    = useState({}); // { [id]: { phase, qrImg } }
+  // instâncias que acabaram de conectar — mostra indicador de sincronização por 10min
+  const [syncingHistory, setSyncingHistory] = useState({}); // { [id]: connectedAt (ms) }
+  const syncTimers = useRef({});
   const pollRefs = useRef({});
 
   const callEvo = (action, extra = {}) =>
@@ -464,12 +467,22 @@ function MultiInstanciaCard({ user }) {
 
   useEffect(() => { loadInstancias(); }, [loadInstancias]);
 
-  // Cleanup polling on unmount
+  // Cleanup polling e sync timers ao desmontar
   useEffect(() => {
     return () => {
       Object.values(pollRefs.current).forEach(t => clearInterval(t));
+      Object.values(syncTimers.current).forEach(t => clearTimeout(t));
     };
   }, []);
+
+  const marcarSincronizando = (id) => {
+    setSyncingHistory(s => ({ ...s, [id]: Date.now() }));
+    if (syncTimers.current[id]) clearTimeout(syncTimers.current[id]);
+    // Remove o indicador após 10 minutos
+    syncTimers.current[id] = setTimeout(() => {
+      setSyncingHistory(s => { const n = { ...s }; delete n[id]; return n; });
+    }, 10 * 60 * 1000);
+  };
 
   const criarInstancia = async () => {
     if (!novoNome.trim()) return;
@@ -523,6 +536,7 @@ function MultiInstanciaCard({ user }) {
       if (data?.data?.Connected) {
         clearInterval(pollRefs.current[id]);
         setQrState(s => ({ ...s, [id]: { phase: "idle" } }));
+        marcarSincronizando(id);
         await loadInstancias();
       } else if (data?.data?.Qrcode) {
         setQrState(s => ({ ...s, [id]: { phase: "qr", qrImg: data.data.Qrcode } }));
@@ -561,10 +575,17 @@ function MultiInstanciaCard({ user }) {
                       {inst.evolution_phone ? `+${inst.evolution_phone}` : inst.evolution_instance_id || "—"}
                     </div>
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
                     <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 6, background: inst.evolution_connected ? L.greenBg : L.redBg, color: inst.evolution_connected ? L.green : L.red }}>
-                      {inst.evolution_connected ? "Conectado" : "Desconectado"}
+                      {inst.evolution_connected ? "🟢 Conectado" : "🔴 Desconectado"}
                     </span>
+                    {/* Indicador de sincronização de histórico */}
+                    {inst.evolution_connected && syncingHistory[inst.id] && (
+                      <span style={{ fontSize: 10, fontWeight: 600, padding: "3px 8px", borderRadius: 6, background: L.tealBg, color: L.teal, border: `1px solid ${L.tealA}`, display: "flex", alignItems: "center", gap: 4 }}>
+                        <span style={{ display: "inline-block", animation: "spin .8s linear infinite", fontSize: 10 }}>⟳</span>
+                        Sincronizando histórico...
+                      </span>
+                    )}
                     {!inst.evolution_connected && qs.phase === "idle" && (
                       <button onClick={() => conectarInstancia(inst.id)}
                         style={{ fontSize: 11, fontWeight: 600, padding: "4px 10px", borderRadius: 7, cursor: "pointer", background: L.tealBg, color: L.teal, border: `1px solid ${L.tealA}`, fontFamily: "inherit" }}>
@@ -616,6 +637,11 @@ function MultiInstanciaCard({ user }) {
         <div style={{ marginTop: 10, fontSize: 11, color: L.t4, lineHeight: 1.6 }}>
           Cada número adicionado recebe suas próprias mensagens na caixa de entrada unificada. O bot e a distribuição automática de vendedores funcionam apenas pelo <b>número principal</b> acima.
         </div>
+        {Object.keys(syncingHistory).length > 0 && (
+          <div style={{ marginTop: 10, padding: "9px 12px", background: L.tealBg, border: `1px solid ${L.tealA}`, borderRadius: 8, fontSize: 11, color: L.teal, lineHeight: 1.6 }}>
+            ⟳ <b>Sincronizando histórico recente</b> — o WhatsApp está enviando as mensagens anteriores à conexão (últimos ~90 dias). Esse processo ocorre em segundo plano e pode levar até 10 minutos. Mensagens anteriores à data da conexão não são importadas retroativamente além desse período.
+          </div>
+        )}
       </div>
     </div>
   );
