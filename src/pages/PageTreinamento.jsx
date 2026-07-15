@@ -1657,7 +1657,7 @@ function Sidebar({ modules, progress, activeMod, activeLesson, onSelect, overall
 // ─── Certificado ─────────────────────────────────────────────────────────────
 function imprimirCertificado({ nomeUsuario, nomeEmpresa, dataConc, modulos }) {
   const modsHtml = modulos.map(m =>
-    `<li style="margin:0 0 4px;font-size:13px;color:#374151;">${m.icon} ${m.title} <span style="color:#6b7280;">(${m.lessons.length} aulas)</span></li>`
+    `<div style="display:flex;align-items:center;gap:6px;font-size:12px;color:#374151;padding:4px 0;"><span style="color:#059669;font-weight:700;">✓</span><span>${m.icon} ${m.title}</span></div>`
   ).join("");
 
   const html = `<!DOCTYPE html>
@@ -1666,69 +1666,175 @@ function imprimirCertificado({ nomeUsuario, nomeEmpresa, dataConc, modulos }) {
   <meta charset="UTF-8"/>
   <title>Certificado C4OS — ${nomeUsuario}</title>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
+    @page { size: A4 landscape; margin: 10mm; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: Inter, -apple-system, sans-serif; background: #f0fdf4; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 40px 20px; }
-    .cert { background: #fff; width: 794px; min-height: 560px; border-radius: 20px; box-shadow: 0 8px 48px rgba(0,0,0,.12); overflow: hidden; display: flex; flex-direction: column; }
-    .header { background: linear-gradient(135deg, #059669, #0891b2); padding: 36px 48px 32px; display: flex; align-items: center; justify-content: space-between; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0fdf4; }
+
+    /* ── Toolbar (hidden when printing) ── */
+    .toolbar {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      background: #1f2937; padding: 12px 24px;
+      display: flex; align-items: center; justify-content: space-between;
+      box-shadow: 0 2px 12px rgba(0,0,0,.3);
+    }
+    .toolbar-left { font-size: 13px; color: #9ca3af; }
+    .toolbar-left strong { color: #fff; }
+    .toolbar-actions { display: flex; gap: 10px; }
+    .btn-print {
+      background: linear-gradient(135deg, #059669, #0891b2); color: #fff;
+      border: none; border-radius: 8px; padding: 9px 22px;
+      font-size: 13px; font-weight: 700; cursor: pointer;
+      display: flex; align-items: center; gap: 8px;
+      box-shadow: 0 4px 14px rgba(5,150,105,.35); transition: opacity .15s;
+    }
+    .btn-print:hover { opacity: .88; }
+    .btn-close {
+      background: transparent; color: #9ca3af;
+      border: 1px solid #374151; border-radius: 8px; padding: 9px 18px;
+      font-size: 13px; font-weight: 600; cursor: pointer; transition: all .15s;
+    }
+    .btn-close:hover { color: #fff; border-color: #6b7280; }
+
+    /* ── Page wrapper ── */
+    .page { padding: 72px 24px 40px; display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+
+    /* ── Certificate ── */
+    .cert {
+      background: #fff;
+      width: 267mm; height: 185mm;
+      border-radius: 16px;
+      box-shadow: 0 12px 64px rgba(0,0,0,.15);
+      overflow: hidden; display: flex; flex-direction: row;
+    }
+
+    /* Left accent strip */
+    .cert-left {
+      width: 8px; flex-shrink: 0;
+      background: linear-gradient(180deg, #059669 0%, #0891b2 100%);
+    }
+
+    /* Main content */
+    .cert-main { flex: 1; display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+
+    /* Header */
+    .cert-header {
+      background: linear-gradient(135deg, #064e3b 0%, #083344 100%);
+      padding: 22px 36px 20px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
     .logo-row { display: flex; align-items: center; gap: 12px; }
-    .logo-box { width: 48px; height: 48px; background: rgba(255,255,255,.2); border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 26px; font-weight: 900; color: #fff; }
-    .logo-text { font-size: 22px; font-weight: 800; color: #fff; letter-spacing: -0.5px; }
-    .header-right { text-align: right; }
-    .cert-label { font-size: 11px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: rgba(255,255,255,.7); }
-    .cert-title { font-size: 26px; font-weight: 800; color: #fff; margin-top: 4px; }
-    .body { padding: 36px 48px 32px; flex: 1; }
-    .declares { font-size: 13px; color: #6b7280; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 10px; }
-    .name { font-size: 36px; font-weight: 800; color: #111827; line-height: 1.1; margin-bottom: 6px; border-bottom: 3px solid #10b981; padding-bottom: 12px; display: inline-block; }
-    .company { font-size: 15px; color: #6b7280; margin: 10px 0 20px; }
-    .company strong { color: #374151; }
-    .desc { font-size: 14px; color: #6b7280; line-height: 1.7; max-width: 560px; margin-bottom: 24px; }
-    .modules-title { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: #9ca3af; margin-bottom: 10px; }
-    .modules-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 24px; margin-bottom: 28px; }
-    .footer { border-top: 1px solid #f3f4f6; padding: 20px 48px; display: flex; align-items: center; justify-content: space-between; background: #f9fafb; }
-    .footer-left { font-size: 12px; color: #9ca3af; }
-    .footer-left strong { color: #374151; }
-    .seal { width: 72px; height: 72px; border-radius: 50%; border: 3px solid #10b981; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #f0fdf4; }
-    .seal-inner { font-size: 10px; font-weight: 800; text-transform: uppercase; color: #059669; letter-spacing: .5px; text-align: center; line-height: 1.3; }
-    .sig-line { width: 160px; border-top: 1.5px solid #d1d5db; padding-top: 6px; font-size: 11px; color: #9ca3af; text-align: center; }
+    .logo-box {
+      width: 40px; height: 40px; border-radius: 10px;
+      background: rgba(255,255,255,.15); border: 1px solid rgba(255,255,255,.2);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 20px; font-weight: 900; color: #fff;
+    }
+    .logo-name { font-size: 18px; font-weight: 800; color: #fff; letter-spacing: -.5px; }
+    .logo-sub { font-size: 10px; color: rgba(255,255,255,.55); font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; margin-top: 1px; }
+    .header-badge {
+      text-align: right;
+    }
+    .badge-label { font-size: 9px; font-weight: 700; letter-spacing: 2.5px; text-transform: uppercase; color: rgba(255,255,255,.5); }
+    .badge-title { font-size: 17px; font-weight: 800; color: #fff; margin-top: 2px; letter-spacing: -.3px; }
+
+    /* Body */
+    .cert-body { flex: 1; display: flex; gap: 0; overflow: hidden; }
+
+    .cert-body-left { flex: 1.3; padding: 24px 28px 20px 36px; display: flex; flex-direction: column; justify-content: space-between; border-right: 1px solid #f3f4f6; }
+    .cert-body-right { width: 220px; padding: 20px 24px; display: flex; flex-direction: column; gap: 10px; }
+
+    .declares { font-size: 9px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: #9ca3af; margin-bottom: 6px; }
+    .name { font-size: 28px; font-weight: 900; color: #111827; letter-spacing: -.8px; line-height: 1.1; padding-bottom: 8px; border-bottom: 2.5px solid #10b981; margin-bottom: 8px; }
+    .company-line { font-size: 12px; color: #6b7280; margin-bottom: 6px; }
+    .company-line strong { color: #374151; }
+    .desc-text { font-size: 11.5px; color: #6b7280; line-height: 1.7; }
+    .desc-text strong { color: #374151; }
+
+    .mods-title { font-size: 9px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: #9ca3af; margin-bottom: 8px; }
+    .mods-grid { columns: 1; }
+
+    .cert-footer {
+      padding: 12px 36px; background: #f9fafb; border-top: 1px solid #f3f4f6;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .footer-date { font-size: 10px; color: #9ca3af; }
+    .footer-date strong { color: #374151; }
+    .footer-sig { display: flex; align-items: flex-end; gap: 24px; }
+    .sig-block { text-align: center; }
+    .sig-line { width: 130px; border-top: 1px solid #d1d5db; padding-top: 5px; font-size: 10px; color: #9ca3af; }
+    .seal {
+      width: 58px; height: 58px; border-radius: 50%;
+      border: 2.5px solid #10b981;
+      background: linear-gradient(135deg, #f0fdf4, #ecfdf5);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+    }
+    .seal-text { font-size: 8.5px; font-weight: 800; color: #059669; text-transform: uppercase; letter-spacing: .5px; line-height: 1.4; text-align: center; }
+
+    /* Decorative orb */
+    .orb {
+      position: absolute; border-radius: 50%; pointer-events: none;
+    }
+
     @media print {
-      body { background: #fff; padding: 0; }
-      .cert { box-shadow: none; border-radius: 0; width: 100%; }
+      .toolbar { display: none !important; }
+      body { background: #fff; }
+      .page { padding: 0; min-height: unset; }
+      .cert { box-shadow: none; border-radius: 0; width: 100%; height: 100%; }
     }
   </style>
 </head>
 <body>
+<div class="toolbar">
+  <div class="toolbar-left">Certificado de <strong>${nomeUsuario}</strong> — C4OS Treinamentos</div>
+  <div class="toolbar-actions">
+    <button class="btn-print" onclick="window.print()">🖨️ Imprimir / Salvar PDF</button>
+    <button class="btn-close" onclick="window.close()">✕ Fechar</button>
+  </div>
+</div>
+
+<div class="page">
 <div class="cert">
-  <div class="header">
-    <div class="logo-row">
-      <div class="logo-box">C</div>
-      <div class="logo-text">C4OS</div>
+  <div class="cert-left"></div>
+  <div class="cert-main">
+    <div class="cert-header">
+      <div class="logo-row">
+        <div class="logo-box">C</div>
+        <div>
+          <div class="logo-name">C4OS</div>
+          <div class="logo-sub">Treinamentos Oficiais</div>
+        </div>
+      </div>
+      <div class="header-badge">
+        <div class="badge-label">Documento Oficial</div>
+        <div class="badge-title">Certificado de Conclusão</div>
+      </div>
     </div>
-    <div class="header-right">
-      <div class="cert-label">Documento oficial</div>
-      <div class="cert-title">Certificado de Conclusão</div>
-    </div>
-  </div>
-  <div class="body">
-    <div class="declares">Certificamos que</div>
-    <div class="name">${nomeUsuario}</div>
-    <div class="company">da empresa <strong>${nomeEmpresa}</strong></div>
-    <div class="desc">concluiu com êxito o <strong>Treinamento Completo da Plataforma C4OS</strong>, cumprindo todos os módulos e aulas do programa de capacitação oficial.</div>
-    <div class="modules-title">Módulos concluídos</div>
-    <ul class="modules-grid" style="padding-left:16px;">${modsHtml}</ul>
-  </div>
-  <div class="footer">
-    <div class="footer-left">
-      <div><strong>Data de conclusão:</strong> ${dataConc}</div>
-      <div style="margin-top:4px;"><strong>Plataforma:</strong> C4OS · c4os.com.br</div>
-    </div>
-    <div style="display:flex;align-items:flex-end;gap:32px;">
-      <div class="sig-line">Equipe C4HUB</div>
-      <div class="seal"><div class="seal-inner">✓<br/>100%<br/>Concluído</div></div>
+
+    <div class="cert-body">
+      <div class="cert-body-left">
+        <div>
+          <div class="declares">Certificamos que</div>
+          <div class="name">${nomeUsuario}</div>
+          <div class="company-line">da empresa <strong>${nomeEmpresa}</strong></div>
+          <div class="desc-text">concluiu com êxito o <strong>Programa de Treinamento Completo da Plataforma C4OS</strong>, cumprindo todos os módulos, aulas práticas e laboratórios do programa de capacitação oficial.</div>
+        </div>
+        <div class="cert-footer" style="padding:0;background:none;border:none;margin-top:8px;">
+          <div class="footer-date"><strong>Concluído em:</strong> ${dataConc} &nbsp;·&nbsp; c4os.com.br</div>
+          <div class="footer-sig">
+            <div class="sig-block"><div class="sig-line">Equipe C4HUB</div></div>
+            <div class="seal"><div class="seal-text">✓<br/>100%<br/>Concluído</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="cert-body-right">
+        <div class="mods-title">Módulos concluídos</div>
+        <div class="mods-grid">${modsHtml}</div>
+      </div>
     </div>
   </div>
 </div>
-<script>window.onload = () => { window.print(); }<\/script>
+</div>
 </body>
 </html>`;
 
@@ -1763,12 +1869,32 @@ function CompletionScreen({ nomeUsuario, nomeEmpresa, dataConc, modules, onBack,
   }));
 
   return (
-    <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", height:"100%", padding:"40px 48px", textAlign:"center", position:"relative", overflow:"hidden" }}>
+    <div style={{ display:"flex", flexDirection:"column", alignItems:"center", height:"100%", padding:"0", textAlign:"center", position:"relative", overflowY:"auto" }}>
       <style>{`
         @keyframes confetti { 0%{transform:translateY(120vh) rotate(0deg);opacity:1} 100%{transform:translateY(-10vh) rotate(720deg);opacity:0} }
         @keyframes popIn { 0%{transform:scale(0) rotate(-10deg);opacity:0} 60%{transform:scale(1.15) rotate(3deg)} 100%{transform:scale(1) rotate(0deg);opacity:1} }
         @keyframes glow { 0%,100%{box-shadow:0 0 30px #10b98130} 50%{box-shadow:0 0 60px #10b98160} }
       `}</style>
+      {/* Sticky top bar */}
+      <div style={{ position:"sticky", top:0, zIndex:10, width:"100%", background:`${C.sidebar}ee`, backdropFilter:"blur(12px)", borderBottom:`1px solid ${C.border}`, padding:"10px 24px", display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          <div style={{ width:28, height:28, borderRadius:8, background:"linear-gradient(135deg,#10b981,#06b6d4)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, fontWeight:900, color:"#fff" }}>C</div>
+          <span style={{ fontSize:13, fontWeight:800, color:C.text }}>C4OS Treinamentos</span>
+        </div>
+        <div style={{ display:"flex", gap:8 }}>
+          {onBack && (
+            <button onClick={onBack} style={{ background:"transparent", border:`1px solid ${C.border}`, borderRadius:8, padding:"6px 16px", fontSize:12, fontWeight:600, color:C.muted, cursor:"pointer" }}>
+              ← Voltar aos módulos
+            </button>
+          )}
+          {onReset && (
+            <button onClick={onReset} style={{ background:"transparent", border:`1px solid ${C.borderLt}`, borderRadius:8, padding:"6px 14px", fontSize:12, fontWeight:600, color:C.muted, cursor:"pointer" }}>
+              🔄 Refazer
+            </button>
+          )}
+        </div>
+      </div>
+      <div style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"32px 48px 48px", position:"relative", overflow:"hidden", width:"100%" }}>
 
       {/* Confetti */}
       {showConfetti && confettiItems.map(c => (
@@ -1828,24 +1954,10 @@ function CompletionScreen({ nomeUsuario, nomeEmpresa, dataConc, modules, onBack,
 
       {/* CTA */}
       <button onClick={emitir} disabled={emitindo}
-        style={{ background:emitindo?C.card:`linear-gradient(135deg,${C.green},${C.teal})`, border:"none", borderRadius:14, padding:"16px 40px", fontSize:16, fontWeight:800, color:emitindo?C.muted:"#fff", cursor:"pointer", display:"flex", alignItems:"center", gap:12, transition:"all .2s", boxShadow:emitindo?"none":`0 8px 32px ${C.green}40`, marginBottom:14, letterSpacing:-0.3 }}>
-        {emitindo ? "⟳ Abrindo certificado..." : "🏅 Emitir Certificado em PDF"}
+        style={{ background:emitindo?C.card:`linear-gradient(135deg,${C.green},${C.teal})`, border:"none", borderRadius:14, padding:"16px 40px", fontSize:16, fontWeight:800, color:emitindo?C.muted:"#fff", cursor:"pointer", display:"flex", alignItems:"center", gap:12, transition:"all .2s", boxShadow:emitindo?"none":`0 8px 32px ${C.green}40`, marginBottom:10, letterSpacing:-0.3 }}>
+        {emitindo ? "⟳ Abrindo certificado..." : "🖨️ Imprimir / Salvar Certificado PDF"}
       </button>
-      <p style={{ fontSize:12, color:C.muted }}>O certificado abre em uma nova aba — salve como PDF ou imprima.</p>
-
-      <div style={{ display:"flex", gap:10, marginTop:16, flexWrap:"wrap", justifyContent:"center" }}>
-        {onBack && (
-          <button onClick={onBack}
-            style={{ background:"transparent", border:`1px solid ${C.border}`, borderRadius:10, padding:"10px 22px", fontSize:13, fontWeight:600, color:C.muted, cursor:"pointer", transition:"all .2s" }}>
-            ← Voltar aos módulos
-          </button>
-        )}
-        {onReset && (
-          <button onClick={onReset}
-            style={{ background:"transparent", border:`1px solid ${C.borderLt}`, borderRadius:10, padding:"10px 22px", fontSize:13, fontWeight:600, color:C.muted, cursor:"pointer", transition:"all .2s" }}>
-            🔄 Refazer o curso
-          </button>
-        )}
+      <p style={{ fontSize:12, color:C.muted }}>O certificado abre em nova aba — clique em "Imprimir / Salvar PDF" dentro da aba.</p>
       </div>
     </div>
   );
