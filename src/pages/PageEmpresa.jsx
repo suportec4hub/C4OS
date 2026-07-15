@@ -440,6 +440,187 @@ function EvolutionCard({ user, empData, onRefresh }) {
   );
 }
 
+// ── Gerenciador de números secundários (multi-instância) ─────────────────────
+function MultiInstanciaCard({ user }) {
+  const empresa_id = user?.empresa_id;
+  const [instancias, setInstancias] = useState([]);
+  const [loading,    setLoading]    = useState(false);
+  const [novoNome,   setNovoNome]   = useState("");
+  const [criando,    setCriando]    = useState(false);
+  const [errMsg,     setErrMsg]     = useState("");
+  // qr state por instancia_id
+  const [qrState,    setQrState]    = useState({}); // { [id]: { phase, qrImg } }
+  const pollRefs = useRef({});
+
+  const callEvo = (action, extra = {}) =>
+    supabase.functions.invoke("evolution-action", { body: { action, empresa_id, ...extra } });
+
+  const loadInstancias = useCallback(async () => {
+    setLoading(true);
+    const { data, error } = await callEvo("listInstancias");
+    if (!error && data?.instancias) setInstancias(data.instancias);
+    setLoading(false);
+  }, [empresa_id]);
+
+  useEffect(() => { loadInstancias(); }, [loadInstancias]);
+
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      Object.values(pollRefs.current).forEach(t => clearInterval(t));
+    };
+  }, []);
+
+  const criarInstancia = async () => {
+    if (!novoNome.trim()) return;
+    setCriando(true); setErrMsg("");
+    const { data, error } = await callEvo("createInstancia", { nome: novoNome.trim() });
+    if (error || !data?.success) {
+      setErrMsg(data?.error || error?.message || "Erro ao criar instância");
+    } else {
+      setNovoNome("");
+      await loadInstancias();
+      // Se já veio QR, abre direto
+      if (data.qrBase64) {
+        setQrState(s => ({ ...s, [data.instancia_id]: { phase: "qr", qrImg: data.qrBase64 } }));
+        iniciarPollingQr(data.instancia_id);
+      }
+    }
+    setCriando(false);
+  };
+
+  const conectarInstancia = async (id) => {
+    setQrState(s => ({ ...s, [id]: { phase: "loading", qrImg: null } }));
+    const { data, error } = await callEvo("connectInstancia", { instancia_id: id });
+    if (error || !data?.success) {
+      setQrState(s => ({ ...s, [id]: { phase: "error" } }));
+      return;
+    }
+    if (data.alreadyConnected) {
+      await loadInstancias();
+      setQrState(s => ({ ...s, [id]: { phase: "idle" } }));
+      return;
+    }
+    if (data.qrBase64) {
+      setQrState(s => ({ ...s, [id]: { phase: "qr", qrImg: data.qrBase64 } }));
+      iniciarPollingQr(id);
+    } else {
+      setQrState(s => ({ ...s, [id]: { phase: "needsRetry" } }));
+    }
+  };
+
+  const iniciarPollingQr = (id) => {
+    if (pollRefs.current[id]) clearInterval(pollRefs.current[id]);
+    let ticks = 0;
+    pollRefs.current[id] = setInterval(async () => {
+      ticks++;
+      if (ticks > 45) { // 3min timeout
+        clearInterval(pollRefs.current[id]);
+        setQrState(s => ({ ...s, [id]: { phase: "idle" } }));
+        return;
+      }
+      const { data } = await callEvo("qrInstancia", { instancia_id: id });
+      if (data?.data?.Connected) {
+        clearInterval(pollRefs.current[id]);
+        setQrState(s => ({ ...s, [id]: { phase: "idle" } }));
+        await loadInstancias();
+      } else if (data?.data?.Qrcode) {
+        setQrState(s => ({ ...s, [id]: { phase: "qr", qrImg: data.data.Qrcode } }));
+      }
+    }, 4000);
+  };
+
+  const excluirInstancia = async (id) => {
+    if (!confirm("Excluir este número? Esta ação desconecta o WhatsApp e é permanente.")) return;
+    await callEvo("deleteInstancia", { instancia_id: id });
+    await loadInstancias();
+  };
+
+  if (loading && instancias.length === 0) return null;
+
+  return (
+    <div style={{ background: L.white, borderRadius: 12, border: `1.5px solid ${L.line}`, padding: 20, boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 16 }}>
+        <div style={{ width: 42, height: 42, borderRadius: 11, background: L.tealBg, border: `1.5px solid ${L.tealA}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>📲</div>
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: L.t1 }}>Números Secundários (Multi-Instância)</div>
+          <div style={{ fontSize: 11, color: L.t3, marginTop: 2 }}>Conecte números adicionais para receber mensagens de outros WhatsApps na mesma caixa de entrada</div>
+        </div>
+      </div>
+
+      {instancias.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+          {instancias.map(inst => {
+            const qs = qrState[inst.id] || { phase: "idle" };
+            return (
+              <div key={inst.id} style={{ background: L.surface, borderRadius: 10, padding: "12px 14px", border: `1px solid ${L.lineSoft}` }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: L.t1 }}>{inst.nome}</div>
+                    <div style={{ fontSize: 11, color: L.t4, marginTop: 2 }}>
+                      {inst.evolution_phone ? `+${inst.evolution_phone}` : inst.evolution_instance_id || "—"}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, padding: "3px 8px", borderRadius: 6, background: inst.evolution_connected ? L.greenBg : L.redBg, color: inst.evolution_connected ? L.green : L.red }}>
+                      {inst.evolution_connected ? "Conectado" : "Desconectado"}
+                    </span>
+                    {!inst.evolution_connected && qs.phase === "idle" && (
+                      <button onClick={() => conectarInstancia(inst.id)}
+                        style={{ fontSize: 11, fontWeight: 600, padding: "4px 10px", borderRadius: 7, cursor: "pointer", background: L.tealBg, color: L.teal, border: `1px solid ${L.tealA}`, fontFamily: "inherit" }}>
+                        Conectar
+                      </button>
+                    )}
+                    {qs.phase === "loading" && (
+                      <span style={{ fontSize: 11, color: L.t4 }}>Gerando QR...</span>
+                    )}
+                    <button onClick={() => excluirInstancia(inst.id)}
+                      style={{ fontSize: 11, padding: "4px 8px", borderRadius: 7, cursor: "pointer", background: L.redBg, color: L.red, border: `1px solid ${L.redA2}`, fontFamily: "inherit" }}>
+                      🗑
+                    </button>
+                  </div>
+                </div>
+
+                {/* QR Code */}
+                {qs.phase === "qr" && qs.qrImg && (
+                  <div style={{ marginTop: 12, textAlign: "center" }}>
+                    <div style={{ fontSize: 11, color: L.t3, marginBottom: 8 }}>Escaneie o QR Code com o WhatsApp deste número:</div>
+                    <img src={qs.qrImg.startsWith("data:") ? qs.qrImg : `data:image/png;base64,${qs.qrImg}`}
+                      alt="QR Code" style={{ maxWidth: 200, borderRadius: 8, border: `1px solid ${L.line}` }} />
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Adicionar novo número */}
+      <div style={{ borderTop: instancias.length > 0 ? `1px solid ${L.lineSoft}` : "none", paddingTop: instancias.length > 0 ? 14 : 0 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: L.t2, marginBottom: 8 }}>Adicionar número</div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <input
+            value={novoNome} onChange={e => setNovoNome(e.target.value)}
+            placeholder="Nome do vendedor ou número (ex: Vendedor João)"
+            style={{ flex: 1, border: `1.5px solid ${L.line}`, borderRadius: 9, padding: "9px 12px", fontSize: 12.5, color: L.t1, fontFamily: "inherit", outline: "none" }}
+            onFocus={e => e.target.style.borderColor = L.teal}
+            onBlur={e => e.target.style.borderColor = L.line}
+            onKeyDown={e => e.key === "Enter" && criarInstancia()}
+          />
+          <button onClick={criarInstancia} disabled={criando || !novoNome.trim()}
+            style={{ padding: "9px 16px", borderRadius: 9, fontSize: 12.5, fontWeight: 600, cursor: criando || !novoNome.trim() ? "not-allowed" : "pointer", background: novoNome.trim() ? L.accent : L.surface, color: novoNome.trim() ? "white" : L.t4, border: `1px solid ${novoNome.trim() ? L.accent : L.line}`, fontFamily: "inherit", flexShrink: 0 }}>
+            {criando ? "Criando..." : "+ Adicionar"}
+          </button>
+        </div>
+        {errMsg && <div style={{ marginTop: 8, padding: "7px 10px", background: L.redBg, borderRadius: 7, fontSize: 12, color: L.red }}>{errMsg}</div>}
+        <div style={{ marginTop: 10, fontSize: 11, color: L.t4, lineHeight: 1.6 }}>
+          Cada número adicionado recebe suas próprias mensagens na caixa de entrada unificada. O bot e a distribuição automática de vendedores funcionam apenas pelo <b>número principal</b> acima.
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function PageEmpresa({ empresa, user }) {
   const [tab, setTab] = useState("info");
   const [saving, setSaving] = useState(false);
@@ -630,6 +811,9 @@ export default function PageEmpresa({ empresa, user }) {
 
           {/* ── WhatsApp via Evolution GO ── */}
           <EvolutionCard user={user} empData={empData} onRefresh={refetchEmpresas} />
+
+          {/* ── Números secundários (multi-instância) ── */}
+          <MultiInstanciaCard user={user} />
 
           {/* ── META ADS + PIXEL + CONVERSIONS API ── */}
           <div style={{background:L.white,borderRadius:12,border:`1.5px solid ${empData.meta_pixel_id?L.blueA:L.line}`,padding:20,boxShadow:"0 1px 4px rgba(0,0,0,0.04)"}}>
