@@ -314,6 +314,7 @@ export default function PageClientes({ user }) {
                       ? <IBtn c={L.green} onClick={()=>{ if(confirm(`Desbloquear ${emp.nome}?`)) desbloquear(emp); }} title="Desbloquear acesso">🔓 Desbloquear</IBtn>
                       : <IBtn c={L.red}   onClick={()=>openBloqueio(emp)} title="Bloquear acesso">🔒 Bloquear</IBtn>
                     }
+                    <IBtn c={emp.multi_instancia_ativo ? L.teal : L.t3} title={emp.multi_instancia_ativo ? "Multi-Instância ativo" : "Ativar Multi-Instância WhatsApp"} onClick={async()=>{ await update(emp.id,{multi_instancia_ativo:!emp.multi_instancia_ativo}); refetch(); }}>📲</IBtn>
                     <IBtn c={L.red}    onClick={()=>{if(confirm("Excluir empresa?"))remove(emp.id);}}>⊗</IBtn>
                   </Row>
                 </td>
