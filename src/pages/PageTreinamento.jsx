@@ -1671,7 +1671,10 @@ function imprimirCertificado({ nomeUsuario, nomeEmpresa, dataConc, modulos }) {
   <title>Certificado C4OS — ${nomeUsuario}</title>
   <style>
     @page { size: A4 landscape; margin: 0; }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    * { box-sizing: border-box; margin: 0; padding: 0;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        color-adjust: exact !important; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; }
 
     /* ── Toolbar (oculta na impressão) ── */
@@ -1833,9 +1836,24 @@ function imprimirCertificado({ nomeUsuario, nomeEmpresa, dataConc, modulos }) {
 
     @media print {
       .toolbar { display:none !important; }
-      body { background:#0f172a; }
-      .page { padding:0; min-height:unset; }
-      .cert { width:100%; height:100%; border-radius:0; box-shadow:none; }
+      html, body { background:#0f172a !important; margin:0 !important; padding:0 !important; }
+      .page { padding:0 !important; margin:0 !important; min-height:unset !important; background:#0f172a !important; }
+      .cert {
+        width: 297mm !important; height: 210mm !important;
+        border-radius: 0 !important; box-shadow: none !important;
+        margin: 0 !important; position: fixed !important;
+        top: 0 !important; left: 0 !important;
+      }
+      .cert-name {
+        background: linear-gradient(135deg, #f1f5f9 0%, #10b981 50%, #06b6d4 100%) !important;
+        -webkit-background-clip: text !important; -webkit-text-fill-color: transparent !important;
+        background-clip: text !important;
+      }
+      .value-letter {
+        background: linear-gradient(135deg,#10b981,#06b6d4) !important;
+        -webkit-background-clip: text !important; -webkit-text-fill-color: transparent !important;
+        background-clip: text !important;
+      }
     }
   </style>
 </head>
