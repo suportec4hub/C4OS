@@ -731,10 +731,11 @@ function calcOverallProgress(modules, progress) {
 
 // ─── Tela de Login ────────────────────────────────────────────────────────────
 function LoginScreen({ onLogin }) {
-  const [email, setEmail]     = useState("");
+  const [email, setEmail]       = useState("");
   const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [err, setErr]         = useState("");
+  const [loading, setLoading]   = useState(false);
+  const [err, setErr]           = useState("");
+  const [focused, setFocused]   = useState(null);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -745,67 +746,160 @@ function LoginScreen({ onLogin }) {
     onLogin(data.user);
   };
 
+  const features = [
+    { icon: "🚀", label: "10 módulos completos", sub: "Do básico ao avançado" },
+    { icon: "🧪", label: "Laboratórios interativos", sub: "Pratique no simulador" },
+    { icon: "📊", label: "Progresso em tempo real", sub: "Acompanhe sua evolução" },
+    { icon: "🏆", label: "Certificado de conclusão", sub: "Comprove seu conhecimento" },
+  ];
+
   return (
-    <div style={{ minHeight:"100vh", background:C.bg, display:"flex", alignItems:"center", justifyContent:"center", padding:24 }}>
-      <div style={{ width:"100%", maxWidth:400 }}>
+    <div style={{ minHeight:"100vh", background:C.bg, display:"flex", position:"relative", overflow:"hidden", fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif" }}>
+      <style>{`
+        @keyframes spin{to{transform:rotate(360deg)}}
+        @keyframes floatUp{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+        @keyframes fadeSlide{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+        @keyframes orb{0%,100%{transform:scale(1)}50%{transform:scale(1.08)}}
+        .login-input:focus{border-color:#06b6d4 !important;box-shadow:0 0 0 3px #06b6d420}
+        .login-btn:hover:not(:disabled){transform:translateY(-1px);box-shadow:0 8px 28px #10b98150 !important}
+        .feature-item{animation:fadeSlide .5s ease both}
+      `}</style>
+
+      {/* Orbs de fundo */}
+      <div style={{ position:"absolute", width:800, height:800, borderRadius:"50%", background:"radial-gradient(circle,#10b98112 0%,transparent 65%)", top:-300, left:-250, animation:"orb 8s ease-in-out infinite", pointerEvents:"none" }}/>
+      <div style={{ position:"absolute", width:600, height:600, borderRadius:"50%", background:"radial-gradient(circle,#06b6d410 0%,transparent 65%)", bottom:-200, right:50, animation:"orb 10s ease-in-out infinite reverse", pointerEvents:"none" }}/>
+      <div style={{ position:"absolute", width:300, height:300, borderRadius:"50%", background:"radial-gradient(circle,#8b5cf610 0%,transparent 65%)", top:"35%", right:"38%", pointerEvents:"none" }}/>
+
+      {/* Painel esquerdo — hero */}
+      <div style={{ flex:1, display:"flex", flexDirection:"column", justifyContent:"center", padding:"64px 72px", position:"relative", minWidth:0 }}>
         {/* Logo */}
-        <div style={{ textAlign:"center", marginBottom:36 }}>
-          <div style={{ display:"inline-flex", alignItems:"center", gap:10, marginBottom:12 }}>
-            <div style={{ width:44, height:44, borderRadius:12, background:"linear-gradient(135deg,#10b981,#06b6d4)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, fontWeight:800, color:"#fff" }}>C</div>
-            <span style={{ fontSize:22, fontWeight:800, color:C.text, letterSpacing:-0.5 }}>C4OS Treinamentos</span>
+        <div style={{ display:"flex", alignItems:"center", gap:14, marginBottom:52 }}>
+          <div style={{ width:52, height:52, borderRadius:16, background:"linear-gradient(135deg,#10b981,#06b6d4)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:26, fontWeight:900, color:"#fff", boxShadow:"0 8px 32px #10b98150", animation:"floatUp 4s ease-in-out infinite" }}>C</div>
+          <div>
+            <div style={{ fontSize:20, fontWeight:800, color:C.text, letterSpacing:-0.5, lineHeight:1 }}>C4OS</div>
+            <div style={{ fontSize:12, color:C.muted, fontWeight:500, marginTop:2 }}>Plataforma de Treinamento</div>
           </div>
-          <p style={{ color:C.muted, fontSize:14, margin:0 }}>Entre com suas credenciais para acessar</p>
         </div>
 
-        {/* Form */}
-        <form onSubmit={submit} style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:16, padding:32, display:"flex", flexDirection:"column", gap:16 }}>
-          <div>
-            <label style={{ fontSize:12, fontWeight:600, color:C.muted, textTransform:"uppercase", letterSpacing:.5, display:"block", marginBottom:6 }}>E-mail</label>
-            <input
-              type="email" value={email} onChange={e=>setEmail(e.target.value)} required
-              placeholder="seu@email.com.br"
-              style={{ width:"100%", background:"#0f1929", border:`1px solid ${C.borderLt}`, borderRadius:10, padding:"11px 14px", fontSize:14, color:C.text, outline:"none", boxSizing:"border-box" }}
-            />
-          </div>
-          <div>
-            <label style={{ fontSize:12, fontWeight:600, color:C.muted, textTransform:"uppercase", letterSpacing:.5, display:"block", marginBottom:6 }}>Senha</label>
-            <input
-              type="password" value={password} onChange={e=>setPassword(e.target.value)} required
-              placeholder="••••••••"
-              style={{ width:"100%", background:"#0f1929", border:`1px solid ${C.borderLt}`, borderRadius:10, padding:"11px 14px", fontSize:14, color:C.text, outline:"none", boxSizing:"border-box" }}
-            />
-          </div>
-          {err && <div style={{ background:"#2d1117", border:"1px solid #5c2026", borderRadius:8, padding:"10px 14px", fontSize:13, color:C.red }}>{err}</div>}
-          <button type="submit" disabled={loading} style={{ background:"linear-gradient(135deg,#10b981,#06b6d4)", border:"none", borderRadius:10, padding:"13px 0", fontSize:14, fontWeight:700, color:"#fff", cursor:loading?"not-allowed":"pointer", opacity:loading?.7:1, marginTop:4 }}>
-            {loading ? "Entrando..." : "Acessar Treinamentos"}
-          </button>
-        </form>
-
-        <p style={{ textAlign:"center", fontSize:12, color:C.muted, marginTop:20 }}>
-          Use as mesmas credenciais que você usa no C4OS
+        {/* Headline */}
+        <h1 style={{ fontSize:40, fontWeight:900, color:C.text, margin:"0 0 16px", lineHeight:1.15, letterSpacing:-1.5 }}>
+          Domine o C4OS<br/>
+          <span style={{ background:"linear-gradient(135deg,#10b981 30%,#06b6d4)", WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent", backgroundClip:"text" }}>
+            do zero ao avançado
+          </span>
+        </h1>
+        <p style={{ fontSize:16, color:C.muted, margin:"0 0 44px", lineHeight:1.75, maxWidth:440 }}>
+          Treinamento oficial e completo da plataforma. Aprenda no seu ritmo, pratique em simuladores reais e conquiste o certificado.
         </p>
+
+        {/* Features */}
+        <div style={{ display:"flex", flexDirection:"column", gap:14, marginBottom:52 }}>
+          {features.map((f, i) => (
+            <div key={i} className="feature-item" style={{ animationDelay:`${i*80}ms`, display:"flex", alignItems:"center", gap:14 }}>
+              <div style={{ width:44, height:44, borderRadius:12, background:C.card, border:`1px solid ${C.borderLt}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:20, flexShrink:0 }}>{f.icon}</div>
+              <div>
+                <div style={{ fontSize:14, fontWeight:700, color:C.text, lineHeight:1 }}>{f.label}</div>
+                <div style={{ fontSize:12, color:C.muted, marginTop:3 }}>{f.sub}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Mini stats */}
+        <div style={{ display:"flex", gap:24 }}>
+          {[{n:"10",l:"Módulos"},{n:"45+",l:"Aulas"},{n:"5",l:"Laboratórios"},{n:"1",l:"Certificado"}].map((s,i) => (
+            <div key={i} style={{ textAlign:"center" }}>
+              <div style={{ fontSize:22, fontWeight:900, color:C.text, lineHeight:1 }}>{s.n}</div>
+              <div style={{ fontSize:11, color:C.muted, marginTop:3 }}>{s.l}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Divisor */}
+      <div style={{ width:1, background:`linear-gradient(to bottom,transparent,${C.border} 20%,${C.border} 80%,transparent)`, flexShrink:0, alignSelf:"stretch" }}/>
+
+      {/* Painel direito — form */}
+      <div style={{ width:480, flexShrink:0, display:"flex", alignItems:"center", justifyContent:"center", padding:"48px 56px" }}>
+        <div style={{ width:"100%", maxWidth:360 }}>
+          <div style={{ marginBottom:32 }}>
+            <h2 style={{ fontSize:22, fontWeight:800, color:C.text, margin:"0 0 6px", letterSpacing:-0.5 }}>Bem-vindo de volta 👋</h2>
+            <p style={{ fontSize:13, color:C.muted, margin:0 }}>Entre com suas credenciais do C4OS para continuar</p>
+          </div>
+
+          <form onSubmit={submit} style={{ display:"flex", flexDirection:"column", gap:18 }}>
+            {/* Email */}
+            <div>
+              <label style={{ fontSize:11, fontWeight:700, color:C.muted, textTransform:"uppercase", letterSpacing:.8, display:"block", marginBottom:7 }}>E-mail</label>
+              <input className="login-input" type="email" value={email} onChange={e=>setEmail(e.target.value)} required
+                onFocus={()=>setFocused("email")} onBlur={()=>setFocused(null)}
+                placeholder="seu@email.com.br"
+                style={{ width:"100%", background:"#0c1829", border:`1.5px solid ${focused==="email"?C.teal:C.borderLt}`, borderRadius:10, padding:"12px 14px", fontSize:14, color:C.text, outline:"none", boxSizing:"border-box", transition:"border-color .2s, box-shadow .2s", fontFamily:"inherit" }} />
+            </div>
+
+            {/* Senha */}
+            <div>
+              <label style={{ fontSize:11, fontWeight:700, color:C.muted, textTransform:"uppercase", letterSpacing:.8, display:"block", marginBottom:7 }}>Senha</label>
+              <input className="login-input" type="password" value={password} onChange={e=>setPassword(e.target.value)} required
+                onFocus={()=>setFocused("password")} onBlur={()=>setFocused(null)}
+                placeholder="••••••••"
+                style={{ width:"100%", background:"#0c1829", border:`1.5px solid ${focused==="password"?C.teal:C.borderLt}`, borderRadius:10, padding:"12px 14px", fontSize:14, color:C.text, outline:"none", boxSizing:"border-box", transition:"border-color .2s, box-shadow .2s", fontFamily:"inherit" }} />
+            </div>
+
+            {err && (
+              <div style={{ background:"#2d1117", border:"1px solid #5c2026", borderRadius:8, padding:"10px 14px", fontSize:13, color:C.red, display:"flex", alignItems:"center", gap:8 }}>
+                ⚠️ {err}
+              </div>
+            )}
+
+            <button type="submit" className="login-btn" disabled={loading}
+              style={{ background:loading?"#1e2d40":`linear-gradient(135deg,${C.green} 0%,${C.teal} 100%)`, border:"none", borderRadius:10, padding:"13px 0", fontSize:14, fontWeight:700, color:loading?C.muted:"#fff", cursor:loading?"not-allowed":"pointer", transition:"all .2s", boxShadow:loading?"none":`0 4px 20px ${C.green}30`, marginTop:2 }}>
+              {loading ? "⟳  Entrando..." : "Acessar Treinamentos →"}
+            </button>
+          </form>
+
+          <div style={{ marginTop:28, padding:"18px 20px", background:C.card, border:`1px solid ${C.border}`, borderRadius:12 }}>
+            <div style={{ fontSize:12, fontWeight:700, color:C.text, marginBottom:6 }}>🔑 Credenciais</div>
+            <div style={{ fontSize:12, color:C.muted, lineHeight:1.6 }}>Use o mesmo e-mail e senha que você já usa para acessar o sistema C4OS da sua empresa.</div>
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
 // ─── Renderizador de seção do conteúdo ────────────────────────────────────────
-function Section({ sec }) {
+function Section({ sec, accent }) {
+  const ac = accent || C.green;
+
   if (sec.kind === "text") return (
-    <div style={{ marginBottom:20 }}>
-      <div style={{ fontSize:14, fontWeight:700, color:C.text, marginBottom:8 }}>{sec.title}</div>
-      <p style={{ fontSize:14, color:C.muted, lineHeight:1.7, margin:0 }}>{sec.body}</p>
+    <div style={{ marginBottom:24, paddingLeft:16, borderLeft:`3px solid ${ac}40`, animation:"fadeSlide .3s ease" }}>
+      <div style={{ fontSize:13, fontWeight:700, color:C.text, marginBottom:8, display:"flex", alignItems:"center", gap:8 }}>
+        <span style={{ display:"inline-block", width:6, height:6, borderRadius:"50%", background:ac, flexShrink:0 }}/>
+        {sec.title}
+      </div>
+      <p style={{ fontSize:14, color:C.muted, lineHeight:1.8, margin:0 }}>{sec.body}</p>
     </div>
   );
 
   if (sec.kind === "steps") return (
-    <div style={{ marginBottom:20 }}>
-      <div style={{ fontSize:14, fontWeight:700, color:C.text, marginBottom:10 }}>{sec.title}</div>
-      <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+    <div style={{ marginBottom:24 }}>
+      <div style={{ fontSize:13, fontWeight:700, color:C.text, marginBottom:14, display:"flex", alignItems:"center", gap:8 }}>
+        <span style={{ fontSize:12, background:`${ac}22`, color:ac, borderRadius:6, padding:"2px 8px", fontWeight:700 }}>Passo a passo</span>
+        {sec.title}
+      </div>
+      <div style={{ display:"flex", flexDirection:"column", gap:0 }}>
         {sec.steps.map((s, i) => (
-          <div key={i} style={{ display:"flex", gap:12, alignItems:"flex-start" }}>
-            <div style={{ flexShrink:0, width:24, height:24, borderRadius:"50%", background:C.green, color:"#fff", fontSize:11, fontWeight:700, display:"flex", alignItems:"center", justifyContent:"center" }}>{i+1}</div>
-            <span style={{ fontSize:14, color:C.muted, lineHeight:1.6, paddingTop:2 }}>{s}</span>
+          <div key={i} style={{ display:"flex", gap:0, alignItems:"stretch" }}>
+            {/* Step number + line */}
+            <div style={{ display:"flex", flexDirection:"column", alignItems:"center", width:36, flexShrink:0 }}>
+              <div style={{ width:28, height:28, borderRadius:"50%", background:`linear-gradient(135deg,${ac},${ac}bb)`, color:"#fff", fontSize:11, fontWeight:800, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, boxShadow:`0 2px 8px ${ac}40` }}>{i+1}</div>
+              {i < sec.steps.length - 1 && <div style={{ width:2, flex:1, background:`${ac}25`, margin:"2px 0" }}/>}
+            </div>
+            {/* Content */}
+            <div style={{ flex:1, paddingLeft:12, paddingBottom: i < sec.steps.length - 1 ? 16 : 0, paddingTop:4 }}>
+              <span style={{ fontSize:14, color:C.muted, lineHeight:1.65 }}>{s}</span>
+            </div>
           </div>
         ))}
       </div>
@@ -813,13 +907,15 @@ function Section({ sec }) {
   );
 
   if (sec.kind === "list") return (
-    <div style={{ marginBottom:20 }}>
-      <div style={{ fontSize:14, fontWeight:700, color:C.text, marginBottom:10 }}>{sec.title}</div>
-      <ul style={{ margin:0, padding:0, listStyle:"none", display:"flex", flexDirection:"column", gap:8 }}>
+    <div style={{ marginBottom:24 }}>
+      <div style={{ fontSize:13, fontWeight:700, color:C.text, marginBottom:12 }}>{sec.title}</div>
+      <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
         {sec.items.map((item, i) => (
-          <li key={i} style={{ fontSize:14, color:C.muted, lineHeight:1.6, paddingLeft:6 }}>{item}</li>
+          <div key={i} style={{ display:"flex", alignItems:"flex-start", gap:10, padding:"9px 13px", background:C.card, borderRadius:8, border:`1px solid ${C.border}` }}>
+            <span style={{ fontSize:14, color:C.text, lineHeight:1.6, flex:1 }}>{item}</span>
+          </div>
         ))}
-      </ul>
+      </div>
     </div>
   );
 
@@ -1335,41 +1431,70 @@ function LabView({ lesson, onComplete }) {
 // ─── Conteúdo da aula ─────────────────────────────────────────────────────────
 function LessonView({ lesson, mod, isCompleted, onComplete, onPrev, onNext, hasPrev, hasNext }) {
   const typeLabel = { leitura: "📖 Leitura", prática: "⚡ Prática", lab: "🧪 Laboratório" };
+  const typeBg    = { leitura: C.blue, prática: C.yellow, lab: C.purple };
+  const tc = typeBg[lesson.type] || C.slate;
 
   return (
-    <div style={{ display:"flex", flexDirection:"column", gap:0, height:"100%" }}>
-      {/* Header da aula */}
-      <div style={{ padding:"28px 32px 0" }}>
-        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:16 }}>
-          <span style={{ fontSize:12, fontWeight:600, color:mod.color, background:`${mod.color}18`, border:`1px solid ${mod.color}33`, borderRadius:6, padding:"3px 10px" }}>{mod.icon} {mod.title}</span>
+    <div style={{ display:"flex", flexDirection:"column", height:"100%" }}>
+      {/* Gradient banner */}
+      <div style={{ background:`linear-gradient(135deg,${mod.color}22 0%,${mod.color}08 60%,transparent 100%)`, borderBottom:`1px solid ${mod.color}30`, padding:"28px 36px 24px", flexShrink:0 }}>
+        {/* Breadcrumb */}
+        <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:14, flexWrap:"wrap" }}>
+          <span style={{ fontSize:13, fontWeight:700, color:mod.color, background:`${mod.color}18`, border:`1px solid ${mod.color}30`, borderRadius:8, padding:"4px 12px", display:"inline-flex", alignItems:"center", gap:5 }}>
+            <span>{mod.icon}</span> {mod.title}
+          </span>
+          <span style={{ color:C.border }}>›</span>
           <span style={{ fontSize:12, color:C.muted }}>{typeLabel[lesson.type] ?? lesson.type}</span>
-          {lesson.duration && <span style={{ fontSize:12, color:C.muted }}>· {lesson.duration}</span>}
-          {lesson.badge && <span style={{ fontSize:11, fontWeight:700, color:lesson.badgeColor ?? C.teal, background:`${(lesson.badgeColor ?? C.teal)}18`, border:`1px solid ${(lesson.badgeColor ?? C.teal)}33`, borderRadius:6, padding:"3px 10px" }}>✦ {lesson.badge}</span>}
+          {lesson.duration && (
+            <>
+              <span style={{ color:C.border }}>·</span>
+              <span style={{ fontSize:12, color:C.muted }}>⏱ {lesson.duration}</span>
+            </>
+          )}
+          {lesson.badge && (
+            <span style={{ fontSize:11, fontWeight:700, color:lesson.badgeColor ?? C.teal, background:`${(lesson.badgeColor ?? C.teal)}18`, border:`1px solid ${(lesson.badgeColor ?? C.teal)}30`, borderRadius:6, padding:"3px 10px" }}>
+              ✦ {lesson.badge}
+            </span>
+          )}
         </div>
-        <h1 style={{ fontSize:22, fontWeight:800, color:C.text, margin:"0 0 4px", lineHeight:1.3 }}>{lesson.title}</h1>
+
+        {/* Title */}
+        <h1 style={{ fontSize:24, fontWeight:900, color:C.text, margin:0, lineHeight:1.25, letterSpacing:-0.5 }}>{lesson.title}</h1>
+
+        {/* Type pill */}
+        <div style={{ marginTop:10, display:"inline-flex", alignItems:"center", gap:5, background:`${tc}18`, border:`1px solid ${tc}30`, borderRadius:20, padding:"4px 12px" }}>
+          <span style={{ fontSize:13 }}>{typeLabel[lesson.type]?.split(" ")[0]}</span>
+          <span style={{ fontSize:11, fontWeight:700, color:tc }}>{typeLabel[lesson.type]?.split(" ").slice(1).join(" ")}</span>
+        </div>
       </div>
 
       {/* Conteúdo com scroll */}
-      <div style={{ flex:1, overflowY:"auto", padding:"24px 32px" }}>
+      <div className="lesson-content" style={{ flex:1, overflowY:"auto", padding:"28px 36px" }}>
         {lesson.type === "lab" ? (
           <LabView lesson={lesson} onComplete={onComplete} />
         ) : (
           <>
-            {lesson.sections.map((sec, i) => <Section key={i} sec={sec} />)}
+            {lesson.sections.map((sec, i) => <Section key={i} sec={sec} accent={mod.color} />)}
 
             {/* Dica */}
             {lesson.tip && (
-              <div style={{ background:"#0c2a1c", border:`1px solid ${C.greenBd}`, borderRadius:12, padding:"14px 18px", marginTop:8 }}>
-                <span style={{ fontSize:13, color:C.green, fontWeight:700 }}>💡 Dica: </span>
-                <span style={{ fontSize:13, color:"#86efac" }}>{lesson.tip}</span>
+              <div style={{ background:`linear-gradient(135deg,${C.greenBg},#041f14)`, border:`1px solid ${C.greenBd}`, borderRadius:12, padding:"16px 20px", marginTop:8, display:"flex", gap:14, alignItems:"flex-start" }}>
+                <div style={{ width:32, height:32, borderRadius:10, background:`${C.green}22`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:16, flexShrink:0 }}>💡</div>
+                <div>
+                  <div style={{ fontSize:12, fontWeight:700, color:C.green, marginBottom:4, textTransform:"uppercase", letterSpacing:.5 }}>Dica profissional</div>
+                  <span style={{ fontSize:13, color:"#86efac", lineHeight:1.7 }}>{lesson.tip}</span>
+                </div>
               </div>
             )}
 
             {/* Concluído */}
             {isCompleted && (
-              <div style={{ background:"#0c2a1c", border:`1px solid ${C.greenBd}`, borderRadius:12, padding:"14px 18px", marginTop:16, display:"flex", alignItems:"center", gap:10 }}>
-                <span style={{ fontSize:20 }}>✅</span>
-                <span style={{ fontSize:14, color:C.green, fontWeight:600 }}>Aula concluída! Continue para a próxima.</span>
+              <div style={{ marginTop:16, background:`linear-gradient(135deg,${C.greenBg},#041f14)`, border:`1px solid ${C.greenBd}`, borderRadius:12, padding:"14px 20px", display:"flex", alignItems:"center", gap:12 }}>
+                <div style={{ width:36, height:36, borderRadius:10, background:C.green, display:"flex", alignItems:"center", justifyContent:"center", fontSize:18, flexShrink:0 }}>✅</div>
+                <div>
+                  <div style={{ fontSize:14, fontWeight:700, color:C.green }}>Aula concluída!</div>
+                  <div style={{ fontSize:12, color:"#86efac" }}>Continue para a próxima aula.</div>
+                </div>
               </div>
             )}
           </>
@@ -1377,26 +1502,26 @@ function LessonView({ lesson, mod, isCompleted, onComplete, onPrev, onNext, hasP
       </div>
 
       {/* Footer de navegação */}
-      <div style={{ padding:"16px 32px", borderTop:`1px solid ${C.border}`, display:"flex", alignItems:"center", justifyContent:"space-between", gap:12, flexWrap:"wrap" }}>
+      <div style={{ padding:"16px 36px", borderTop:`1px solid ${C.border}`, display:"flex", alignItems:"center", justifyContent:"space-between", gap:12, flexShrink:0, background:`${C.sidebar}80`, backdropFilter:"blur(8px)" }}>
         <button onClick={onPrev} disabled={!hasPrev}
-          style={{ background:C.card, border:`1px solid ${C.borderLt}`, borderRadius:10, padding:"10px 20px", fontSize:13, fontWeight:600, color:hasPrev?C.text:C.muted, cursor:hasPrev?"pointer":"default", opacity:hasPrev?1:.4 }}>
+          style={{ background:hasPrev?C.card:"transparent", border:`1px solid ${hasPrev?C.borderLt:C.border}`, borderRadius:10, padding:"10px 20px", fontSize:13, fontWeight:600, color:hasPrev?C.text:C.border, cursor:hasPrev?"pointer":"default", transition:"all .2s" }}>
           ← Anterior
         </button>
 
         {lesson.type !== "lab" && (!isCompleted ? (
           <button onClick={onComplete}
-            style={{ background:`linear-gradient(135deg,${C.green},${C.teal})`, border:"none", borderRadius:10, padding:"10px 28px", fontSize:13, fontWeight:700, color:"#fff", cursor:"pointer", flex:1, maxWidth:240 }}>
+            style={{ background:`linear-gradient(135deg,${C.green},${C.teal})`, border:"none", borderRadius:10, padding:"10px 28px", fontSize:13, fontWeight:700, color:"#fff", cursor:"pointer", flex:1, maxWidth:240, boxShadow:`0 4px 16px ${C.green}35`, transition:"all .2s" }}>
             ✓ Marcar como concluída
           </button>
         ) : (
           <button onClick={onNext} disabled={!hasNext}
-            style={{ background:`linear-gradient(135deg,${C.green},${C.teal})`, border:"none", borderRadius:10, padding:"10px 28px", fontSize:13, fontWeight:700, color:"#fff", cursor:hasNext?"pointer":"default", opacity:hasNext?1:.6, flex:1, maxWidth:240 }}>
+            style={{ background:hasNext?`linear-gradient(135deg,${C.green},${C.teal})`:"transparent", border:`1px solid ${hasNext?C.green:C.border}`, borderRadius:10, padding:"10px 28px", fontSize:13, fontWeight:700, color:hasNext?C.text:C.border, cursor:hasNext?"pointer":"default", flex:1, maxWidth:240, transition:"all .2s" }}>
             Próxima aula →
           </button>
         ))}
 
         <button onClick={onNext} disabled={!hasNext}
-          style={{ background:C.card, border:`1px solid ${C.borderLt}`, borderRadius:10, padding:"10px 20px", fontSize:13, fontWeight:600, color:hasNext?C.text:C.muted, cursor:hasNext?"pointer":"default", opacity:hasNext?1:.4 }}>
+          style={{ background:hasNext?C.card:"transparent", border:`1px solid ${hasNext?C.borderLt:C.border}`, borderRadius:10, padding:"10px 20px", fontSize:13, fontWeight:600, color:hasNext?C.text:C.border, cursor:hasNext?"pointer":"default", transition:"all .2s" }}>
           Próxima →
         </button>
       </div>
@@ -1407,76 +1532,84 @@ function LessonView({ lesson, mod, isCompleted, onComplete, onPrev, onNext, hasP
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
 function Sidebar({ modules, progress, activeMod, activeLesson, onSelect, overall, user, onLogout }) {
   const [expanded, setExpanded] = useState(activeMod);
-
   const toggle = (id) => setExpanded(e => e === id ? null : id);
 
+  const typeIcon = { leitura:"📖", prática:"⚡", lab:"🧪" };
+
   return (
-    <div style={{ width:280, minWidth:280, background:C.sidebar, borderRight:`1px solid ${C.border}`, display:"flex", flexDirection:"column", overflow:"hidden" }}>
+    <div style={{ width:288, minWidth:288, background:C.sidebar, borderRight:`1px solid ${C.border}`, display:"flex", flexDirection:"column", overflow:"hidden" }}>
       {/* Header */}
-      <div style={{ padding:"20px 20px 16px", borderBottom:`1px solid ${C.border}` }}>
-        <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:16 }}>
-          <div style={{ width:32, height:32, borderRadius:8, background:"linear-gradient(135deg,#10b981,#06b6d4)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:16, fontWeight:800, color:"#fff" }}>C</div>
-          <span style={{ fontSize:15, fontWeight:800, color:C.text }}>C4OS Treinamentos</span>
+      <div style={{ padding:"20px 20px 16px", borderBottom:`1px solid ${C.border}`, background:`linear-gradient(180deg,${C.card},${C.sidebar})` }}>
+        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:18 }}>
+          <div style={{ width:34, height:34, borderRadius:10, background:"linear-gradient(135deg,#10b981,#06b6d4)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:17, fontWeight:900, color:"#fff", boxShadow:"0 4px 12px #10b98140" }}>C</div>
+          <div>
+            <div style={{ fontSize:14, fontWeight:800, color:C.text, lineHeight:1 }}>C4OS Treinamentos</div>
+            <div style={{ fontSize:11, color:C.muted, marginTop:2 }}>Portal Oficial</div>
+          </div>
         </div>
 
         {/* Progresso geral */}
-        <div>
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
-            <span style={{ fontSize:11, fontWeight:600, color:C.muted, textTransform:"uppercase", letterSpacing:.5 }}>Seu progresso</span>
-            <span style={{ fontSize:13, fontWeight:700, color:C.green }}>{overall.pct}%</span>
+        <div style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:12, padding:"12px 14px" }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+            <span style={{ fontSize:11, fontWeight:700, color:C.muted, textTransform:"uppercase", letterSpacing:.5 }}>Seu progresso</span>
+            <span style={{ fontSize:15, fontWeight:900, color:C.green }}>{overall.pct}%</span>
           </div>
-          <div style={{ height:6, background:C.border, borderRadius:3, overflow:"hidden" }}>
-            <div style={{ height:"100%", width:`${overall.pct}%`, background:`linear-gradient(90deg,${C.green},${C.teal})`, borderRadius:3, transition:"width .5s ease" }}/>
+          <div style={{ height:8, background:C.border, borderRadius:4, overflow:"hidden", marginBottom:6 }}>
+            <div style={{ height:"100%", width:`${overall.pct}%`, background:`linear-gradient(90deg,${C.green},${C.teal})`, borderRadius:4, transition:"width .6s cubic-bezier(.4,0,.2,1)", boxShadow:`0 0 8px ${C.green}60` }}/>
           </div>
-          <div style={{ fontSize:11, color:C.muted, marginTop:4 }}>{overall.done} de {overall.total} aulas concluídas</div>
+          <div style={{ fontSize:11, color:C.muted }}>{overall.done} de {overall.total} aulas concluídas</div>
         </div>
       </div>
 
-      {/* Lista de módulos */}
+      {/* Módulos */}
       <div style={{ flex:1, overflowY:"auto", padding:"8px 0" }}>
         {modules.map(mod => {
           const mp = calcModuleProgress(mod, progress);
           const isExp = expanded === mod.id;
           return (
             <div key={mod.id}>
-              {/* Módulo */}
-              <button onClick={() => toggle(mod.id)}
-                style={{ width:"100%", background:"none", border:"none", padding:"10px 20px", display:"flex", alignItems:"center", gap:10, cursor:"pointer", textAlign:"left" }}>
-                <span style={{ fontSize:16 }}>{mod.icon}</span>
+              {/* Module header */}
+              <div onClick={() => toggle(mod.id)}
+                style={{ padding:"11px 16px", cursor:"pointer", display:"flex", alignItems:"center", gap:10, transition:"background .15s", background: isExp ? `${mod.color}10` : "transparent", borderLeft: isExp ? `3px solid ${mod.color}` : "3px solid transparent" }}>
+                <div style={{ width:32, height:32, borderRadius:9, background:`${mod.color}20`, border:`1px solid ${mod.color}30`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:15, flexShrink:0 }}>{mod.icon}</div>
                 <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontSize:13, fontWeight:700, color:C.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{mod.title}</div>
-                  <div style={{ fontSize:11, color:C.muted, marginTop:1 }}>{mp.done}/{mp.total} aulas</div>
+                  <div style={{ fontSize:12, fontWeight:700, color: isExp ? mod.color : C.text, lineHeight:1.1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{mod.title}</div>
+                  <div style={{ fontSize:10, color:C.muted, marginTop:3 }}>
+                    <span style={{ color: mp.pct === 100 ? C.green : mp.done > 0 ? mod.color : C.muted }}>
+                      {mp.pct === 100 ? "✓ Completo" : `${mp.done}/${mp.total} aulas`}
+                    </span>
+                  </div>
                 </div>
-                <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:3 }}>
-                  {mp.pct === 100 && <span style={{ fontSize:12 }}>✅</span>}
-                  <span style={{ fontSize:11, color:mod.color, fontWeight:700 }}>{mp.pct}%</span>
-                  <span style={{ fontSize:10, color:C.muted }}>{isExp ? "▲" : "▼"}</span>
+                {/* Mini progress */}
+                <div style={{ display:"flex", alignItems:"center", gap:6, flexShrink:0 }}>
+                  {mp.pct === 100 ? (
+                    <div style={{ width:20, height:20, borderRadius:"50%", background:C.green, display:"flex", alignItems:"center", justifyContent:"center", fontSize:10, color:"#fff", fontWeight:700 }}>✓</div>
+                  ) : (
+                    <div style={{ width:28, height:4, background:C.border, borderRadius:2, overflow:"hidden" }}>
+                      <div style={{ width:`${mp.pct}%`, height:"100%", background:mod.color, borderRadius:2 }}/>
+                    </div>
+                  )}
+                  <span style={{ fontSize:10, color:C.muted, transform: isExp ? "rotate(90deg)" : "rotate(0deg)", transition:"transform .2s", display:"inline-block" }}>›</span>
                 </div>
-              </button>
-
-              {/* Mini progress bar */}
-              <div style={{ margin:"0 20px 2px", height:2, background:C.border, borderRadius:1, overflow:"hidden" }}>
-                <div style={{ height:"100%", width:`${mp.pct}%`, background:mod.color, borderRadius:1, transition:"width .4s" }}/>
               </div>
 
-              {/* Aulas */}
+              {/* Lições */}
               {isExp && (
-                <div style={{ padding:"4px 0 8px" }}>
-                  {mod.lessons.map((lesson, idx) => {
+                <div style={{ background:`${mod.color}06`, borderBottom:`1px solid ${mod.color}15` }}>
+                  {mod.lessons.map(lesson => {
                     const key = `${mod.id}:${lesson.id}`;
                     const done = !!progress[key];
-                    const active = activeMod === mod.id && activeLesson === lesson.id;
+                    const isActive = activeMod === mod.id && activeLesson === lesson.id;
                     return (
-                      <button key={lesson.id} onClick={() => { onSelect(mod.id, lesson.id); setExpanded(mod.id); }}
-                        style={{ width:"100%", background:active ? `${mod.color}14` : "none", border:"none", borderLeft:active ? `2px solid ${mod.color}` : "2px solid transparent", padding:"8px 20px 8px 24px", display:"flex", alignItems:"center", gap:8, cursor:"pointer", textAlign:"left" }}>
-                        <div style={{ width:20, height:20, borderRadius:"50%", background:done ? C.green : C.border, border:`1.5px solid ${done ? C.green : C.borderLt}`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-                          {done ? <span style={{ fontSize:10, color:"#fff" }}>✓</span> : <span style={{ fontSize:10, color:C.muted }}>{idx+1}</span>}
+                      <div key={lesson.id} onClick={() => onSelect(mod.id, lesson.id)}
+                        style={{ padding:"8px 16px 8px 58px", cursor:"pointer", display:"flex", alignItems:"center", gap:8, background: isActive ? `${mod.color}18` : "transparent", borderLeft: isActive ? `3px solid ${mod.color}` : "3px solid transparent", transition:"background .15s" }}>
+                        {/* Status dot */}
+                        <div style={{ width:16, height:16, borderRadius:"50%", background: done ? C.green : isActive ? mod.color : C.border, border: `1.5px solid ${done ? C.green : isActive ? mod.color : C.borderLt}`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, transition:"all .2s" }}>
+                          {done && <span style={{ fontSize:8, color:"#fff", fontWeight:900 }}>✓</span>}
                         </div>
-                        <div style={{ flex:1, minWidth:0 }}>
-                          <div style={{ fontSize:12, fontWeight:active?700:500, color:active?C.text:done?C.muted:C.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{lesson.title}</div>
-                          <div style={{ fontSize:10, color:C.muted }}>{lesson.duration}</div>
-                        </div>
-                      </button>
+                        <span style={{ fontSize:12, color: isActive ? mod.color : done ? C.muted : C.text, fontWeight: isActive ? 700 : 400, lineHeight:1.4, flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{lesson.title}</span>
+                        <span style={{ fontSize:10, flexShrink:0 }}>{typeIcon[lesson.type] || ""}</span>
+                      </div>
                     );
                   })}
                 </div>
@@ -1487,14 +1620,21 @@ function Sidebar({ modules, progress, activeMod, activeLesson, onSelect, overall
       </div>
 
       {/* Footer do usuário */}
-      <div style={{ padding:"14px 20px", borderTop:`1px solid ${C.border}`, display:"flex", alignItems:"center", gap:10 }}>
-        <div style={{ width:32, height:32, borderRadius:"50%", background:`${C.green}22`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:13, fontWeight:700, color:C.green }}>
-          {(user?.email ?? "?")[0].toUpperCase()}
+      <div style={{ padding:"12px 16px", borderTop:`1px solid ${C.border}`, background:`linear-gradient(0deg,${C.card},${C.sidebar})` }}>
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          <div style={{ width:32, height:32, borderRadius:10, background:"linear-gradient(135deg,#3b82f6,#8b5cf6)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:13, fontWeight:800, color:"#fff", flexShrink:0 }}>
+            {(user?.email?.[0] || "U").toUpperCase()}
+          </div>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontSize:12, fontWeight:600, color:C.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{user?.email}</div>
+            <div style={{ fontSize:10, color:C.muted, marginTop:1 }}>Aluno certificado</div>
+          </div>
+          <button onClick={onLogout}
+            style={{ background:"transparent", border:"none", color:C.muted, cursor:"pointer", fontSize:13, padding:4, borderRadius:6, transition:"color .2s" }}
+            title="Sair">
+            ⎋
+          </button>
         </div>
-        <div style={{ flex:1, minWidth:0 }}>
-          <div style={{ fontSize:12, fontWeight:600, color:C.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{user?.email ?? ""}</div>
-        </div>
-        <button onClick={onLogout} title="Sair" style={{ background:"none", border:"none", color:C.muted, cursor:"pointer", fontSize:16 }}>⏻</button>
       </div>
     </div>
   );
@@ -1587,6 +1727,12 @@ function imprimirCertificado({ nomeUsuario, nomeEmpresa, dataConc, modulos }) {
 // ─── Conclusão ────────────────────────────────────────────────────────────────
 function CompletionScreen({ nomeUsuario, nomeEmpresa, dataConc, modules }) {
   const [emitindo, setEmitindo] = useState(false);
+  const [showConfetti, setShowConfetti] = useState(true);
+
+  useEffect(() => {
+    const t = setTimeout(() => setShowConfetti(false), 4000);
+    return () => clearTimeout(t);
+  }, []);
 
   const emitir = () => {
     setEmitindo(true);
@@ -1594,44 +1740,84 @@ function CompletionScreen({ nomeUsuario, nomeEmpresa, dataConc, modules }) {
     setTimeout(() => setEmitindo(false), 2000);
   };
 
-  return (
-    <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", height:"100%", padding:40, textAlign:"center" }}>
-      <div style={{ fontSize:64, marginBottom:20 }}>🎉</div>
-      <h1 style={{ fontSize:28, fontWeight:800, color:C.text, marginBottom:10 }}>Parabéns, {nomeUsuario || "aluno"}!</h1>
-      <p style={{ fontSize:15, color:C.muted, maxWidth:500, lineHeight:1.7, marginBottom:8 }}>
-        Você concluiu <strong style={{ color:C.green }}>100%</strong> do treinamento oficial do C4OS.
-        Agora você tem todo o conhecimento para usar a plataforma com excelência.
-      </p>
-      <p style={{ fontSize:13, color:C.muted, marginBottom:32 }}>Conclusão em {dataConc}</p>
+  const confettiItems = Array.from({ length: 20 }, (_, i) => ({
+    id: i,
+    color: [C.green, C.teal, C.blue, C.purple, C.yellow, C.pink][i % 6],
+    left: `${5 + (i * 5) % 90}%`,
+    delay: `${(i * 0.15) % 2}s`,
+    size: 6 + (i % 4) * 2,
+  }));
 
-      {/* Preview mini do certificado */}
-      <div style={{ background:C.card, border:`1px solid ${C.borderLt}`, borderRadius:16, padding:28, maxWidth:480, width:"100%", marginBottom:28, textAlign:"left" }}>
-        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:16 }}>
-          <div style={{ width:40, height:40, borderRadius:10, background:"linear-gradient(135deg,#10b981,#06b6d4)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:20, fontWeight:900, color:"#fff" }}>C</div>
-          <div>
-            <div style={{ fontSize:12, fontWeight:700, color:C.muted, letterSpacing:1, textTransform:"uppercase" }}>Certificado de Conclusão</div>
-            <div style={{ fontSize:14, fontWeight:700, color:C.text }}>C4OS Treinamentos</div>
+  return (
+    <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", height:"100%", padding:"40px 48px", textAlign:"center", position:"relative", overflow:"hidden" }}>
+      <style>{`
+        @keyframes confetti { 0%{transform:translateY(120vh) rotate(0deg);opacity:1} 100%{transform:translateY(-10vh) rotate(720deg);opacity:0} }
+        @keyframes popIn { 0%{transform:scale(0) rotate(-10deg);opacity:0} 60%{transform:scale(1.15) rotate(3deg)} 100%{transform:scale(1) rotate(0deg);opacity:1} }
+        @keyframes glow { 0%,100%{box-shadow:0 0 30px #10b98130} 50%{box-shadow:0 0 60px #10b98160} }
+      `}</style>
+
+      {/* Confetti */}
+      {showConfetti && confettiItems.map(c => (
+        <div key={c.id} style={{
+          position:"absolute", bottom:0, left:c.left,
+          width:c.size, height:c.size * 1.5,
+          background:c.color, borderRadius:2,
+          animation:`confetti ${2 + (c.id % 3) * 0.5}s ${c.delay} ease-in forwards`,
+          pointerEvents:"none", opacity:.8,
+        }}/>
+      ))}
+
+      {/* Trophy */}
+      <div style={{ fontSize:72, marginBottom:16, animation:"popIn .6s cubic-bezier(.4,0,.2,1) both", filter:"drop-shadow(0 8px 24px #f59e0b60)" }}>🏆</div>
+
+      {/* Headline */}
+      <h1 style={{ fontSize:32, fontWeight:900, color:C.text, margin:"0 0 12px", letterSpacing:-1 }}>
+        Parabéns, <span style={{ background:"linear-gradient(135deg,#10b981,#06b6d4)", WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent", backgroundClip:"text" }}>{nomeUsuario || "aluno"}</span>!
+      </h1>
+      <p style={{ fontSize:16, color:C.muted, maxWidth:480, lineHeight:1.7, margin:"0 0 6px" }}>
+        Você concluiu <strong style={{ color:C.green }}>100%</strong> do treinamento oficial do C4OS.<br/>Agora você tem todo o conhecimento para usar a plataforma com excelência.
+      </p>
+      <p style={{ fontSize:13, color:C.slate, marginBottom:36 }}>Concluído em {dataConc}</p>
+
+      {/* Módulos concluídos */}
+      <div style={{ display:"flex", flexWrap:"wrap", gap:8, justifyContent:"center", marginBottom:36, maxWidth:560 }}>
+        {modules.map(m => (
+          <div key={m.id} style={{ display:"flex", alignItems:"center", gap:6, padding:"6px 12px", background:`${m.color}15`, border:`1px solid ${m.color}30`, borderRadius:20, fontSize:12, color:m.color, fontWeight:600 }}>
+            <span>{m.icon}</span> {m.title}
           </div>
+        ))}
+      </div>
+
+      {/* Certificate preview */}
+      <div style={{ background:C.card, border:`1px solid ${C.borderLt}`, borderRadius:20, padding:"28px 32px", maxWidth:480, width:"100%", marginBottom:28, textAlign:"left", boxShadow:"0 8px 32px rgba(0,0,0,.3)", animation:"glow 3s ease-in-out infinite" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:16 }}>
+          <div style={{ width:44, height:44, borderRadius:12, background:"linear-gradient(135deg,#10b981,#06b6d4)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, fontWeight:900, color:"#fff", boxShadow:"0 4px 16px #10b98140" }}>C</div>
+          <div>
+            <div style={{ fontSize:10, fontWeight:700, color:C.muted, letterSpacing:1.5, textTransform:"uppercase" }}>Certificado Oficial de Conclusão</div>
+            <div style={{ fontSize:15, fontWeight:800, color:C.text }}>C4OS Treinamentos</div>
+          </div>
+          <div style={{ marginLeft:"auto", width:36, height:36, borderRadius:"50%", background:`${C.green}22`, border:`2px solid ${C.green}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, color:C.green }}>✓</div>
         </div>
-        <div style={{ fontSize:11, color:C.muted, marginBottom:4, textTransform:"uppercase", letterSpacing:.5 }}>Certificamos que</div>
-        <div style={{ fontSize:22, fontWeight:800, color:C.text, borderBottom:`2px solid ${C.green}`, paddingBottom:8, marginBottom:8, display:"inline-block" }}>{nomeUsuario || "—"}</div>
-        <div style={{ fontSize:12, color:C.muted, marginBottom:14 }}>da empresa <strong style={{ color:C.text }}>{nomeEmpresa || "—"}</strong></div>
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"4px 16px" }}>
+        <div style={{ fontSize:10, color:C.muted, textTransform:"uppercase", letterSpacing:1.5, marginBottom:6 }}>Certificamos que</div>
+        <div style={{ fontSize:26, fontWeight:900, color:C.text, borderBottom:`2px solid ${C.green}`, paddingBottom:8, marginBottom:10, letterSpacing:-0.5 }}>{nomeUsuario || "—"}</div>
+        <div style={{ fontSize:13, color:C.muted, marginBottom:16 }}>da empresa <strong style={{ color:C.text }}>{nomeEmpresa || "—"}</strong> concluiu com êxito o programa de treinamento oficial da plataforma C4OS.</div>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"4px 16px", marginBottom:14 }}>
           {modules.map(m => (
-            <div key={m.id} style={{ fontSize:11, color:C.muted }}>{m.icon} {m.title}</div>
+            <div key={m.id} style={{ fontSize:11, color:C.muted, display:"flex", alignItems:"center", gap:5 }}><span style={{ color:C.green }}>✓</span>{m.icon} {m.title}</div>
           ))}
         </div>
-        <div style={{ marginTop:14, paddingTop:12, borderTop:`1px solid ${C.border}`, fontSize:11, color:C.muted }}>
-          Concluído em {dataConc} · c4os.com.br
+        <div style={{ paddingTop:12, borderTop:`1px solid ${C.border}`, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+          <div style={{ fontSize:11, color:C.muted }}>Concluído em {dataConc}</div>
+          <div style={{ fontSize:11, color:C.muted }}>c4os.com.br</div>
         </div>
       </div>
 
+      {/* CTA */}
       <button onClick={emitir} disabled={emitindo}
-        style={{ background:`linear-gradient(135deg,${C.green},${C.teal})`, border:"none", borderRadius:12, padding:"14px 36px", fontSize:15, fontWeight:700, color:"#fff", cursor:"pointer", display:"flex", alignItems:"center", gap:10, opacity:emitindo?.8:1, marginBottom:16 }}>
-        {emitindo ? "⟳ Abrindo certificado..." : "🏆 Emitir Certificado de Conclusão"}
+        style={{ background:emitindo?C.card:`linear-gradient(135deg,${C.green},${C.teal})`, border:"none", borderRadius:14, padding:"16px 40px", fontSize:16, fontWeight:800, color:emitindo?C.muted:"#fff", cursor:"pointer", display:"flex", alignItems:"center", gap:12, transition:"all .2s", boxShadow:emitindo?"none":`0 8px 32px ${C.green}40`, marginBottom:14, letterSpacing:-0.3 }}>
+        {emitindo ? "⟳ Abrindo certificado..." : "🏅 Emitir Certificado em PDF"}
       </button>
-      <p style={{ fontSize:12, color:C.muted }}>O certificado abre em uma nova aba pronto para salvar como PDF ou imprimir.</p>
-      <p style={{ fontSize:12, color:C.muted, marginTop:20 }}>Dúvidas? Entre em contato com nosso suporte. 💚</p>
+      <p style={{ fontSize:12, color:C.muted }}>O certificado abre em uma nova aba — salve como PDF ou imprima.</p>
     </div>
   );
 }
@@ -1743,7 +1929,17 @@ function TrainingApp({ authUser, onLogout }) {
 
   return (
     <div style={{ display:"flex", height:"100vh", background:C.bg, fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif", overflow:"hidden" }}>
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}} * { box-sizing: border-box; } ::-webkit-scrollbar{width:5px} ::-webkit-scrollbar-track{background:${C.bg}} ::-webkit-scrollbar-thumb{background:${C.borderLt};border-radius:3px}`}</style>
+      <style>{`
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @keyframes fadeSlide{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes floatUp{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+  *{box-sizing:border-box}
+  ::-webkit-scrollbar{width:5px}
+  ::-webkit-scrollbar-track{background:transparent}
+  ::-webkit-scrollbar-thumb{background:${C.borderLt};border-radius:3px}
+  ::-webkit-scrollbar-thumb:hover{background:${C.slate}}
+  .lesson-content{animation:fadeSlide .35s ease}
+`}</style>
 
       {/* Sidebar */}
       <Sidebar
