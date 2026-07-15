@@ -953,27 +953,152 @@ function Sidebar({ modules, progress, activeMod, activeLesson, onSelect, overall
   );
 }
 
+// ─── Certificado ─────────────────────────────────────────────────────────────
+function imprimirCertificado({ nomeUsuario, nomeEmpresa, dataConc, modulos }) {
+  const modsHtml = modulos.map(m =>
+    `<li style="margin:0 0 4px;font-size:13px;color:#374151;">${m.icon} ${m.title} <span style="color:#6b7280;">(${m.lessons.length} aulas)</span></li>`
+  ).join("");
+
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Certificado C4OS — ${nomeUsuario}</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Inter, -apple-system, sans-serif; background: #f0fdf4; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 40px 20px; }
+    .cert { background: #fff; width: 794px; min-height: 560px; border-radius: 20px; box-shadow: 0 8px 48px rgba(0,0,0,.12); overflow: hidden; display: flex; flex-direction: column; }
+    .header { background: linear-gradient(135deg, #059669, #0891b2); padding: 36px 48px 32px; display: flex; align-items: center; justify-content: space-between; }
+    .logo-row { display: flex; align-items: center; gap: 12px; }
+    .logo-box { width: 48px; height: 48px; background: rgba(255,255,255,.2); border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 26px; font-weight: 900; color: #fff; }
+    .logo-text { font-size: 22px; font-weight: 800; color: #fff; letter-spacing: -0.5px; }
+    .header-right { text-align: right; }
+    .cert-label { font-size: 11px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: rgba(255,255,255,.7); }
+    .cert-title { font-size: 26px; font-weight: 800; color: #fff; margin-top: 4px; }
+    .body { padding: 36px 48px 32px; flex: 1; }
+    .declares { font-size: 13px; color: #6b7280; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 10px; }
+    .name { font-size: 36px; font-weight: 800; color: #111827; line-height: 1.1; margin-bottom: 6px; border-bottom: 3px solid #10b981; padding-bottom: 12px; display: inline-block; }
+    .company { font-size: 15px; color: #6b7280; margin: 10px 0 20px; }
+    .company strong { color: #374151; }
+    .desc { font-size: 14px; color: #6b7280; line-height: 1.7; max-width: 560px; margin-bottom: 24px; }
+    .modules-title { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: #9ca3af; margin-bottom: 10px; }
+    .modules-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 24px; margin-bottom: 28px; }
+    .footer { border-top: 1px solid #f3f4f6; padding: 20px 48px; display: flex; align-items: center; justify-content: space-between; background: #f9fafb; }
+    .footer-left { font-size: 12px; color: #9ca3af; }
+    .footer-left strong { color: #374151; }
+    .seal { width: 72px; height: 72px; border-radius: 50%; border: 3px solid #10b981; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #f0fdf4; }
+    .seal-inner { font-size: 10px; font-weight: 800; text-transform: uppercase; color: #059669; letter-spacing: .5px; text-align: center; line-height: 1.3; }
+    .sig-line { width: 160px; border-top: 1.5px solid #d1d5db; padding-top: 6px; font-size: 11px; color: #9ca3af; text-align: center; }
+    @media print {
+      body { background: #fff; padding: 0; }
+      .cert { box-shadow: none; border-radius: 0; width: 100%; }
+    }
+  </style>
+</head>
+<body>
+<div class="cert">
+  <div class="header">
+    <div class="logo-row">
+      <div class="logo-box">C</div>
+      <div class="logo-text">C4OS</div>
+    </div>
+    <div class="header-right">
+      <div class="cert-label">Documento oficial</div>
+      <div class="cert-title">Certificado de Conclusão</div>
+    </div>
+  </div>
+  <div class="body">
+    <div class="declares">Certificamos que</div>
+    <div class="name">${nomeUsuario}</div>
+    <div class="company">da empresa <strong>${nomeEmpresa}</strong></div>
+    <div class="desc">concluiu com êxito o <strong>Treinamento Completo da Plataforma C4OS</strong>, cumprindo todos os módulos e aulas do programa de capacitação oficial.</div>
+    <div class="modules-title">Módulos concluídos</div>
+    <ul class="modules-grid" style="padding-left:16px;">${modsHtml}</ul>
+  </div>
+  <div class="footer">
+    <div class="footer-left">
+      <div><strong>Data de conclusão:</strong> ${dataConc}</div>
+      <div style="margin-top:4px;"><strong>Plataforma:</strong> C4OS · c4os.com.br</div>
+    </div>
+    <div style="display:flex;align-items:flex-end;gap:32px;">
+      <div class="sig-line">Equipe C4HUB</div>
+      <div class="seal"><div class="seal-inner">✓<br/>100%<br/>Concluído</div></div>
+    </div>
+  </div>
+</div>
+<script>window.onload = () => { window.print(); }<\/script>
+</body>
+</html>`;
+
+  const win = window.open("", "_blank");
+  if (!win) return;
+  win.document.write(html);
+  win.document.close();
+}
+
 // ─── Conclusão ────────────────────────────────────────────────────────────────
-function CompletionScreen() {
+function CompletionScreen({ nomeUsuario, nomeEmpresa, dataConc, modules }) {
+  const [emitindo, setEmitindo] = useState(false);
+
+  const emitir = () => {
+    setEmitindo(true);
+    imprimirCertificado({ nomeUsuario, nomeEmpresa, dataConc, modulos: modules });
+    setTimeout(() => setEmitindo(false), 2000);
+  };
+
   return (
     <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", height:"100%", padding:40, textAlign:"center" }}>
       <div style={{ fontSize:64, marginBottom:20 }}>🎉</div>
-      <h1 style={{ fontSize:28, fontWeight:800, color:C.text, marginBottom:12 }}>Parabéns! Treinamento concluído.</h1>
-      <p style={{ fontSize:16, color:C.muted, maxWidth:480, lineHeight:1.7, marginBottom:24 }}>
-        Você concluiu 100% do treinamento do C4OS. Agora você tem todo o conhecimento para usar o sistema com excelência.
+      <h1 style={{ fontSize:28, fontWeight:800, color:C.text, marginBottom:10 }}>Parabéns, {nomeUsuario || "aluno"}!</h1>
+      <p style={{ fontSize:15, color:C.muted, maxWidth:500, lineHeight:1.7, marginBottom:8 }}>
+        Você concluiu <strong style={{ color:C.green }}>100%</strong> do treinamento oficial do C4OS.
+        Agora você tem todo o conhecimento para usar a plataforma com excelência.
       </p>
-      <p style={{ fontSize:13, color:C.muted }}>Dúvidas? Entre em contato com nosso suporte. Estamos sempre aqui! 💚</p>
+      <p style={{ fontSize:13, color:C.muted, marginBottom:32 }}>Conclusão em {dataConc}</p>
+
+      {/* Preview mini do certificado */}
+      <div style={{ background:C.card, border:`1px solid ${C.borderLt}`, borderRadius:16, padding:28, maxWidth:480, width:"100%", marginBottom:28, textAlign:"left" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:16 }}>
+          <div style={{ width:40, height:40, borderRadius:10, background:"linear-gradient(135deg,#10b981,#06b6d4)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:20, fontWeight:900, color:"#fff" }}>C</div>
+          <div>
+            <div style={{ fontSize:12, fontWeight:700, color:C.muted, letterSpacing:1, textTransform:"uppercase" }}>Certificado de Conclusão</div>
+            <div style={{ fontSize:14, fontWeight:700, color:C.text }}>C4OS Treinamentos</div>
+          </div>
+        </div>
+        <div style={{ fontSize:11, color:C.muted, marginBottom:4, textTransform:"uppercase", letterSpacing:.5 }}>Certificamos que</div>
+        <div style={{ fontSize:22, fontWeight:800, color:C.text, borderBottom:`2px solid ${C.green}`, paddingBottom:8, marginBottom:8, display:"inline-block" }}>{nomeUsuario || "—"}</div>
+        <div style={{ fontSize:12, color:C.muted, marginBottom:14 }}>da empresa <strong style={{ color:C.text }}>{nomeEmpresa || "—"}</strong></div>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"4px 16px" }}>
+          {modules.map(m => (
+            <div key={m.id} style={{ fontSize:11, color:C.muted }}>{m.icon} {m.title}</div>
+          ))}
+        </div>
+        <div style={{ marginTop:14, paddingTop:12, borderTop:`1px solid ${C.border}`, fontSize:11, color:C.muted }}>
+          Concluído em {dataConc} · c4os.com.br
+        </div>
+      </div>
+
+      <button onClick={emitir} disabled={emitindo}
+        style={{ background:`linear-gradient(135deg,${C.green},${C.teal})`, border:"none", borderRadius:12, padding:"14px 36px", fontSize:15, fontWeight:700, color:"#fff", cursor:"pointer", display:"flex", alignItems:"center", gap:10, opacity:emitindo?.8:1, marginBottom:16 }}>
+        {emitindo ? "⟳ Abrindo certificado..." : "🏆 Emitir Certificado de Conclusão"}
+      </button>
+      <p style={{ fontSize:12, color:C.muted }}>O certificado abre em uma nova aba pronto para salvar como PDF ou imprimir.</p>
+      <p style={{ fontSize:12, color:C.muted, marginTop:20 }}>Dúvidas? Entre em contato com nosso suporte. 💚</p>
     </div>
   );
 }
 
 // ─── Aplicativo de Treinamento ────────────────────────────────────────────────
 function TrainingApp({ authUser, onLogout }) {
-  const [modules,  setModules]  = useState([]);
-  const [progress, setProgress] = useState({});
+  const [modules,      setModules]      = useState([]);
+  const [progress,     setProgress]     = useState({});
   const [activeMod,    setActiveMod]    = useState(null);
   const [activeLesson, setActiveLesson] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading,      setLoading]      = useState(true);
+  const [nomeUsuario,  setNomeUsuario]  = useState("");
+  const [nomeEmpresa,  setNomeEmpresa]  = useState("");
+  const [dataConc,     setDataConc]     = useState("");
 
   // Carrega empresa e monta módulos
   useEffect(() => {
@@ -981,21 +1106,24 @@ function TrainingApp({ authUser, onLogout }) {
       let hasMulti = false;
       try {
         const { data: usuario } = await supabase
-          .from("usuarios").select("empresa_id").eq("id", authUser.id).maybeSingle();
-        if (usuario?.empresa_id) {
-          const { data: emp } = await supabase
-            .from("empresas").select("multi_instancia_ativo").eq("id", usuario.empresa_id).maybeSingle();
-          hasMulti = emp?.multi_instancia_ativo ?? false;
+          .from("usuarios").select("nome, empresa_id, empresas(nome, multi_instancia_ativo)")
+          .eq("id", authUser.id).maybeSingle();
+        if (usuario) {
+          setNomeUsuario(usuario.nome || authUser.email?.split("@")[0] || "");
+          setNomeEmpresa(usuario.empresas?.nome || "");
+          hasMulti = usuario.empresas?.multi_instancia_ativo ?? false;
         }
       } catch (_) {}
 
       const mods = buildModules(hasMulti);
       setModules(mods);
 
-      // Carrega progresso do localStorage
+      // Carrega progresso e data de conclusão do localStorage
       const saved = localStorage.getItem(`c4os_treinamento_${authUser.id}`);
       const prog  = saved ? JSON.parse(saved) : {};
       setProgress(prog);
+      const savedDate = localStorage.getItem(`c4os_treinamento_concluido_${authUser.id}`);
+      if (savedDate) setDataConc(savedDate);
 
       // Posiciona na primeira aula não concluída
       let foundMod = mods[0].id, foundLesson = mods[0].lessons[0].id;
@@ -1013,15 +1141,27 @@ function TrainingApp({ authUser, onLogout }) {
     })();
   }, [authUser.id]);
 
-  const saveProgress = useCallback((newProg) => {
+  const saveProgress = useCallback((newProg, mods) => {
     setProgress(newProg);
     localStorage.setItem(`c4os_treinamento_${authUser.id}`, JSON.stringify(newProg));
-  }, [authUser.id]);
+    // Registra data de conclusão quando atinge 100%
+    const total = (mods ?? modules).reduce((a, m) => a + m.lessons.length, 0);
+    const done  = Object.keys(newProg).filter(k => newProg[k]).length;
+    if (done >= total && total > 0) {
+      const key = `c4os_treinamento_concluido_${authUser.id}`;
+      if (!localStorage.getItem(key)) {
+        const d = new Date();
+        const formatted = d.toLocaleDateString("pt-BR", { day:"2-digit", month:"long", year:"numeric" });
+        localStorage.setItem(key, formatted);
+        setDataConc(formatted);
+      }
+    }
+  }, [authUser.id, modules]);
 
   const markComplete = useCallback(() => {
     const key = `${activeMod}:${activeLesson}`;
     const newProg = { ...progress, [key]: true };
-    saveProgress(newProg);
+    saveProgress(newProg, modules);
     // Avança automaticamente
     const all = getAllLessons(modules);
     const idx = all.findIndex(l => l.moduleId === activeMod && l.id === activeLesson);
@@ -1077,7 +1217,11 @@ function TrainingApp({ authUser, onLogout }) {
         {/* Conteúdo */}
         <div style={{ flex:1, overflow:"hidden" }}>
           {isAllDone && !curLesson ? (
-            <CompletionScreen />
+            <CompletionScreen
+              nomeUsuario={nomeUsuario} nomeEmpresa={nomeEmpresa}
+              dataConc={dataConc || new Date().toLocaleDateString("pt-BR", { day:"2-digit", month:"long", year:"numeric" })}
+              modules={modules}
+            />
           ) : curLesson && curMod ? (
             <LessonView
               lesson={curLesson} mod={curMod}
