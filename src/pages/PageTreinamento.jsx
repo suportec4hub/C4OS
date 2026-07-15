@@ -82,6 +82,13 @@ const buildModules = (hasMultiInstancia) => [
         ],
         tip: "Recomendamos no máximo 2 administradores por empresa para manter a segurança das configurações.",
       },
+      {
+        id: "lab-setup",
+        title: "Laboratório: Configuração Inicial",
+        duration: "10 min",
+        type: "lab",
+        lab: { type: "setup" },
+      },
     ],
   },
 
@@ -150,6 +157,13 @@ const buildModules = (hasMultiInstancia) => [
           { kind: "steps", title: "Adicionando anotações", steps: ["Abra o lead → aba Anotações","Clique em + Nova Anotação","Escreva o conteúdo — visível para toda a equipe","Marque como privada se quiser que só você veja"] },
         ],
         tip: "Use anotações para contexto importante: 'prefere contato depois das 14h' ou 'aguardando aprovação do diretor financeiro'.",
+      },
+      {
+        id: "lab-leads",
+        title: "Laboratório: Criar e Mover Lead",
+        duration: "10 min",
+        type: "lab",
+        lab: { type: "leads" },
       },
     ],
   },
@@ -239,6 +253,13 @@ const buildModules = (hasMultiInstancia) => [
         ],
         tip: "Para maximizar o histórico sincronizado: conecte o número e deixe o WhatsApp do vendedor com internet estável por 10 minutos. Não desligue o celular durante esse período.",
       }] : []),
+      {
+        id: "lab-inbox",
+        title: "Laboratório: Simulação de Inbox",
+        duration: "10 min",
+        type: "lab",
+        lab: { type: "inbox" },
+      },
     ],
   },
 
@@ -297,6 +318,13 @@ const buildModules = (hasMultiInstancia) => [
         ],
         tip: "Revise semanalmente conversas que a IA não soube responder para melhorar continuamente a base de conhecimento.",
       },
+      {
+        id: "lab-chatbot",
+        title: "Laboratório: Configurar Chatbot",
+        duration: "12 min",
+        type: "lab",
+        lab: { type: "chatbot" },
+      },
     ],
   },
 
@@ -353,6 +381,13 @@ const buildModules = (hasMultiInstancia) => [
           { kind: "list", title: "Sinais de alerta", items: ["🚨 QR Code pedindo reconexão frequente","🚨 Mensagens não entregando (sem ✓)","🚨 Muitos contatos bloqueando a conta","⚡ Ação: pare por 48h e retome com volume menor"] },
         ],
         tip: "Qualidade vale mais que quantidade. 200 mensagens para a audiência certa valem mais que 1.000 para pessoas sem interesse.",
+      },
+      {
+        id: "lab-campanha",
+        title: "Laboratório: Criar Campanha",
+        duration: "12 min",
+        type: "lab",
+        lab: { type: "campanha" },
       },
     ],
   },
@@ -791,9 +826,515 @@ function Section({ sec }) {
   return null;
 }
 
+// ─── Componentes dos laboratórios ────────────────────────────────────────────
+const Lbtn = ({ onClick, disabled, children, style = {} }) => (
+  <button onClick={onClick} disabled={disabled}
+    style={{ border:"none", borderRadius:8, padding:"8px 16px", fontSize:12, fontWeight:700, cursor:disabled?"not-allowed":"pointer", opacity:disabled?.5:1, fontFamily:"inherit", ...style }}>
+    {children}
+  </button>
+);
+
+const TaskItem = ({ done, label }) => (
+  <div style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 0", borderBottom:`1px solid ${C.border}` }}>
+    <div style={{ width:22, height:22, borderRadius:"50%", background:done?C.green:C.border, border:`2px solid ${done?C.green:C.borderLt}`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, transition:"all .3s" }}>
+      {done && <span style={{ fontSize:11, color:"#fff" }}>✓</span>}
+    </div>
+    <span style={{ fontSize:13, color:done?C.green:C.muted, textDecoration:done?"line-through":"none", transition:"all .3s" }}>{label}</span>
+  </div>
+);
+
+// ── Lab 1: Checklist de Setup Inicial ────────────────────────────────────────
+function LabSetup({ onComplete }) {
+  const items = [
+    { id:"empresa", label:"Preenchi as informações da empresa (nome, horário de atendimento)" },
+    { id:"whatsapp", label:"Conectei o WhatsApp escaneando o QR Code em Empresa → Integrações" },
+    { id:"setor", label:"Criei pelo menos um setor (ex: Vendas) em Configurações → Setores" },
+    { id:"membro", label:"Convidei um membro da equipe em Configurações → Equipe" },
+    { id:"chatbot", label:"Configurei a mensagem de boas-vindas do chatbot em Empresa → Chatbot" },
+    { id:"lead", label:"Criei o primeiro lead de teste em Leads → + Novo Lead" },
+  ];
+  const [done, setDone] = useState({});
+  const toggle = (id) => setDone(d => { const n={...d, [id]:!d[id]}; return n; });
+  const allDone = items.every(i => done[i.id]);
+  useEffect(() => { if (allDone) onComplete(); }, [allDone]);
+
+  return (
+    <div>
+      <div style={{ background:`${C.blue}18`, border:`1px solid ${C.blue}44`, borderRadius:10, padding:"12px 16px", marginBottom:20, fontSize:13, color:C.muted, lineHeight:1.6 }}>
+        📋 <strong style={{ color:C.text }}>Missão:</strong> complete as etapas abaixo para finalizar a configuração inicial. Conforme for fazendo cada item <em>no sistema real</em>, marque aqui como concluído.
+      </div>
+      <div style={{ display:"flex", flexDirection:"column" }}>
+        {items.map(item => (
+          <div key={item.id} onClick={() => toggle(item.id)}
+            style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 12px", borderRadius:8, cursor:"pointer", marginBottom:4, background:done[item.id]?`${C.green}10`:"transparent", border:`1px solid ${done[item.id]?C.greenBd:C.border}` }}>
+            <div style={{ width:24, height:24, borderRadius:6, background:done[item.id]?C.green:C.border, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, transition:"all .25s" }}>
+              {done[item.id] && <span style={{ fontSize:13, color:"#fff" }}>✓</span>}
+            </div>
+            <span style={{ fontSize:13, color:done[item.id]?C.green:C.text }}>{item.label}</span>
+          </div>
+        ))}
+      </div>
+      <div style={{ marginTop:16, fontSize:12, color:C.muted, textAlign:"center" }}>
+        {Object.values(done).filter(Boolean).length}/{items.length} etapas concluídas
+        {allDone && <span style={{ color:C.green, fontWeight:700 }}> — Configuração inicial completa! 🎉</span>}
+      </div>
+    </div>
+  );
+}
+
+// ── Lab 2: Criar Lead + Pipeline ──────────────────────────────────────────────
+function LabLeads({ onComplete }) {
+  const [fase, setFase] = useState("form"); // form | kanban | done
+  const [form, setForm] = useState({ nome:"", telefone:"", email:"", etapa:"novo", tag:"" });
+  const [lead, setLead] = useState(null);
+  const [etapaAtual, setEtapaAtual] = useState("novo");
+  const [saved, setSaved] = useState(false);
+  const erros = !form.nome.trim() || !form.telefone.trim();
+
+  const salvar = () => {
+    if (erros) return;
+    setLead({ ...form, id: Date.now() });
+    setSaved(true);
+    setTimeout(() => { setFase("kanban"); setSaved(false); }, 800);
+  };
+
+  useEffect(() => { if (etapaAtual === "proposta") { setTimeout(onComplete, 600); } }, [etapaAtual]);
+
+  const etapas = [
+    { id:"novo", label:"Novo", color:"#64748b" },
+    { id:"qualificado", label:"Qualificado", color:C.blue },
+    { id:"proposta", label:"Proposta", color:C.green },
+  ];
+
+  if (fase === "form") return (
+    <div>
+      <div style={{ background:`${C.blue}18`, border:`1px solid ${C.blue}44`, borderRadius:10, padding:"12px 16px", marginBottom:20, fontSize:13, color:C.muted, lineHeight:1.6 }}>
+        📋 <strong style={{ color:C.text }}>Missão:</strong> crie um lead de teste preenchendo o formulário abaixo, depois mova-o no pipeline até a etapa "Proposta".
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+        {[
+          { field:"nome", label:"Nome completo *", placeholder:"Ex: Maria Oliveira" },
+          { field:"telefone", label:"Telefone (com DDD) *", placeholder:"Ex: 11999990000" },
+          { field:"email", label:"E-mail", placeholder:"Ex: maria@empresa.com.br" },
+          { field:"tag", label:"Tag", placeholder:"Ex: cliente-vip" },
+        ].map(({ field, label, placeholder }) => (
+          <div key={field}>
+            <div style={{ fontSize:11, fontWeight:600, color:C.muted, marginBottom:4, textTransform:"uppercase", letterSpacing:.5 }}>{label}</div>
+            <input value={form[field]} onChange={e => setForm(f => ({ ...f, [field]: e.target.value }))} placeholder={placeholder}
+              style={{ width:"100%", background:"#0f1929", border:`1px solid ${C.borderLt}`, borderRadius:8, padding:"9px 12px", fontSize:13, color:C.text, outline:"none", fontFamily:"inherit" }} />
+          </div>
+        ))}
+        <div>
+          <div style={{ fontSize:11, fontWeight:600, color:C.muted, marginBottom:4, textTransform:"uppercase", letterSpacing:.5 }}>Etapa inicial</div>
+          <select value={form.etapa} onChange={e => setForm(f => ({ ...f, etapa: e.target.value }))}
+            style={{ width:"100%", background:"#0f1929", border:`1px solid ${C.borderLt}`, borderRadius:8, padding:"9px 12px", fontSize:13, color:C.text, outline:"none", fontFamily:"inherit" }}>
+            {etapas.map(e => <option key={e.id} value={e.id}>{e.label}</option>)}
+          </select>
+        </div>
+      </div>
+      <div style={{ marginTop:16, display:"flex", justifyContent:"flex-end" }}>
+        <Lbtn onClick={salvar} disabled={erros || saved}
+          style={{ background:erros?C.border:`linear-gradient(135deg,${C.green},${C.teal})`, color:erros?C.muted:"#fff", padding:"10px 24px" }}>
+          {saved ? "✓ Salvando..." : "Salvar Lead"}
+        </Lbtn>
+      </div>
+    </div>
+  );
+
+  if (fase === "kanban") return (
+    <div>
+      <div style={{ background:`${C.green}18`, border:`1px solid ${C.greenBd}`, borderRadius:10, padding:"12px 16px", marginBottom:16, fontSize:13, color:C.green }}>
+        ✓ Lead <strong>{lead?.nome}</strong> criado! Agora clique nos botões abaixo para mover o lead pelas etapas do pipeline.
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10 }}>
+        {etapas.map(etapa => (
+          <div key={etapa.id} style={{ background:etapaAtual===etapa.id?`${etapa.color}18`:C.card, border:`1.5px solid ${etapaAtual===etapa.id?etapa.color:C.border}`, borderRadius:10, padding:12, minHeight:120 }}>
+            <div style={{ fontSize:11, fontWeight:700, color:etapa.color, textTransform:"uppercase", letterSpacing:.5, marginBottom:8 }}>{etapa.label}</div>
+            {etapaAtual === etapa.id && lead && (
+              <div style={{ background:C.card, border:`1px solid ${C.borderLt}`, borderRadius:8, padding:10 }}>
+                <div style={{ fontSize:12, fontWeight:700, color:C.text }}>{lead.nome}</div>
+                <div style={{ fontSize:11, color:C.muted, marginTop:2 }}>{lead.telefone}</div>
+                {etapa.id !== "proposta" && (
+                  <Lbtn onClick={() => setEtapaAtual(etapas[etapas.findIndex(e=>e.id===etapa.id)+1]?.id || etapa.id)}
+                    style={{ marginTop:8, background:etapa.color, color:"#fff", fontSize:11, padding:"5px 10px" }}>
+                    Mover para {etapas[etapas.findIndex(e=>e.id===etapa.id)+1]?.label} →
+                  </Lbtn>
+                )}
+                {etapa.id === "proposta" && <div style={{ fontSize:11, color:C.green, marginTop:6, fontWeight:700 }}>🎉 Lead na etapa final!</div>}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  return null;
+}
+
+// ── Lab 3: Simulação de Inbox WhatsApp ───────────────────────────────────────
+function LabInbox({ onComplete }) {
+  const CONVS_INIT = [
+    { id:1, nome:"Maria Silva", tel:"11 98765-4321", status:"waiting", time:"14:23",
+      msgs:[ { de:"cliente", txt:"Olá! Queria saber sobre os planos disponíveis.", t:"14:23" }, { de:"cliente", txt:"Podem me enviar uma proposta?", t:"14:24" } ] },
+    { id:2, nome:"João Oliveira", tel:"21 99876-5432", status:"bot", time:"13:45",
+      msgs:[ { de:"cliente", txt:"Bom dia! Tenho uma dúvida sobre o suporte.", t:"13:45" }, { de:"bot", txt:"Olá João! Selecione uma opção:\n1. Suporte técnico\n2. Financeiro\n3. Vendas", t:"13:45" } ] },
+    { id:3, nome:"Ana Paula", tel:"31 91234-5678", status:"attending", time:"12:30",
+      msgs:[ { de:"cliente", txt:"Preciso de ajuda com a configuração.", t:"12:30" }, { de:"agente", txt:"Olá Ana! Como posso te ajudar?", t:"12:31" }, { de:"cliente", txt:"Não estou conseguindo conectar o WhatsApp.", t:"12:32" } ] },
+  ];
+  const [convs, setConvs]   = useState(CONVS_INIT);
+  const [ativa, setAtiva]   = useState(null);
+  const [input, setInput]   = useState("");
+  const [tasks, setTasks]   = useState({ assumiu:false, respondeu:false, encerrou:false });
+  const [closeModal, setCloseModal] = useState(false);
+  const [motivo, setMotivo] = useState("resolvido");
+
+  const conv = convs.find(c => c.id === ativa);
+  const allDone = Object.values(tasks).every(Boolean);
+  useEffect(() => { if (allDone) setTimeout(onComplete, 800); }, [allDone]);
+
+  const assumir = () => {
+    setConvs(cs => cs.map(c => c.id===ativa ? {...c, status:"attending"} : c));
+    setTasks(t => ({...t, assumiu:true}));
+  };
+
+  const enviar = () => {
+    if (!input.trim()) return;
+    setConvs(cs => cs.map(c => c.id===ativa ? {...c, msgs:[...c.msgs, {de:"agente", txt:input.trim(), t:new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}]} : c));
+    setInput("");
+    setTasks(t => ({...t, respondeu:true}));
+  };
+
+  const encerrar = () => {
+    setConvs(cs => cs.map(c => c.id===ativa ? {...c, status:"closed"} : c));
+    setAtiva(null); setCloseModal(false);
+    setTasks(t => ({...t, encerrou:true}));
+  };
+
+  const statusInfo = { waiting:{label:"Aguardando",bg:"#78350f22",color:"#fbbf24"}, bot:{label:"Bot",bg:`${C.blue}22`,color:C.blue}, attending:{label:"Em atendimento",bg:`${C.green}22`,color:C.green}, closed:{label:"Encerrada",bg:`${C.slate}22`,color:C.slate} };
+
+  return (
+    <div>
+      <div style={{ background:`${C.blue}18`, border:`1px solid ${C.blue}44`, borderRadius:10, padding:"12px 16px", marginBottom:14, fontSize:13, color:C.muted, lineHeight:1.6 }}>
+        📋 <strong style={{ color:C.text }}>Missão:</strong> (1) assuma a conversa da Maria, (2) responda uma mensagem, (3) encerre a conversa da Ana Paula.
+      </div>
+      {/* Tarefas */}
+      <div style={{ display:"flex", gap:8, marginBottom:14, flexWrap:"wrap" }}>
+        {[{k:"assumiu",l:"Assumir conversa"},{k:"respondeu",l:"Responder mensagem"},{k:"encerrou",l:"Encerrar conversa"}].map(({k,l}) => (
+          <div key={k} style={{ display:"flex", alignItems:"center", gap:5, fontSize:11, fontWeight:600, padding:"4px 10px", borderRadius:6, background:tasks[k]?`${C.green}22`:C.card, color:tasks[k]?C.green:C.muted, border:`1px solid ${tasks[k]?C.greenBd:C.border}` }}>
+            {tasks[k]?"✓":""} {l}
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display:"flex", gap:0, border:`1px solid ${C.border}`, borderRadius:12, overflow:"hidden", height:360 }}>
+        {/* Lista de conversas */}
+        <div style={{ width:200, minWidth:200, borderRight:`1px solid ${C.border}`, overflowY:"auto", background:C.sidebar }}>
+          {convs.map(c => {
+            const si = statusInfo[c.status] || statusInfo.waiting;
+            return (
+              <div key={c.id} onClick={() => setAtiva(c.id)}
+                style={{ padding:"10px 12px", cursor:"pointer", borderBottom:`1px solid ${C.border}`, background:ativa===c.id?`${C.green}14`:C.sidebar, borderLeft:ativa===c.id?`2px solid ${C.green}`:"2px solid transparent" }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:3 }}>
+                  <span style={{ fontSize:12, fontWeight:700, color:C.text }}>{c.nome}</span>
+                  <span style={{ fontSize:9, color:C.muted }}>{c.time}</span>
+                </div>
+                <span style={{ fontSize:10, fontWeight:700, padding:"2px 6px", borderRadius:4, background:si.bg, color:si.color }}>{si.label}</span>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Chat */}
+        <div style={{ flex:1, display:"flex", flexDirection:"column", background:C.bg }}>
+          {!conv ? (
+            <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", color:C.muted, fontSize:13 }}>Selecione uma conversa</div>
+          ) : (
+            <>
+              {/* Header do chat */}
+              <div style={{ padding:"10px 14px", borderBottom:`1px solid ${C.border}`, display:"flex", alignItems:"center", justifyContent:"space-between", background:C.sidebar }}>
+                <div>
+                  <div style={{ fontSize:13, fontWeight:700, color:C.text }}>{conv.nome}</div>
+                  <div style={{ fontSize:11, color:C.muted }}>{conv.tel}</div>
+                </div>
+                <div style={{ display:"flex", gap:6 }}>
+                  {conv.status === "waiting" && (
+                    <Lbtn onClick={assumir} style={{ background:C.teal, color:"#fff", fontSize:11 }}>Assumir</Lbtn>
+                  )}
+                  {conv.status === "attending" && (
+                    <Lbtn onClick={() => setCloseModal(true)} style={{ background:`${C.red}22`, color:C.red, fontSize:11, border:`1px solid ${C.red}44` }}>Encerrar</Lbtn>
+                  )}
+                  {conv.status === "closed" && (
+                    <span style={{ fontSize:11, color:C.slate }}>Encerrada</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Mensagens */}
+              <div style={{ flex:1, overflowY:"auto", padding:12, display:"flex", flexDirection:"column", gap:8 }}>
+                {conv.msgs.map((m, i) => (
+                  <div key={i} style={{ display:"flex", justifyContent:m.de==="cliente"?"flex-start":"flex-end" }}>
+                    <div style={{ maxWidth:"75%", background:m.de==="cliente"?C.card:m.de==="bot"?`${C.blue}22`:C.green+"33", borderRadius:10, padding:"8px 12px" }}>
+                      {m.de==="bot" && <div style={{ fontSize:10, color:C.blue, fontWeight:700, marginBottom:4 }}>🤖 Bot</div>}
+                      <div style={{ fontSize:12, color:C.text, whiteSpace:"pre-wrap" }}>{m.txt}</div>
+                      <div style={{ fontSize:10, color:C.muted, textAlign:"right", marginTop:2 }}>{m.t}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Input */}
+              {conv.status === "attending" && (
+                <div style={{ padding:"8px 12px", borderTop:`1px solid ${C.border}`, display:"flex", gap:8 }}>
+                  <input value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key==="Enter" && enviar()}
+                    placeholder="Digite uma resposta..."
+                    style={{ flex:1, background:C.card, border:`1px solid ${C.borderLt}`, borderRadius:8, padding:"7px 10px", fontSize:12, color:C.text, outline:"none", fontFamily:"inherit" }} />
+                  <Lbtn onClick={enviar} style={{ background:C.green, color:"#fff" }}>Enviar</Lbtn>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Modal de encerramento */}
+      {closeModal && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.6)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:100 }}>
+          <div style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:14, padding:24, width:320 }}>
+            <div style={{ fontSize:15, fontWeight:700, color:C.text, marginBottom:12 }}>Encerrar conversa</div>
+            <div style={{ fontSize:12, color:C.muted, marginBottom:10 }}>Selecione o motivo do encerramento:</div>
+            {["resolvido","sem-resposta","nao-qualificado","transferido"].map(m => (
+              <label key={m} style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 0", cursor:"pointer" }}>
+                <input type="radio" name="motivo" value={m} checked={motivo===m} onChange={() => setMotivo(m)} />
+                <span style={{ fontSize:13, color:C.text, textTransform:"capitalize" }}>{m.replace("-"," ")}</span>
+              </label>
+            ))}
+            <div style={{ display:"flex", gap:8, marginTop:16 }}>
+              <Lbtn onClick={() => setCloseModal(false)} style={{ flex:1, background:C.border, color:C.muted }}>Cancelar</Lbtn>
+              <Lbtn onClick={encerrar} style={{ flex:1, background:C.green, color:"#fff" }}>Confirmar</Lbtn>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Lab 4: Montar Menu do Chatbot ────────────────────────────────────────────
+function LabChatbot({ onComplete }) {
+  const [step, setStep] = useState(1); // 1=boas-vindas, 2=menu, 3=preview
+  const [boasVindas, setBoasVindas] = useState("");
+  const [opcoes, setOpcoes] = useState([{ label:"", destino:"vendas" }, { label:"", destino:"suporte" }, { label:"", destino:"financeiro" }]);
+  const [saved, setSaved] = useState(false);
+
+  const setOpcao = (i, field, val) => setOpcoes(os => os.map((o, idx) => idx===i ? {...o, [field]:val} : o));
+  const canNext1 = boasVindas.trim().length >= 10;
+  const canNext2 = opcoes.filter(o => o.label.trim()).length >= 2;
+
+  const salvar = () => {
+    setSaved(true);
+    setTimeout(() => { setStep(3); setSaved(false); }, 700);
+  };
+
+  useEffect(() => { if (step===3) setTimeout(onComplete, 3000); }, [step]);
+
+  return (
+    <div>
+      {/* Steps */}
+      <div style={{ display:"flex", gap:0, marginBottom:20 }}>
+        {[{n:1,l:"Boas-vindas"},{n:2,l:"Menu"},{n:3,l:"Preview"}].map(({n,l}) => (
+          <div key={n} style={{ flex:1, display:"flex", alignItems:"center", gap:6, padding:"8px 12px", background:step===n?`${C.purple}22`:step>n?`${C.green}12`:C.card, borderBottom:`2px solid ${step===n?C.purple:step>n?C.green:C.border}` }}>
+            <div style={{ width:20, height:20, borderRadius:"50%", background:step>n?C.green:step===n?C.purple:C.border, display:"flex", alignItems:"center", justifyContent:"center", fontSize:10, fontWeight:700, color:step>=n?"#fff":C.muted }}>
+              {step>n?"✓":n}
+            </div>
+            <span style={{ fontSize:11, fontWeight:700, color:step===n?C.purple:step>n?C.green:C.muted }}>{l}</span>
+          </div>
+        ))}
+      </div>
+
+      {step===1 && (
+        <div>
+          <div style={{ fontSize:13, color:C.muted, marginBottom:10 }}>Esta é a primeira mensagem que o cliente recebe ao entrar em contato. Deve ser amigável e clara (mínimo 10 caracteres):</div>
+          <textarea value={boasVindas} onChange={e => setBoasVindas(e.target.value)} placeholder="Ex: Olá! Seja bem-vindo(a) à [Empresa]. Como posso te ajudar hoje? 😊"
+            rows={4} style={{ width:"100%", background:"#0f1929", border:`1px solid ${C.borderLt}`, borderRadius:8, padding:"10px 12px", fontSize:13, color:C.text, outline:"none", fontFamily:"inherit", resize:"vertical" }} />
+          <div style={{ marginTop:8, fontSize:11, color:boasVindas.length>=10?C.green:C.muted }}>{boasVindas.length} caracteres {boasVindas.length>=10?"✓":""}</div>
+          <div style={{ marginTop:12, display:"flex", justifyContent:"flex-end" }}>
+            <Lbtn onClick={() => setStep(2)} disabled={!canNext1} style={{ background:canNext1?C.purple:C.border, color:canNext1?"#fff":C.muted, padding:"9px 20px" }}>Próximo →</Lbtn>
+          </div>
+        </div>
+      )}
+
+      {step===2 && (
+        <div>
+          <div style={{ fontSize:13, color:C.muted, marginBottom:12 }}>Configure as opções do menu. O cliente receberá as opções numeradas. Preencha ao menos 2:</div>
+          {opcoes.map((op, i) => (
+            <div key={i} style={{ display:"flex", gap:8, marginBottom:8, alignItems:"center" }}>
+              <div style={{ width:24, height:24, borderRadius:"50%", background:op.label.trim()?C.purple:C.border, display:"flex", alignItems:"center", justifyContent:"center", fontSize:11, fontWeight:700, color:"#fff", flexShrink:0 }}>{i+1}</div>
+              <input value={op.label} onChange={e => setOpcao(i,"label",e.target.value)} placeholder={`Opção ${i+1} (ex: Vendas, Suporte...)`}
+                style={{ flex:1, background:"#0f1929", border:`1px solid ${C.borderLt}`, borderRadius:8, padding:"8px 10px", fontSize:12, color:C.text, outline:"none", fontFamily:"inherit" }} />
+              <select value={op.destino} onChange={e => setOpcao(i,"destino",e.target.value)}
+                style={{ background:"#0f1929", border:`1px solid ${C.borderLt}`, borderRadius:8, padding:"8px 10px", fontSize:12, color:C.text, outline:"none", fontFamily:"inherit" }}>
+                {["vendas","suporte","financeiro","rh","ti"].map(d => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </div>
+          ))}
+          <div style={{ marginTop:12, display:"flex", justifyContent:"space-between" }}>
+            <Lbtn onClick={() => setStep(1)} style={{ background:C.card, color:C.muted, border:`1px solid ${C.border}` }}>← Voltar</Lbtn>
+            <Lbtn onClick={salvar} disabled={!canNext2||saved} style={{ background:canNext2?C.purple:C.border, color:canNext2?"#fff":C.muted, padding:"9px 20px" }}>
+              {saved?"✓ Salvando...":"Salvar e ver preview →"}
+            </Lbtn>
+          </div>
+        </div>
+      )}
+
+      {step===3 && (
+        <div>
+          <div style={{ background:`${C.green}18`, border:`1px solid ${C.greenBd}`, borderRadius:10, padding:"10px 14px", marginBottom:16, fontSize:13, color:C.green }}>
+            ✓ Chatbot configurado! Veja como o cliente vai receber as mensagens:
+          </div>
+          {/* Preview estilo WhatsApp */}
+          <div style={{ background:"#0a1929", borderRadius:12, padding:16, maxWidth:320 }}>
+            <div style={{ fontSize:10, color:"#64748b", textAlign:"center", marginBottom:8 }}>Hoje · Preview do chatbot</div>
+            <div style={{ background:"#1e293b", borderRadius:"0 10px 10px 10px", padding:"8px 12px", marginBottom:8, display:"inline-block", maxWidth:"90%" }}>
+              <div style={{ fontSize:12, color:"#f1f5f9", whiteSpace:"pre-wrap" }}>{boasVindas}</div>
+            </div>
+            <div style={{ background:"#1e293b", borderRadius:"0 10px 10px 10px", padding:"8px 12px", display:"inline-block", maxWidth:"90%" }}>
+              <div style={{ fontSize:12, color:"#f1f5f9" }}>
+                {opcoes.filter(o => o.label.trim()).map((o, i) => <div key={i}>{i+1}. {o.label} → {o.destino}</div>)}
+              </div>
+            </div>
+          </div>
+          <div style={{ marginTop:14, fontSize:12, color:C.green, fontWeight:700 }}>🎉 Lab concluído! Seu chatbot está pronto.</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Lab 5: Criar Campanha de Disparo ─────────────────────────────────────────
+function LabCampanha({ onComplete }) {
+  const [step, setStep] = useState(1);
+  const [camp, setCamp] = useState({ nome:"", msg:"", audiencia:"todos", data:"", hora:"09:00" });
+  const [previewed, setPreviewed] = useState(false);
+  const set = (k, v) => setCamp(c => ({...c, [k]:v}));
+
+  const canStep1 = camp.nome.trim() && camp.msg.trim().length >= 10;
+  const canStep2 = !!camp.audiencia;
+  const previewMsg = camp.msg.replace(/\{\{nome\}\}/g, "Maria Silva");
+
+  useEffect(() => { if (previewed) setTimeout(onComplete, 2000); }, [previewed]);
+
+  return (
+    <div>
+      {/* Steps */}
+      <div style={{ display:"flex", gap:0, marginBottom:20 }}>
+        {[{n:1,l:"Mensagem"},{n:2,l:"Audiência"},{n:3,l:"Agendamento"},{n:4,l:"Preview"}].map(({n,l}) => (
+          <div key={n} style={{ flex:1, padding:"7px 6px", background:step===n?`${C.yellow}22`:step>n?`${C.green}12`:C.card, borderBottom:`2px solid ${step===n?C.yellow:step>n?C.green:C.border}`, textAlign:"center" }}>
+            <div style={{ fontSize:10, fontWeight:700, color:step===n?C.yellow:step>n?C.green:C.muted }}>{step>n?"✓ ":""}{l}</div>
+          </div>
+        ))}
+      </div>
+
+      {step===1 && (
+        <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+          <div>
+            <div style={{ fontSize:11, fontWeight:600, color:C.muted, marginBottom:4, textTransform:"uppercase", letterSpacing:.5 }}>Nome da campanha (interno)</div>
+            <input value={camp.nome} onChange={e => set("nome",e.target.value)} placeholder="Ex: Promoção Julho 2025"
+              style={{ width:"100%", background:"#0f1929", border:`1px solid ${C.borderLt}`, borderRadius:8, padding:"9px 12px", fontSize:13, color:C.text, outline:"none", fontFamily:"inherit" }} />
+          </div>
+          <div>
+            <div style={{ fontSize:11, fontWeight:600, color:C.muted, marginBottom:4, textTransform:"uppercase", letterSpacing:.5 }}>Mensagem</div>
+            <div style={{ fontSize:11, color:C.muted, marginBottom:6 }}>Use {"{{nome}}"} para personalizar com o nome do destinatário.</div>
+            <textarea value={camp.msg} onChange={e => set("msg",e.target.value)} placeholder="Ex: Olá {{nome}}! Temos uma oferta especial para você. Quer saber mais?"
+              rows={4} style={{ width:"100%", background:"#0f1929", border:`1px solid ${C.borderLt}`, borderRadius:8, padding:"10px 12px", fontSize:13, color:C.text, outline:"none", fontFamily:"inherit", resize:"vertical" }} />
+            <div style={{ marginTop:4, fontSize:11, color:C.muted }}>{camp.msg.length} caracteres</div>
+          </div>
+          <div style={{ display:"flex", justifyContent:"flex-end" }}>
+            <Lbtn onClick={() => setStep(2)} disabled={!canStep1} style={{ background:canStep1?C.yellow:C.border, color:canStep1?"#111":"white", padding:"9px 20px" }}>Próximo →</Lbtn>
+          </div>
+        </div>
+      )}
+
+      {step===2 && (
+        <div>
+          <div style={{ fontSize:13, color:C.muted, marginBottom:12 }}>Selecione quem vai receber esta campanha:</div>
+          {[{v:"todos",l:"Todos os leads ativos",n:"1.247 contatos"},{v:"qualificados",l:"Leads qualificados",n:"342 contatos"},{v:"tag-vip",l:"Tag: cliente-vip",n:"89 contatos"},{v:"proposta",l:"Etapa: Proposta enviada",n:"56 contatos"}].map(op => (
+            <label key={op.v} onClick={() => set("audiencia",op.v)}
+              style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px", borderRadius:8, cursor:"pointer", marginBottom:6, background:camp.audiencia===op.v?`${C.yellow}22`:C.card, border:`1px solid ${camp.audiencia===op.v?C.yellow:C.border}` }}>
+              <div style={{ width:18, height:18, borderRadius:"50%", background:camp.audiencia===op.v?C.yellow:C.border, flexShrink:0 }}/>
+              <div>
+                <div style={{ fontSize:13, color:C.text, fontWeight:600 }}>{op.l}</div>
+                <div style={{ fontSize:11, color:C.muted }}>{op.n}</div>
+              </div>
+            </label>
+          ))}
+          <div style={{ display:"flex", justifyContent:"space-between", marginTop:12 }}>
+            <Lbtn onClick={() => setStep(1)} style={{ background:C.card, color:C.muted, border:`1px solid ${C.border}` }}>← Voltar</Lbtn>
+            <Lbtn onClick={() => setStep(3)} disabled={!canStep2} style={{ background:C.yellow, color:"#111", padding:"9px 20px" }}>Próximo →</Lbtn>
+          </div>
+        </div>
+      )}
+
+      {step===3 && (
+        <div>
+          <div style={{ fontSize:13, color:C.muted, marginBottom:12 }}>Configure quando a campanha será enviada:</div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:16 }}>
+            <div>
+              <div style={{ fontSize:11, fontWeight:600, color:C.muted, marginBottom:4, textTransform:"uppercase", letterSpacing:.5 }}>Data</div>
+              <input type="date" value={camp.data} onChange={e => set("data",e.target.value)}
+                style={{ width:"100%", background:"#0f1929", border:`1px solid ${C.borderLt}`, borderRadius:8, padding:"9px 12px", fontSize:13, color:C.text, outline:"none", fontFamily:"inherit" }} />
+            </div>
+            <div>
+              <div style={{ fontSize:11, fontWeight:600, color:C.muted, marginBottom:4, textTransform:"uppercase", letterSpacing:.5 }}>Horário</div>
+              <select value={camp.hora} onChange={e => set("hora",e.target.value)}
+                style={{ width:"100%", background:"#0f1929", border:`1px solid ${C.borderLt}`, borderRadius:8, padding:"9px 12px", fontSize:13, color:C.text, outline:"none", fontFamily:"inherit" }}>
+                {["08:00","09:00","10:00","11:00","14:00","15:00","16:00"].map(h => <option key={h}>{h}</option>)}
+              </select>
+            </div>
+          </div>
+          <div style={{ display:"flex", justifyContent:"space-between" }}>
+            <Lbtn onClick={() => setStep(2)} style={{ background:C.card, color:C.muted, border:`1px solid ${C.border}` }}>← Voltar</Lbtn>
+            <Lbtn onClick={() => setStep(4)} style={{ background:C.yellow, color:"#111", padding:"9px 20px" }}>Ver Preview →</Lbtn>
+          </div>
+        </div>
+      )}
+
+      {step===4 && (
+        <div>
+          <div style={{ fontSize:13, color:C.muted, marginBottom:14 }}>Confira como sua mensagem vai aparecer no WhatsApp do destinatário:</div>
+          <div style={{ background:"#0a1929", borderRadius:12, padding:16, maxWidth:320, marginBottom:16 }}>
+            <div style={{ fontSize:10, color:"#64748b", textAlign:"center", marginBottom:8 }}>Preview — {camp.hora} · {camp.data || "hoje"}</div>
+            <div style={{ background:"#25d36622", border:"1px solid #25d36644", borderRadius:"0 10px 10px 10px", padding:"10px 14px", display:"inline-block", maxWidth:"90%" }}>
+              <div style={{ fontSize:12, color:"#f1f5f9", whiteSpace:"pre-wrap", lineHeight:1.6 }}>{previewMsg}</div>
+              <div style={{ fontSize:10, color:"#64748b", textAlign:"right", marginTop:4 }}>{camp.hora} ✓✓</div>
+            </div>
+          </div>
+          <div style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:10, padding:"10px 14px", marginBottom:14, fontSize:12 }}>
+            <div style={{ color:C.muted }}>📣 <strong style={{ color:C.text }}>{camp.nome}</strong></div>
+            <div style={{ color:C.muted, marginTop:4 }}>👥 Audiência: <strong style={{ color:C.text }}>{camp.audiencia}</strong></div>
+            <div style={{ color:C.muted, marginTop:4 }}>⏱️ Envio: <strong style={{ color:C.text }}>{camp.data || "hoje"} às {camp.hora}</strong></div>
+          </div>
+          <Lbtn onClick={() => setPreviewed(true)} disabled={previewed}
+            style={{ background:previewed?C.green:C.yellow, color:previewed?"#fff":"#111", padding:"10px 24px", fontSize:13, opacity:previewed?.8:1 }}>
+            {previewed ? "✓ Campanha aprovada! Lab concluído." : "✅ Aprovar e agendar campanha"}
+          </Lbtn>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Dispatcher de laboratórios ────────────────────────────────────────────────
+function LabView({ lesson, onComplete }) {
+  const labs = { setup: LabSetup, leads: LabLeads, inbox: LabInbox, chatbot: LabChatbot, campanha: LabCampanha };
+  const Lab = labs[lesson.lab?.type];
+  if (!Lab) return <div style={{ color:C.muted, fontSize:13 }}>Lab não encontrado.</div>;
+  return <Lab onComplete={onComplete} config={lesson.lab} />;
+}
+
 // ─── Conteúdo da aula ─────────────────────────────────────────────────────────
 function LessonView({ lesson, mod, isCompleted, onComplete, onPrev, onNext, hasPrev, hasNext }) {
-  const typeLabel = { leitura: "📖 Leitura", prática: "⚡ Prática" };
+  const typeLabel = { leitura: "📖 Leitura", prática: "⚡ Prática", lab: "🧪 Laboratório" };
 
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:0, height:"100%" }}>
@@ -802,7 +1343,7 @@ function LessonView({ lesson, mod, isCompleted, onComplete, onPrev, onNext, hasP
         <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:16 }}>
           <span style={{ fontSize:12, fontWeight:600, color:mod.color, background:`${mod.color}18`, border:`1px solid ${mod.color}33`, borderRadius:6, padding:"3px 10px" }}>{mod.icon} {mod.title}</span>
           <span style={{ fontSize:12, color:C.muted }}>{typeLabel[lesson.type] ?? lesson.type}</span>
-          <span style={{ fontSize:12, color:C.muted }}>· {lesson.duration}</span>
+          {lesson.duration && <span style={{ fontSize:12, color:C.muted }}>· {lesson.duration}</span>}
           {lesson.badge && <span style={{ fontSize:11, fontWeight:700, color:lesson.badgeColor ?? C.teal, background:`${(lesson.badgeColor ?? C.teal)}18`, border:`1px solid ${(lesson.badgeColor ?? C.teal)}33`, borderRadius:6, padding:"3px 10px" }}>✦ {lesson.badge}</span>}
         </div>
         <h1 style={{ fontSize:22, fontWeight:800, color:C.text, margin:"0 0 4px", lineHeight:1.3 }}>{lesson.title}</h1>
@@ -810,22 +1351,28 @@ function LessonView({ lesson, mod, isCompleted, onComplete, onPrev, onNext, hasP
 
       {/* Conteúdo com scroll */}
       <div style={{ flex:1, overflowY:"auto", padding:"24px 32px" }}>
-        {lesson.sections.map((sec, i) => <Section key={i} sec={sec} />)}
+        {lesson.type === "lab" ? (
+          <LabView lesson={lesson} onComplete={onComplete} />
+        ) : (
+          <>
+            {lesson.sections.map((sec, i) => <Section key={i} sec={sec} />)}
 
-        {/* Dica */}
-        {lesson.tip && (
-          <div style={{ background:"#0c2a1c", border:`1px solid ${C.greenBd}`, borderRadius:12, padding:"14px 18px", marginTop:8 }}>
-            <span style={{ fontSize:13, color:C.green, fontWeight:700 }}>💡 Dica: </span>
-            <span style={{ fontSize:13, color:"#86efac" }}>{lesson.tip}</span>
-          </div>
-        )}
+            {/* Dica */}
+            {lesson.tip && (
+              <div style={{ background:"#0c2a1c", border:`1px solid ${C.greenBd}`, borderRadius:12, padding:"14px 18px", marginTop:8 }}>
+                <span style={{ fontSize:13, color:C.green, fontWeight:700 }}>💡 Dica: </span>
+                <span style={{ fontSize:13, color:"#86efac" }}>{lesson.tip}</span>
+              </div>
+            )}
 
-        {/* Concluído */}
-        {isCompleted && (
-          <div style={{ background:"#0c2a1c", border:`1px solid ${C.greenBd}`, borderRadius:12, padding:"14px 18px", marginTop:16, display:"flex", alignItems:"center", gap:10 }}>
-            <span style={{ fontSize:20 }}>✅</span>
-            <span style={{ fontSize:14, color:C.green, fontWeight:600 }}>Aula concluída! Continue para a próxima.</span>
-          </div>
+            {/* Concluído */}
+            {isCompleted && (
+              <div style={{ background:"#0c2a1c", border:`1px solid ${C.greenBd}`, borderRadius:12, padding:"14px 18px", marginTop:16, display:"flex", alignItems:"center", gap:10 }}>
+                <span style={{ fontSize:20 }}>✅</span>
+                <span style={{ fontSize:14, color:C.green, fontWeight:600 }}>Aula concluída! Continue para a próxima.</span>
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -836,7 +1383,7 @@ function LessonView({ lesson, mod, isCompleted, onComplete, onPrev, onNext, hasP
           ← Anterior
         </button>
 
-        {!isCompleted ? (
+        {lesson.type !== "lab" && (!isCompleted ? (
           <button onClick={onComplete}
             style={{ background:`linear-gradient(135deg,${C.green},${C.teal})`, border:"none", borderRadius:10, padding:"10px 28px", fontSize:13, fontWeight:700, color:"#fff", cursor:"pointer", flex:1, maxWidth:240 }}>
             ✓ Marcar como concluída
@@ -846,7 +1393,7 @@ function LessonView({ lesson, mod, isCompleted, onComplete, onPrev, onNext, hasP
             style={{ background:`linear-gradient(135deg,${C.green},${C.teal})`, border:"none", borderRadius:10, padding:"10px 28px", fontSize:13, fontWeight:700, color:"#fff", cursor:hasNext?"pointer":"default", opacity:hasNext?1:.6, flex:1, maxWidth:240 }}>
             Próxima aula →
           </button>
-        )}
+        ))}
 
         <button onClick={onNext} disabled={!hasNext}
           style={{ background:C.card, border:`1px solid ${C.borderLt}`, borderRadius:10, padding:"10px 20px", fontSize:13, fontWeight:600, color:hasNext?C.text:C.muted, cursor:hasNext?"pointer":"default", opacity:hasNext?1:.4 }}>
