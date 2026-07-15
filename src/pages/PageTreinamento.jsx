@@ -1936,7 +1936,7 @@ function ModuleCard({ mod, progress, onStart }) {
 }
 
 // ─── Home Dashboard ───────────────────────────────────────────────────────────
-function HomeScreen({ modules, progress, nomeUsuario, overall, onStart }) {
+function HomeScreen({ modules, progress, nomeUsuario, overall, onStart, onCertificate }) {
   const allLessons = getAllLessons(modules);
   const nextUp     = allLessons.find(l => !progress[`${l.moduleId}:${l.id}`]);
   const labCount   = modules.reduce((a, m) => a + m.lessons.filter(l => l.type === "lab").length, 0);
@@ -1977,6 +1977,12 @@ function HomeScreen({ modules, progress, nomeUsuario, overall, onStart }) {
               <button onClick={() => onStart(modules[0].id, modules[0].lessons[0].id)}
                 style={{ background:`linear-gradient(135deg,${C.green},${C.teal})`, border:"none", borderRadius:10, padding:"11px 24px", fontSize:13, fontWeight:700, color:"#fff", cursor:"pointer", display:"inline-flex", alignItems:"center", gap:8, boxShadow:`0 4px 20px ${C.green}35` }}>
                 🚀 Começar treinamento
+              </button>
+            )}
+            {overall.pct === 100 && onCertificate && (
+              <button onClick={onCertificate}
+                style={{ background:`linear-gradient(135deg,${C.green},${C.teal})`, border:"none", borderRadius:10, padding:"11px 24px", fontSize:13, fontWeight:700, color:"#fff", cursor:"pointer", display:"inline-flex", alignItems:"center", gap:8, boxShadow:`0 4px 20px ${C.green}35`, transition:"all .2s" }}>
+                🏆 Ver Certificado
               </button>
             )}
           </div>
@@ -2103,8 +2109,8 @@ function TrainingApp({ authUser, onLogout }) {
       setActiveMod(all[idx+1].moduleId);
       setActiveLesson(all[idx+1].id);
     } else {
-      // Última aula concluída — vai para home onde a tela de conclusão é exibida
-      setView("home");
+      // Última aula concluída — vai para tela de conclusão
+      setView("completion");
     }
   }, [activeMod, activeLesson, progress, saveProgress, modules]);
 
@@ -2122,6 +2128,17 @@ function TrainingApp({ authUser, onLogout }) {
   }, []);
 
   const goHome = useCallback(() => setView("home"), []);
+  const goCompletion = useCallback(() => setView("completion"), []);
+
+  const resetCourse = useCallback(() => {
+    localStorage.removeItem(`c4os_treinamento_${authUser.id}`);
+    localStorage.removeItem(`c4os_treinamento_concluido_${authUser.id}`);
+    setProgress({});
+    setDataConc("");
+    setActiveMod(modules[0]?.id ?? null);
+    setActiveLesson(modules[0]?.lessons[0]?.id ?? null);
+    setView("home");
+  }, [authUser.id, modules]);
 
   const resetCourse = useCallback(() => {
     localStorage.removeItem(`c4os_treinamento_${authUser.id}`);
@@ -2168,7 +2185,7 @@ function TrainingApp({ authUser, onLogout }) {
   const fontFamily = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif";
 
   // ── Completion screen (full page, no sidebar) ──
-  if (isAllDone && view !== "lesson") {
+  if (view === "completion") {
     return (
       <div style={{ height:"100vh", background:C.bg, fontFamily, overflow:"hidden", display:"flex", flexDirection:"column" }}>
         <style>{GLOBAL_STYLE}</style>
@@ -2212,7 +2229,7 @@ function TrainingApp({ authUser, onLogout }) {
           <HomeScreen
             modules={modules} progress={progress}
             nomeUsuario={nomeUsuario} overall={overall}
-            onStart={startLesson}
+            onStart={startLesson} onCertificate={goCompletion}
           />
         </div>
       </div>
@@ -2235,6 +2252,15 @@ function TrainingApp({ authUser, onLogout }) {
         <div style={{ height:3, background:C.border, flexShrink:0 }}>
           <div style={{ height:"100%", width:`${overall.pct}%`, background:`linear-gradient(90deg,${C.green},${C.teal})`, transition:"width .5s ease" }}/>
         </div>
+        {isAllDone && (
+          <div style={{ padding:"9px 28px", background:`${C.green}15`, borderBottom:`1px solid ${C.green}40`, display:"flex", alignItems:"center", justifyContent:"space-between", gap:12, flexShrink:0 }}>
+            <span style={{ fontSize:13, color:C.green, fontWeight:700 }}>🏆 Treinamento 100% concluído! Você pode revisitar qualquer aula.</span>
+            <button onClick={goCompletion}
+              style={{ background:`linear-gradient(135deg,${C.green},${C.teal})`, border:"none", borderRadius:8, padding:"6px 18px", fontSize:12, fontWeight:700, color:"#fff", cursor:"pointer", whiteSpace:"nowrap", boxShadow:`0 2px 12px ${C.green}40` }}>
+              Ver Certificado →
+            </button>
+          </div>
+        )}
         <div style={{ flex:1, overflow:"hidden" }}>
           {curLesson && curMod ? (
             <LessonView
