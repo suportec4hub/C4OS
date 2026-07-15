@@ -812,8 +812,8 @@ export default function PageEmpresa({ empresa, user }) {
           {/* ── WhatsApp via Evolution GO ── */}
           <EvolutionCard user={user} empData={empData} onRefresh={refetchEmpresas} />
 
-          {/* ── Números secundários (multi-instância) ── */}
-          <MultiInstanciaCard user={user} />
+          {/* ── Números secundários (multi-instância) — só para empresas habilitadas ── */}
+          {empData.multi_instancia_ativo && <MultiInstanciaCard user={user} />}
 
           {/* ── META ADS + PIXEL + CONVERSIONS API ── */}
           <div style={{background:L.white,borderRadius:12,border:`1.5px solid ${empData.meta_pixel_id?L.blueA:L.line}`,padding:20,boxShadow:"0 1px 4px rgba(0,0,0,0.04)"}}>
