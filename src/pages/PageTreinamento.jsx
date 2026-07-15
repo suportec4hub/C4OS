@@ -2140,16 +2140,6 @@ function TrainingApp({ authUser, onLogout }) {
     setView("home");
   }, [authUser.id, modules]);
 
-  const resetCourse = useCallback(() => {
-    localStorage.removeItem(`c4os_treinamento_${authUser.id}`);
-    localStorage.removeItem(`c4os_treinamento_concluido_${authUser.id}`);
-    setProgress({});
-    setDataConc("");
-    setActiveMod(modules[0]?.id ?? null);
-    setActiveLesson(modules[0]?.lessons[0]?.id ?? null);
-    setView("home");
-  }, [authUser.id, modules]);
-
   if (loading || !modules.length) {
     return (
       <div style={{ minHeight:"100vh", background:C.bg, display:"flex", alignItems:"center", justifyContent:"center" }}>
