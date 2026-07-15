@@ -1518,10 +1518,15 @@ function LessonView({ lesson, mod, isCompleted, onComplete, onPrev, onNext, hasP
             style={{ background:`linear-gradient(135deg,${C.green},${C.teal})`, border:"none", borderRadius:10, padding:"10px 28px", fontSize:13, fontWeight:700, color:"#fff", cursor:"pointer", flex:1, maxWidth:240, boxShadow:`0 4px 16px ${C.green}35`, transition:"all .2s" }}>
             ✓ Marcar como concluída
           </button>
-        ) : (
-          <button onClick={onNext} disabled={!hasNext}
-            style={{ background:hasNext?`linear-gradient(135deg,${C.green},${C.teal})`:"transparent", border:`1px solid ${hasNext?C.green:C.border}`, borderRadius:10, padding:"10px 28px", fontSize:13, fontWeight:700, color:hasNext?C.text:C.border, cursor:hasNext?"pointer":"default", flex:1, maxWidth:240, transition:"all .2s" }}>
+        ) : hasNext ? (
+          <button onClick={onNext}
+            style={{ background:`linear-gradient(135deg,${C.green},${C.teal})`, border:"none", borderRadius:10, padding:"10px 28px", fontSize:13, fontWeight:700, color:"#fff", cursor:"pointer", flex:1, maxWidth:240, transition:"all .2s" }}>
             Próxima aula →
+          </button>
+        ) : (
+          <button onClick={onBack}
+            style={{ background:`linear-gradient(135deg,${C.green},${C.teal})`, border:"none", borderRadius:10, padding:"10px 28px", fontSize:13, fontWeight:700, color:"#fff", cursor:"pointer", flex:1, maxWidth:240, boxShadow:`0 4px 16px ${C.green}35`, transition:"all .2s" }}>
+            🏆 Ver Certificado
           </button>
         ))}
 
@@ -2088,6 +2093,9 @@ function TrainingApp({ authUser, onLogout }) {
     if (idx < all.length - 1) {
       setActiveMod(all[idx+1].moduleId);
       setActiveLesson(all[idx+1].id);
+    } else {
+      // Última aula concluída — vai para home onde a tela de conclusão é exibida
+      setView("home");
     }
   }, [activeMod, activeLesson, progress, saveProgress, modules]);
 
