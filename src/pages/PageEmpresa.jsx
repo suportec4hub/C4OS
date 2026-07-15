@@ -812,6 +812,30 @@ export default function PageEmpresa({ empresa, user }) {
           {/* ── WhatsApp via Evolution GO ── */}
           <EvolutionCard user={user} empData={empData} onRefresh={refetchEmpresas} />
 
+          {/* ── Multi-Instância: toggle visível só para a própria C4HUB ── */}
+          {empData.is_c4hub && (
+            <div style={{background:L.white,borderRadius:12,border:`1.5px solid ${empData.multi_instancia_ativo?L.teal:L.line}`,padding:20,boxShadow:"0 1px 4px rgba(0,0,0,0.04)"}}>
+              <Row between>
+                <Row gap={12}>
+                  <div style={{width:42,height:42,borderRadius:11,background:empData.multi_instancia_ativo?"#2dd4bf22":"#f1f5f9",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>📲</div>
+                  <div>
+                    <div style={{fontSize:14,fontWeight:700,color:L.t1}}>Multi-Instância WhatsApp</div>
+                    <div style={{fontSize:11,color:L.t3,marginTop:2}}>Conectar múltiplos números no mesmo inbox</div>
+                  </div>
+                </Row>
+                <PBtn
+                  color={empData.multi_instancia_ativo ? L.teal : L.t3}
+                  onClick={async () => {
+                    await update(empData.id, { multi_instancia_ativo: !empData.multi_instancia_ativo });
+                    refetchEmpresas();
+                  }}
+                >
+                  {empData.multi_instancia_ativo ? "✓ Ativo — desativar" : "Ativar"}
+                </PBtn>
+              </Row>
+            </div>
+          )}
+
           {/* ── Números secundários (multi-instância) — só para empresas habilitadas ── */}
           {empData.multi_instancia_ativo && <MultiInstanciaCard user={user} />}
 
