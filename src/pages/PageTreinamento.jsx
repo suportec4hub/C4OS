@@ -1739,7 +1739,7 @@ function imprimirCertificado({ nomeUsuario, nomeEmpresa, dataConc, modulos }) {
 }
 
 // ─── Conclusão ────────────────────────────────────────────────────────────────
-function CompletionScreen({ nomeUsuario, nomeEmpresa, dataConc, modules, onBack }) {
+function CompletionScreen({ nomeUsuario, nomeEmpresa, dataConc, modules, onBack, onReset }) {
   const [emitindo, setEmitindo] = useState(false);
   const [showConfetti, setShowConfetti] = useState(true);
 
@@ -1832,12 +1832,21 @@ function CompletionScreen({ nomeUsuario, nomeEmpresa, dataConc, modules, onBack 
         {emitindo ? "⟳ Abrindo certificado..." : "🏅 Emitir Certificado em PDF"}
       </button>
       <p style={{ fontSize:12, color:C.muted }}>O certificado abre em uma nova aba — salve como PDF ou imprima.</p>
-      {onBack && (
-        <button onClick={onBack}
-          style={{ marginTop:16, background:"transparent", border:`1px solid ${C.border}`, borderRadius:10, padding:"9px 20px", fontSize:12, fontWeight:600, color:C.muted, cursor:"pointer" }}>
-          ← Voltar aos módulos
-        </button>
-      )}
+
+      <div style={{ display:"flex", gap:10, marginTop:16, flexWrap:"wrap", justifyContent:"center" }}>
+        {onBack && (
+          <button onClick={onBack}
+            style={{ background:"transparent", border:`1px solid ${C.border}`, borderRadius:10, padding:"10px 22px", fontSize:13, fontWeight:600, color:C.muted, cursor:"pointer", transition:"all .2s" }}>
+            ← Voltar aos módulos
+          </button>
+        )}
+        {onReset && (
+          <button onClick={onReset}
+            style={{ background:"transparent", border:`1px solid ${C.borderLt}`, borderRadius:10, padding:"10px 22px", fontSize:13, fontWeight:600, color:C.muted, cursor:"pointer", transition:"all .2s" }}>
+            🔄 Refazer o curso
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -2114,6 +2123,16 @@ function TrainingApp({ authUser, onLogout }) {
 
   const goHome = useCallback(() => setView("home"), []);
 
+  const resetCourse = useCallback(() => {
+    localStorage.removeItem(`c4os_treinamento_${authUser.id}`);
+    localStorage.removeItem(`c4os_treinamento_concluido_${authUser.id}`);
+    setProgress({});
+    setDataConc("");
+    setActiveMod(modules[0]?.id ?? null);
+    setActiveLesson(modules[0]?.lessons[0]?.id ?? null);
+    setView("home");
+  }, [authUser.id, modules]);
+
   if (loading || !modules.length) {
     return (
       <div style={{ minHeight:"100vh", background:C.bg, display:"flex", alignItems:"center", justifyContent:"center" }}>
@@ -2156,12 +2175,13 @@ function TrainingApp({ authUser, onLogout }) {
         <div style={{ height:3, background:C.border, flexShrink:0 }}>
           <div style={{ height:"100%", width:"100%", background:`linear-gradient(90deg,${C.green},${C.teal})` }}/>
         </div>
-        <div style={{ flex:1, overflow:"hidden" }}>
+        <div style={{ flex:1, overflowY:"auto" }}>
           <CompletionScreen
             nomeUsuario={nomeUsuario} nomeEmpresa={nomeEmpresa}
             dataConc={dataConc || new Date().toLocaleDateString("pt-BR", { day:"2-digit", month:"long", year:"numeric" })}
             modules={modules}
             onBack={goHome}
+            onReset={resetCourse}
           />
         </div>
       </div>
