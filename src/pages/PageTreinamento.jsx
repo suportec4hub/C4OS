@@ -1429,7 +1429,7 @@ function LabView({ lesson, onComplete }) {
 }
 
 // ─── Conteúdo da aula ─────────────────────────────────────────────────────────
-function LessonView({ lesson, mod, isCompleted, onComplete, onPrev, onNext, hasPrev, hasNext }) {
+function LessonView({ lesson, mod, isCompleted, onComplete, onPrev, onNext, hasPrev, hasNext, onBack }) {
   const typeLabel = { leitura: "📖 Leitura", prática: "⚡ Prática", lab: "🧪 Laboratório" };
   const typeBg    = { leitura: C.blue, prática: C.yellow, lab: C.purple };
   const tc = typeBg[lesson.type] || C.slate;
@@ -1440,6 +1440,11 @@ function LessonView({ lesson, mod, isCompleted, onComplete, onPrev, onNext, hasP
       <div style={{ background:`linear-gradient(135deg,${mod.color}22 0%,${mod.color}08 60%,transparent 100%)`, borderBottom:`1px solid ${mod.color}30`, padding:"28px 36px 24px", flexShrink:0 }}>
         {/* Breadcrumb */}
         <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:14, flexWrap:"wrap" }}>
+          <button onClick={onBack}
+            style={{ background:"transparent", border:`1px solid ${C.borderLt}`, borderRadius:8, padding:"4px 12px", fontSize:12, fontWeight:600, color:C.muted, cursor:"pointer", display:"inline-flex", alignItems:"center", gap:5, transition:"all .15s" }}>
+            ← Módulos
+          </button>
+          <span style={{ color:C.border }}>›</span>
           <span style={{ fontSize:13, fontWeight:700, color:mod.color, background:`${mod.color}18`, border:`1px solid ${mod.color}30`, borderRadius:8, padding:"4px 12px", display:"inline-flex", alignItems:"center", gap:5 }}>
             <span>{mod.icon}</span> {mod.title}
           </span>
@@ -1530,7 +1535,7 @@ function LessonView({ lesson, mod, isCompleted, onComplete, onPrev, onNext, hasP
 }
 
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
-function Sidebar({ modules, progress, activeMod, activeLesson, onSelect, overall, user, onLogout }) {
+function Sidebar({ modules, progress, activeMod, activeLesson, onSelect, overall, user, onLogout, onHome }) {
   const [expanded, setExpanded] = useState(activeMod);
   const toggle = (id) => setExpanded(e => e === id ? null : id);
 
@@ -1541,11 +1546,15 @@ function Sidebar({ modules, progress, activeMod, activeLesson, onSelect, overall
       {/* Header */}
       <div style={{ padding:"20px 20px 16px", borderBottom:`1px solid ${C.border}`, background:`linear-gradient(180deg,${C.card},${C.sidebar})` }}>
         <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:18 }}>
-          <div style={{ width:34, height:34, borderRadius:10, background:"linear-gradient(135deg,#10b981,#06b6d4)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:17, fontWeight:900, color:"#fff", boxShadow:"0 4px 12px #10b98140" }}>C</div>
-          <div>
+          <button onClick={onHome}
+            style={{ width:34, height:34, borderRadius:10, background:"linear-gradient(135deg,#10b981,#06b6d4)", border:"none", display:"flex", alignItems:"center", justifyContent:"center", fontSize:17, fontWeight:900, color:"#fff", boxShadow:"0 4px 12px #10b98140", cursor:"pointer", flexShrink:0, padding:0 }}
+            title="Voltar ao início">C</button>
+          <div style={{ flex:1, minWidth:0 }}>
             <div style={{ fontSize:14, fontWeight:800, color:C.text, lineHeight:1 }}>C4OS Treinamentos</div>
             <div style={{ fontSize:11, color:C.muted, marginTop:2 }}>Portal Oficial</div>
           </div>
+          <button onClick={onHome} title="Início"
+            style={{ background:"transparent", border:`1px solid ${C.borderLt}`, borderRadius:8, padding:"4px 8px", fontSize:11, color:C.muted, cursor:"pointer", flexShrink:0 }}>🏠</button>
         </div>
 
         {/* Progresso geral */}
@@ -1725,7 +1734,7 @@ function imprimirCertificado({ nomeUsuario, nomeEmpresa, dataConc, modulos }) {
 }
 
 // ─── Conclusão ────────────────────────────────────────────────────────────────
-function CompletionScreen({ nomeUsuario, nomeEmpresa, dataConc, modules }) {
+function CompletionScreen({ nomeUsuario, nomeEmpresa, dataConc, modules, onBack }) {
   const [emitindo, setEmitindo] = useState(false);
   const [showConfetti, setShowConfetti] = useState(true);
 
@@ -1818,6 +1827,183 @@ function CompletionScreen({ nomeUsuario, nomeEmpresa, dataConc, modules }) {
         {emitindo ? "⟳ Abrindo certificado..." : "🏅 Emitir Certificado em PDF"}
       </button>
       <p style={{ fontSize:12, color:C.muted }}>O certificado abre em uma nova aba — salve como PDF ou imprima.</p>
+      {onBack && (
+        <button onClick={onBack}
+          style={{ marginTop:16, background:"transparent", border:`1px solid ${C.border}`, borderRadius:10, padding:"9px 20px", fontSize:12, fontWeight:600, color:C.muted, cursor:"pointer" }}>
+          ← Voltar aos módulos
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ─── Progress Ring SVG ────────────────────────────────────────────────────────
+function ProgressRing({ pct, color, size = 56, stroke = 5 }) {
+  const r    = (size - stroke) / 2;
+  const circ = 2 * Math.PI * r;
+  const dash = (pct / 100) * circ;
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ flexShrink:0 }}>
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={`${color}28`} strokeWidth={stroke}/>
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={stroke}
+        strokeDasharray={`${dash} ${circ - dash}`}
+        strokeDashoffset={circ / 4}
+        strokeLinecap="round"
+        style={{ transition:"stroke-dasharray .7s cubic-bezier(.4,0,.2,1)" }}/>
+      <text x={size/2} y={size/2 + (pct===100?4:5)} textAnchor="middle"
+        fontSize={pct===100?13:12} fontWeight="900"
+        fill={pct===100?C.green:color}>{pct===100?"✓":`${pct}%`}</text>
+    </svg>
+  );
+}
+
+// ─── Module Card (home screen) ────────────────────────────────────────────────
+function ModuleCard({ mod, progress, onStart }) {
+  const [hover, setHover] = useState(false);
+  const mp        = calcModuleProgress(mod, progress);
+  const nextLesson = mod.lessons.find(l => !progress[`${mod.id}:${l.id}`]) || mod.lessons[0];
+  const statusColor = mp.pct === 100 ? C.green : mp.done > 0 ? mod.color : C.slate;
+  const statusLabel = mp.pct === 100 ? "✅ Concluído" : mp.done > 0 ? "▶ Em andamento" : "○ Não iniciado";
+  const ctaLabel    = mp.pct === 100 ? "Revisar" : mp.done > 0 ? "Continuar" : "Começar";
+
+  return (
+    <div
+      onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+      onClick={() => onStart(mod.id, nextLesson.id)}
+      style={{
+        background: hover ? C.cardHov : C.card,
+        border: `1px solid ${hover ? `${mod.color}55` : C.border}`,
+        borderTop: `3px solid ${mp.pct === 100 ? C.green : mp.done > 0 ? mod.color : C.borderLt}`,
+        borderRadius: 16,
+        padding: "22px",
+        cursor: "pointer",
+        display: "flex",
+        flexDirection: "column",
+        gap: 16,
+        transition: "all .2s cubic-bezier(.4,0,.2,1)",
+        transform: hover ? "translateY(-4px)" : "none",
+        boxShadow: hover ? `0 16px 40px ${mod.color}25, 0 4px 12px rgba(0,0,0,.25)` : "0 2px 8px rgba(0,0,0,.18)",
+      }}>
+      {/* Icon + ring */}
+      <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between" }}>
+        <div style={{ width:52, height:52, borderRadius:14, background:`${mod.color}20`, border:`2px solid ${mod.color}30`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:26 }}>{mod.icon}</div>
+        <ProgressRing pct={mp.pct} color={mod.color} size={52} stroke={5}/>
+      </div>
+
+      {/* Title + desc */}
+      <div>
+        <div style={{ fontSize:15, fontWeight:800, color:C.text, marginBottom:5, letterSpacing:-.3 }}>{mod.title}</div>
+        <div style={{ fontSize:12, color:C.muted, lineHeight:1.6 }}>{mod.desc}</div>
+      </div>
+
+      {/* Status + lesson count */}
+      <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+        <span style={{ fontSize:11, fontWeight:700, color:statusColor }}>{statusLabel}</span>
+        <span style={{ color:C.border, fontSize:12 }}>·</span>
+        <span style={{ fontSize:11, color:C.muted }}>{mod.lessons.length} aulas</span>
+      </div>
+
+      {/* Progress bar */}
+      <div style={{ height:4, background:C.border, borderRadius:2, overflow:"hidden" }}>
+        <div style={{ height:"100%", width:`${mp.pct}%`, background:`linear-gradient(90deg,${mod.color},${mod.color}bb)`, borderRadius:2, transition:"width .7s ease" }}/>
+      </div>
+
+      {/* CTA row */}
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+        <span style={{ fontSize:12, color:C.muted, flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", paddingRight:8 }}>
+          {mp.pct === 100 ? mod.lessons[0]?.title : (nextLesson?.title || "")}
+        </span>
+        <div style={{ width:30, height:30, borderRadius:"50%", background:`${mod.color}20`, border:`1px solid ${mod.color}40`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, color:mod.color, flexShrink:0, transition:"transform .2s", transform: hover ? "translateX(3px)" : "none" }}>
+          {mp.pct === 100 ? "↩" : "→"}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Home Dashboard ───────────────────────────────────────────────────────────
+function HomeScreen({ modules, progress, nomeUsuario, overall, onStart }) {
+  const allLessons = getAllLessons(modules);
+  const nextUp     = allLessons.find(l => !progress[`${l.moduleId}:${l.id}`]);
+  const labCount   = modules.reduce((a, m) => a + m.lessons.filter(l => l.type === "lab").length, 0);
+  const firstName  = nomeUsuario ? nomeUsuario.split(" ")[0] : "";
+
+  const greeting = overall.pct === 100
+    ? `Parabéns${firstName ? `, ${firstName}` : ""}! 🏆`
+    : overall.pct > 0
+      ? `Bem-vindo de volta${firstName ? `, ${firstName}` : ""}! 👋`
+      : `Pronto para aprender${firstName ? `, ${firstName}` : ""}? 🚀`;
+
+  const subtitle = overall.pct === 100
+    ? "Você concluiu 100% do treinamento. Emita seu certificado!"
+    : overall.pct > 0
+      ? `Você está a ${100 - overall.pct}% de concluir. Continue de onde parou!`
+      : "Comece pelo primeiro módulo e avance no seu ritmo — cada aula leva entre 5 e 15 minutos.";
+
+  return (
+    <div style={{ height:"100%", overflowY:"auto", background:C.bg }}>
+      {/* Hero section */}
+      <div style={{ position:"relative", padding:"44px 52px 36px", borderBottom:`1px solid ${C.border}`, overflow:"hidden" }}>
+        <div style={{ position:"absolute", width:500, height:500, borderRadius:"50%", background:"radial-gradient(circle,#10b98114 0%,transparent 65%)", top:-200, right:60, pointerEvents:"none" }}/>
+        <div style={{ position:"absolute", width:350, height:350, borderRadius:"50%", background:"radial-gradient(circle,#06b6d410 0%,transparent 65%)", bottom:-150, left:300, pointerEvents:"none" }}/>
+
+        <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", gap:32, flexWrap:"wrap" }}>
+          <div style={{ flex:1, minWidth:280 }}>
+            <div style={{ fontSize:11, fontWeight:700, color:C.teal, textTransform:"uppercase", letterSpacing:1.5, marginBottom:10 }}>C4OS · Portal de Treinamento</div>
+            <h1 style={{ fontSize:30, fontWeight:900, color:C.text, margin:"0 0 10px", letterSpacing:-1, lineHeight:1.2 }}>{greeting}</h1>
+            <p style={{ fontSize:14, color:C.muted, margin:"0 0 24px", lineHeight:1.75, maxWidth:520 }}>{subtitle}</p>
+
+            {nextUp && overall.pct > 0 && overall.pct < 100 && (
+              <button onClick={() => onStart(nextUp.moduleId, nextUp.id)}
+                style={{ background:`linear-gradient(135deg,${C.green},${C.teal})`, border:"none", borderRadius:10, padding:"11px 24px", fontSize:13, fontWeight:700, color:"#fff", cursor:"pointer", display:"inline-flex", alignItems:"center", gap:8, boxShadow:`0 4px 20px ${C.green}35`, transition:"all .2s" }}>
+                ▶ Continuar: {nextUp.title}
+              </button>
+            )}
+            {overall.pct === 0 && modules[0] && (
+              <button onClick={() => onStart(modules[0].id, modules[0].lessons[0].id)}
+                style={{ background:`linear-gradient(135deg,${C.green},${C.teal})`, border:"none", borderRadius:10, padding:"11px 24px", fontSize:13, fontWeight:700, color:"#fff", cursor:"pointer", display:"inline-flex", alignItems:"center", gap:8, boxShadow:`0 4px 20px ${C.green}35` }}>
+                🚀 Começar treinamento
+              </button>
+            )}
+          </div>
+
+          {/* Big progress ring */}
+          <div style={{ textAlign:"center", flexShrink:0 }}>
+            <ProgressRing pct={overall.pct} color={overall.pct === 100 ? C.green : C.teal} size={110} stroke={9}/>
+            <div style={{ fontSize:11, color:C.muted, marginTop:8 }}>{overall.done} de {overall.total} aulas</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Stats bar */}
+      <div style={{ padding:"18px 52px", borderBottom:`1px solid ${C.border}`, display:"flex", gap:32, flexWrap:"wrap" }}>
+        {[
+          { icon:"📚", n:overall.total, label:"Total de aulas" },
+          { icon:"✅", n:overall.done, label:"Concluídas" },
+          { icon:"🧪", n:labCount, label:"Laboratórios" },
+          { icon:"🏅", n:overall.pct === 100 ? "Sim!" : "Ao concluir", label:"Certificado" },
+        ].map((s, i) => (
+          <div key={i} style={{ display:"flex", alignItems:"center", gap:10 }}>
+            <div style={{ width:36, height:36, borderRadius:10, background:C.card, border:`1px solid ${C.border}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:16, flexShrink:0 }}>{s.icon}</div>
+            <div>
+              <div style={{ fontSize:16, fontWeight:900, color:C.text, lineHeight:1 }}>{s.n}</div>
+              <div style={{ fontSize:11, color:C.muted, marginTop:2 }}>{s.label}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Module cards grid */}
+      <div style={{ padding:"32px 52px 56px" }}>
+        <div style={{ fontSize:12, fontWeight:700, color:C.muted, textTransform:"uppercase", letterSpacing:1, marginBottom:20 }}>Módulos do Treinamento</div>
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(270px,1fr))", gap:16 }}>
+          {modules.map((mod, i) => (
+            <div key={mod.id} style={{ animation:`fadeSlide .4s ease ${i * 55}ms both` }}>
+              <ModuleCard mod={mod} progress={progress} onStart={onStart}/>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -1829,6 +2015,7 @@ function TrainingApp({ authUser, onLogout }) {
   const [activeMod,    setActiveMod]    = useState(null);
   const [activeLesson, setActiveLesson] = useState(null);
   const [loading,      setLoading]      = useState(true);
+  const [view,         setView]         = useState("home"); // "home" | "lesson"
   const [nomeUsuario,  setNomeUsuario]  = useState("");
   const [nomeEmpresa,  setNomeEmpresa]  = useState("");
   const [dataConc,     setDataConc]     = useState("");
@@ -1911,6 +2098,14 @@ function TrainingApp({ authUser, onLogout }) {
     if (next) { setActiveMod(next.moduleId); setActiveLesson(next.id); }
   }, [activeMod, activeLesson, modules]);
 
+  const startLesson = useCallback((modId, lessonId) => {
+    setActiveMod(modId);
+    setActiveLesson(lessonId);
+    setView("lesson");
+  }, []);
+
+  const goHome = useCallback(() => setView("home"), []);
+
   if (loading || !modules.length) {
     return (
       <div style={{ minHeight:"100vh", background:C.bg, display:"flex", alignItems:"center", justifyContent:"center" }}>
@@ -1919,59 +2114,108 @@ function TrainingApp({ authUser, onLogout }) {
     );
   }
 
-  const overall = calcOverallProgress(modules, progress);
+  const overall    = calcOverallProgress(modules, progress);
   const allLessons = getAllLessons(modules);
-  const curIdx = allLessons.findIndex(l => l.moduleId === activeMod && l.id === activeLesson);
+  const curIdx     = allLessons.findIndex(l => l.moduleId === activeMod && l.id === activeLesson);
   const curLesson  = allLessons[curIdx];
   const curMod     = modules.find(m => m.id === activeMod);
   const isCompleted = !!progress[`${activeMod}:${activeLesson}`];
   const isAllDone  = overall.pct === 100;
 
-  return (
-    <div style={{ display:"flex", height:"100vh", background:C.bg, fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif", overflow:"hidden" }}>
-      <style>{`
-  @keyframes spin{to{transform:rotate(360deg)}}
-  @keyframes fadeSlide{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
-  @keyframes floatUp{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
-  *{box-sizing:border-box}
-  ::-webkit-scrollbar{width:5px}
-  ::-webkit-scrollbar-track{background:transparent}
-  ::-webkit-scrollbar-thumb{background:${C.borderLt};border-radius:3px}
-  ::-webkit-scrollbar-thumb:hover{background:${C.slate}}
-  .lesson-content{animation:fadeSlide .35s ease}
-`}</style>
+  const GLOBAL_STYLE = `
+    @keyframes spin{to{transform:rotate(360deg)}}
+    @keyframes fadeSlide{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+    @keyframes floatUp{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+    @keyframes popIn{0%{transform:scale(0) rotate(-10deg);opacity:0}60%{transform:scale(1.12) rotate(2deg)}100%{transform:scale(1) rotate(0);opacity:1}}
+    @keyframes confetti{0%{transform:translateY(120vh) rotate(0deg);opacity:1}100%{transform:translateY(-10vh) rotate(720deg);opacity:0}}
+    @keyframes glow{0%,100%{box-shadow:0 0 30px #10b98130}50%{box-shadow:0 0 60px #10b98155}}
+    *{box-sizing:border-box}
+    ::-webkit-scrollbar{width:5px}
+    ::-webkit-scrollbar-track{background:transparent}
+    ::-webkit-scrollbar-thumb{background:${C.borderLt};border-radius:3px}
+    ::-webkit-scrollbar-thumb:hover{background:${C.slate}}
+    .lesson-content{animation:fadeSlide .35s ease}
+    .home-content{animation:fadeSlide .3s ease}
+  `;
 
-      {/* Sidebar */}
+  const fontFamily = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif";
+
+  // ── Completion screen (full page, no sidebar) ──
+  if (isAllDone && view !== "lesson") {
+    return (
+      <div style={{ height:"100vh", background:C.bg, fontFamily, overflow:"hidden", display:"flex", flexDirection:"column" }}>
+        <style>{GLOBAL_STYLE}</style>
+        <div style={{ height:3, background:C.border, flexShrink:0 }}>
+          <div style={{ height:"100%", width:"100%", background:`linear-gradient(90deg,${C.green},${C.teal})` }}/>
+        </div>
+        <div style={{ flex:1, overflow:"hidden" }}>
+          <CompletionScreen
+            nomeUsuario={nomeUsuario} nomeEmpresa={nomeEmpresa}
+            dataConc={dataConc || new Date().toLocaleDateString("pt-BR", { day:"2-digit", month:"long", year:"numeric" })}
+            modules={modules}
+            onBack={goHome}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // ── Home view (full width dashboard) ──
+  if (view === "home") {
+    return (
+      <div style={{ height:"100vh", background:C.bg, fontFamily, overflow:"hidden", display:"flex", flexDirection:"column" }}>
+        <style>{GLOBAL_STYLE}</style>
+        {/* Top bar */}
+        <div style={{ height:3, background:C.border, flexShrink:0 }}>
+          <div style={{ height:"100%", width:`${overall.pct}%`, background:`linear-gradient(90deg,${C.green},${C.teal})`, transition:"width .6s ease" }}/>
+        </div>
+        {/* Nav header */}
+        <div style={{ padding:"0 52px", height:52, borderBottom:`1px solid ${C.border}`, display:"flex", alignItems:"center", justifyContent:"space-between", flexShrink:0, background:`${C.sidebar}cc`, backdropFilter:"blur(10px)" }}>
+          <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+            <div style={{ width:28, height:28, borderRadius:8, background:"linear-gradient(135deg,#10b981,#06b6d4)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, fontWeight:900, color:"#fff" }}>C</div>
+            <span style={{ fontSize:14, fontWeight:800, color:C.text }}>C4OS Treinamentos</span>
+          </div>
+          <button onClick={onLogout}
+            style={{ background:"transparent", border:`1px solid ${C.border}`, borderRadius:8, padding:"5px 14px", fontSize:12, fontWeight:600, color:C.muted, cursor:"pointer" }}>
+            Sair
+          </button>
+        </div>
+        <div className="home-content" style={{ flex:1, overflow:"hidden" }}>
+          <HomeScreen
+            modules={modules} progress={progress}
+            nomeUsuario={nomeUsuario} overall={overall}
+            onStart={startLesson}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // ── Lesson view (sidebar + content) ──
+  return (
+    <div style={{ display:"flex", height:"100vh", background:C.bg, fontFamily, overflow:"hidden" }}>
+      <style>{GLOBAL_STYLE}</style>
+
       <Sidebar
         modules={modules} progress={progress}
         activeMod={activeMod} activeLesson={activeLesson}
-        onSelect={(m, l) => { setActiveMod(m); setActiveLesson(l); }}
-        overall={overall}
-        user={authUser} onLogout={onLogout}
+        onSelect={startLesson} overall={overall}
+        user={authUser} onLogout={onLogout} onHome={goHome}
       />
 
-      {/* Content */}
       <div style={{ flex:1, overflow:"hidden", display:"flex", flexDirection:"column" }}>
-        {/* Top progress bar */}
         <div style={{ height:3, background:C.border, flexShrink:0 }}>
           <div style={{ height:"100%", width:`${overall.pct}%`, background:`linear-gradient(90deg,${C.green},${C.teal})`, transition:"width .5s ease" }}/>
         </div>
-
-        {/* Conteúdo */}
         <div style={{ flex:1, overflow:"hidden" }}>
-          {isAllDone && !curLesson ? (
-            <CompletionScreen
-              nomeUsuario={nomeUsuario} nomeEmpresa={nomeEmpresa}
-              dataConc={dataConc || new Date().toLocaleDateString("pt-BR", { day:"2-digit", month:"long", year:"numeric" })}
-              modules={modules}
-            />
-          ) : curLesson && curMod ? (
+          {curLesson && curMod ? (
             <LessonView
               lesson={curLesson} mod={curMod}
               isCompleted={isCompleted}
               onComplete={markComplete}
               onPrev={() => navigate(-1)} onNext={() => navigate(1)}
               hasPrev={curIdx > 0} hasNext={curIdx < allLessons.length - 1}
+              onBack={goHome}
             />
           ) : null}
         </div>
