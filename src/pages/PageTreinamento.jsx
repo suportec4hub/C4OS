@@ -1532,76 +1532,84 @@ function LessonView({ lesson, mod, isCompleted, onComplete, onPrev, onNext, hasP
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
 function Sidebar({ modules, progress, activeMod, activeLesson, onSelect, overall, user, onLogout }) {
   const [expanded, setExpanded] = useState(activeMod);
-
   const toggle = (id) => setExpanded(e => e === id ? null : id);
 
+  const typeIcon = { leitura:"📖", prática:"⚡", lab:"🧪" };
+
   return (
-    <div style={{ width:280, minWidth:280, background:C.sidebar, borderRight:`1px solid ${C.border}`, display:"flex", flexDirection:"column", overflow:"hidden" }}>
+    <div style={{ width:288, minWidth:288, background:C.sidebar, borderRight:`1px solid ${C.border}`, display:"flex", flexDirection:"column", overflow:"hidden" }}>
       {/* Header */}
-      <div style={{ padding:"20px 20px 16px", borderBottom:`1px solid ${C.border}` }}>
-        <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:16 }}>
-          <div style={{ width:32, height:32, borderRadius:8, background:"linear-gradient(135deg,#10b981,#06b6d4)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:16, fontWeight:800, color:"#fff" }}>C</div>
-          <span style={{ fontSize:15, fontWeight:800, color:C.text }}>C4OS Treinamentos</span>
+      <div style={{ padding:"20px 20px 16px", borderBottom:`1px solid ${C.border}`, background:`linear-gradient(180deg,${C.card},${C.sidebar})` }}>
+        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:18 }}>
+          <div style={{ width:34, height:34, borderRadius:10, background:"linear-gradient(135deg,#10b981,#06b6d4)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:17, fontWeight:900, color:"#fff", boxShadow:"0 4px 12px #10b98140" }}>C</div>
+          <div>
+            <div style={{ fontSize:14, fontWeight:800, color:C.text, lineHeight:1 }}>C4OS Treinamentos</div>
+            <div style={{ fontSize:11, color:C.muted, marginTop:2 }}>Portal Oficial</div>
+          </div>
         </div>
 
         {/* Progresso geral */}
-        <div>
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
-            <span style={{ fontSize:11, fontWeight:600, color:C.muted, textTransform:"uppercase", letterSpacing:.5 }}>Seu progresso</span>
-            <span style={{ fontSize:13, fontWeight:700, color:C.green }}>{overall.pct}%</span>
+        <div style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:12, padding:"12px 14px" }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+            <span style={{ fontSize:11, fontWeight:700, color:C.muted, textTransform:"uppercase", letterSpacing:.5 }}>Seu progresso</span>
+            <span style={{ fontSize:15, fontWeight:900, color:C.green }}>{overall.pct}%</span>
           </div>
-          <div style={{ height:6, background:C.border, borderRadius:3, overflow:"hidden" }}>
-            <div style={{ height:"100%", width:`${overall.pct}%`, background:`linear-gradient(90deg,${C.green},${C.teal})`, borderRadius:3, transition:"width .5s ease" }}/>
+          <div style={{ height:8, background:C.border, borderRadius:4, overflow:"hidden", marginBottom:6 }}>
+            <div style={{ height:"100%", width:`${overall.pct}%`, background:`linear-gradient(90deg,${C.green},${C.teal})`, borderRadius:4, transition:"width .6s cubic-bezier(.4,0,.2,1)", boxShadow:`0 0 8px ${C.green}60` }}/>
           </div>
-          <div style={{ fontSize:11, color:C.muted, marginTop:4 }}>{overall.done} de {overall.total} aulas concluídas</div>
+          <div style={{ fontSize:11, color:C.muted }}>{overall.done} de {overall.total} aulas concluídas</div>
         </div>
       </div>
 
-      {/* Lista de módulos */}
+      {/* Módulos */}
       <div style={{ flex:1, overflowY:"auto", padding:"8px 0" }}>
         {modules.map(mod => {
           const mp = calcModuleProgress(mod, progress);
           const isExp = expanded === mod.id;
           return (
             <div key={mod.id}>
-              {/* Módulo */}
-              <button onClick={() => toggle(mod.id)}
-                style={{ width:"100%", background:"none", border:"none", padding:"10px 20px", display:"flex", alignItems:"center", gap:10, cursor:"pointer", textAlign:"left" }}>
-                <span style={{ fontSize:16 }}>{mod.icon}</span>
+              {/* Module header */}
+              <div onClick={() => toggle(mod.id)}
+                style={{ padding:"11px 16px", cursor:"pointer", display:"flex", alignItems:"center", gap:10, transition:"background .15s", background: isExp ? `${mod.color}10` : "transparent", borderLeft: isExp ? `3px solid ${mod.color}` : "3px solid transparent" }}>
+                <div style={{ width:32, height:32, borderRadius:9, background:`${mod.color}20`, border:`1px solid ${mod.color}30`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:15, flexShrink:0 }}>{mod.icon}</div>
                 <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontSize:13, fontWeight:700, color:C.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{mod.title}</div>
-                  <div style={{ fontSize:11, color:C.muted, marginTop:1 }}>{mp.done}/{mp.total} aulas</div>
+                  <div style={{ fontSize:12, fontWeight:700, color: isExp ? mod.color : C.text, lineHeight:1.1, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{mod.title}</div>
+                  <div style={{ fontSize:10, color:C.muted, marginTop:3 }}>
+                    <span style={{ color: mp.pct === 100 ? C.green : mp.done > 0 ? mod.color : C.muted }}>
+                      {mp.pct === 100 ? "✓ Completo" : `${mp.done}/${mp.total} aulas`}
+                    </span>
+                  </div>
                 </div>
-                <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:3 }}>
-                  {mp.pct === 100 && <span style={{ fontSize:12 }}>✅</span>}
-                  <span style={{ fontSize:11, color:mod.color, fontWeight:700 }}>{mp.pct}%</span>
-                  <span style={{ fontSize:10, color:C.muted }}>{isExp ? "▲" : "▼"}</span>
+                {/* Mini progress */}
+                <div style={{ display:"flex", alignItems:"center", gap:6, flexShrink:0 }}>
+                  {mp.pct === 100 ? (
+                    <div style={{ width:20, height:20, borderRadius:"50%", background:C.green, display:"flex", alignItems:"center", justifyContent:"center", fontSize:10, color:"#fff", fontWeight:700 }}>✓</div>
+                  ) : (
+                    <div style={{ width:28, height:4, background:C.border, borderRadius:2, overflow:"hidden" }}>
+                      <div style={{ width:`${mp.pct}%`, height:"100%", background:mod.color, borderRadius:2 }}/>
+                    </div>
+                  )}
+                  <span style={{ fontSize:10, color:C.muted, transform: isExp ? "rotate(90deg)" : "rotate(0deg)", transition:"transform .2s", display:"inline-block" }}>›</span>
                 </div>
-              </button>
-
-              {/* Mini progress bar */}
-              <div style={{ margin:"0 20px 2px", height:2, background:C.border, borderRadius:1, overflow:"hidden" }}>
-                <div style={{ height:"100%", width:`${mp.pct}%`, background:mod.color, borderRadius:1, transition:"width .4s" }}/>
               </div>
 
-              {/* Aulas */}
+              {/* Lições */}
               {isExp && (
-                <div style={{ padding:"4px 0 8px" }}>
-                  {mod.lessons.map((lesson, idx) => {
+                <div style={{ background:`${mod.color}06`, borderBottom:`1px solid ${mod.color}15` }}>
+                  {mod.lessons.map(lesson => {
                     const key = `${mod.id}:${lesson.id}`;
                     const done = !!progress[key];
-                    const active = activeMod === mod.id && activeLesson === lesson.id;
+                    const isActive = activeMod === mod.id && activeLesson === lesson.id;
                     return (
-                      <button key={lesson.id} onClick={() => { onSelect(mod.id, lesson.id); setExpanded(mod.id); }}
-                        style={{ width:"100%", background:active ? `${mod.color}14` : "none", border:"none", borderLeft:active ? `2px solid ${mod.color}` : "2px solid transparent", padding:"8px 20px 8px 24px", display:"flex", alignItems:"center", gap:8, cursor:"pointer", textAlign:"left" }}>
-                        <div style={{ width:20, height:20, borderRadius:"50%", background:done ? C.green : C.border, border:`1.5px solid ${done ? C.green : C.borderLt}`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>
-                          {done ? <span style={{ fontSize:10, color:"#fff" }}>✓</span> : <span style={{ fontSize:10, color:C.muted }}>{idx+1}</span>}
+                      <div key={lesson.id} onClick={() => onSelect(mod.id, lesson.id)}
+                        style={{ padding:"8px 16px 8px 58px", cursor:"pointer", display:"flex", alignItems:"center", gap:8, background: isActive ? `${mod.color}18` : "transparent", borderLeft: isActive ? `3px solid ${mod.color}` : "3px solid transparent", transition:"background .15s" }}>
+                        {/* Status dot */}
+                        <div style={{ width:16, height:16, borderRadius:"50%", background: done ? C.green : isActive ? mod.color : C.border, border: `1.5px solid ${done ? C.green : isActive ? mod.color : C.borderLt}`, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0, transition:"all .2s" }}>
+                          {done && <span style={{ fontSize:8, color:"#fff", fontWeight:900 }}>✓</span>}
                         </div>
-                        <div style={{ flex:1, minWidth:0 }}>
-                          <div style={{ fontSize:12, fontWeight:active?700:500, color:active?C.text:done?C.muted:C.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{lesson.title}</div>
-                          <div style={{ fontSize:10, color:C.muted }}>{lesson.duration}</div>
-                        </div>
-                      </button>
+                        <span style={{ fontSize:12, color: isActive ? mod.color : done ? C.muted : C.text, fontWeight: isActive ? 700 : 400, lineHeight:1.4, flex:1, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{lesson.title}</span>
+                        <span style={{ fontSize:10, flexShrink:0 }}>{typeIcon[lesson.type] || ""}</span>
+                      </div>
                     );
                   })}
                 </div>
@@ -1612,14 +1620,21 @@ function Sidebar({ modules, progress, activeMod, activeLesson, onSelect, overall
       </div>
 
       {/* Footer do usuário */}
-      <div style={{ padding:"14px 20px", borderTop:`1px solid ${C.border}`, display:"flex", alignItems:"center", gap:10 }}>
-        <div style={{ width:32, height:32, borderRadius:"50%", background:`${C.green}22`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:13, fontWeight:700, color:C.green }}>
-          {(user?.email ?? "?")[0].toUpperCase()}
+      <div style={{ padding:"12px 16px", borderTop:`1px solid ${C.border}`, background:`linear-gradient(0deg,${C.card},${C.sidebar})` }}>
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          <div style={{ width:32, height:32, borderRadius:10, background:"linear-gradient(135deg,#3b82f6,#8b5cf6)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:13, fontWeight:800, color:"#fff", flexShrink:0 }}>
+            {(user?.email?.[0] || "U").toUpperCase()}
+          </div>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontSize:12, fontWeight:600, color:C.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{user?.email}</div>
+            <div style={{ fontSize:10, color:C.muted, marginTop:1 }}>Aluno certificado</div>
+          </div>
+          <button onClick={onLogout}
+            style={{ background:"transparent", border:"none", color:C.muted, cursor:"pointer", fontSize:13, padding:4, borderRadius:6, transition:"color .2s" }}
+            title="Sair">
+            ⎋
+          </button>
         </div>
-        <div style={{ flex:1, minWidth:0 }}>
-          <div style={{ fontSize:12, fontWeight:600, color:C.text, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{user?.email ?? ""}</div>
-        </div>
-        <button onClick={onLogout} title="Sair" style={{ background:"none", border:"none", color:C.muted, cursor:"pointer", fontSize:16 }}>⏻</button>
       </div>
     </div>
   );
@@ -1712,6 +1727,12 @@ function imprimirCertificado({ nomeUsuario, nomeEmpresa, dataConc, modulos }) {
 // ─── Conclusão ────────────────────────────────────────────────────────────────
 function CompletionScreen({ nomeUsuario, nomeEmpresa, dataConc, modules }) {
   const [emitindo, setEmitindo] = useState(false);
+  const [showConfetti, setShowConfetti] = useState(true);
+
+  useEffect(() => {
+    const t = setTimeout(() => setShowConfetti(false), 4000);
+    return () => clearTimeout(t);
+  }, []);
 
   const emitir = () => {
     setEmitindo(true);
@@ -1719,44 +1740,84 @@ function CompletionScreen({ nomeUsuario, nomeEmpresa, dataConc, modules }) {
     setTimeout(() => setEmitindo(false), 2000);
   };
 
-  return (
-    <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", height:"100%", padding:40, textAlign:"center" }}>
-      <div style={{ fontSize:64, marginBottom:20 }}>🎉</div>
-      <h1 style={{ fontSize:28, fontWeight:800, color:C.text, marginBottom:10 }}>Parabéns, {nomeUsuario || "aluno"}!</h1>
-      <p style={{ fontSize:15, color:C.muted, maxWidth:500, lineHeight:1.7, marginBottom:8 }}>
-        Você concluiu <strong style={{ color:C.green }}>100%</strong> do treinamento oficial do C4OS.
-        Agora você tem todo o conhecimento para usar a plataforma com excelência.
-      </p>
-      <p style={{ fontSize:13, color:C.muted, marginBottom:32 }}>Conclusão em {dataConc}</p>
+  const confettiItems = Array.from({ length: 20 }, (_, i) => ({
+    id: i,
+    color: [C.green, C.teal, C.blue, C.purple, C.yellow, C.pink][i % 6],
+    left: `${5 + (i * 5) % 90}%`,
+    delay: `${(i * 0.15) % 2}s`,
+    size: 6 + (i % 4) * 2,
+  }));
 
-      {/* Preview mini do certificado */}
-      <div style={{ background:C.card, border:`1px solid ${C.borderLt}`, borderRadius:16, padding:28, maxWidth:480, width:"100%", marginBottom:28, textAlign:"left" }}>
-        <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:16 }}>
-          <div style={{ width:40, height:40, borderRadius:10, background:"linear-gradient(135deg,#10b981,#06b6d4)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:20, fontWeight:900, color:"#fff" }}>C</div>
-          <div>
-            <div style={{ fontSize:12, fontWeight:700, color:C.muted, letterSpacing:1, textTransform:"uppercase" }}>Certificado de Conclusão</div>
-            <div style={{ fontSize:14, fontWeight:700, color:C.text }}>C4OS Treinamentos</div>
+  return (
+    <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", height:"100%", padding:"40px 48px", textAlign:"center", position:"relative", overflow:"hidden" }}>
+      <style>{`
+        @keyframes confetti { 0%{transform:translateY(120vh) rotate(0deg);opacity:1} 100%{transform:translateY(-10vh) rotate(720deg);opacity:0} }
+        @keyframes popIn { 0%{transform:scale(0) rotate(-10deg);opacity:0} 60%{transform:scale(1.15) rotate(3deg)} 100%{transform:scale(1) rotate(0deg);opacity:1} }
+        @keyframes glow { 0%,100%{box-shadow:0 0 30px #10b98130} 50%{box-shadow:0 0 60px #10b98160} }
+      `}</style>
+
+      {/* Confetti */}
+      {showConfetti && confettiItems.map(c => (
+        <div key={c.id} style={{
+          position:"absolute", bottom:0, left:c.left,
+          width:c.size, height:c.size * 1.5,
+          background:c.color, borderRadius:2,
+          animation:`confetti ${2 + (c.id % 3) * 0.5}s ${c.delay} ease-in forwards`,
+          pointerEvents:"none", opacity:.8,
+        }}/>
+      ))}
+
+      {/* Trophy */}
+      <div style={{ fontSize:72, marginBottom:16, animation:"popIn .6s cubic-bezier(.4,0,.2,1) both", filter:"drop-shadow(0 8px 24px #f59e0b60)" }}>🏆</div>
+
+      {/* Headline */}
+      <h1 style={{ fontSize:32, fontWeight:900, color:C.text, margin:"0 0 12px", letterSpacing:-1 }}>
+        Parabéns, <span style={{ background:"linear-gradient(135deg,#10b981,#06b6d4)", WebkitBackgroundClip:"text", WebkitTextFillColor:"transparent", backgroundClip:"text" }}>{nomeUsuario || "aluno"}</span>!
+      </h1>
+      <p style={{ fontSize:16, color:C.muted, maxWidth:480, lineHeight:1.7, margin:"0 0 6px" }}>
+        Você concluiu <strong style={{ color:C.green }}>100%</strong> do treinamento oficial do C4OS.<br/>Agora você tem todo o conhecimento para usar a plataforma com excelência.
+      </p>
+      <p style={{ fontSize:13, color:C.slate, marginBottom:36 }}>Concluído em {dataConc}</p>
+
+      {/* Módulos concluídos */}
+      <div style={{ display:"flex", flexWrap:"wrap", gap:8, justifyContent:"center", marginBottom:36, maxWidth:560 }}>
+        {modules.map(m => (
+          <div key={m.id} style={{ display:"flex", alignItems:"center", gap:6, padding:"6px 12px", background:`${m.color}15`, border:`1px solid ${m.color}30`, borderRadius:20, fontSize:12, color:m.color, fontWeight:600 }}>
+            <span>{m.icon}</span> {m.title}
           </div>
+        ))}
+      </div>
+
+      {/* Certificate preview */}
+      <div style={{ background:C.card, border:`1px solid ${C.borderLt}`, borderRadius:20, padding:"28px 32px", maxWidth:480, width:"100%", marginBottom:28, textAlign:"left", boxShadow:"0 8px 32px rgba(0,0,0,.3)", animation:"glow 3s ease-in-out infinite" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:16 }}>
+          <div style={{ width:44, height:44, borderRadius:12, background:"linear-gradient(135deg,#10b981,#06b6d4)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:22, fontWeight:900, color:"#fff", boxShadow:"0 4px 16px #10b98140" }}>C</div>
+          <div>
+            <div style={{ fontSize:10, fontWeight:700, color:C.muted, letterSpacing:1.5, textTransform:"uppercase" }}>Certificado Oficial de Conclusão</div>
+            <div style={{ fontSize:15, fontWeight:800, color:C.text }}>C4OS Treinamentos</div>
+          </div>
+          <div style={{ marginLeft:"auto", width:36, height:36, borderRadius:"50%", background:`${C.green}22`, border:`2px solid ${C.green}`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:14, color:C.green }}>✓</div>
         </div>
-        <div style={{ fontSize:11, color:C.muted, marginBottom:4, textTransform:"uppercase", letterSpacing:.5 }}>Certificamos que</div>
-        <div style={{ fontSize:22, fontWeight:800, color:C.text, borderBottom:`2px solid ${C.green}`, paddingBottom:8, marginBottom:8, display:"inline-block" }}>{nomeUsuario || "—"}</div>
-        <div style={{ fontSize:12, color:C.muted, marginBottom:14 }}>da empresa <strong style={{ color:C.text }}>{nomeEmpresa || "—"}</strong></div>
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"4px 16px" }}>
+        <div style={{ fontSize:10, color:C.muted, textTransform:"uppercase", letterSpacing:1.5, marginBottom:6 }}>Certificamos que</div>
+        <div style={{ fontSize:26, fontWeight:900, color:C.text, borderBottom:`2px solid ${C.green}`, paddingBottom:8, marginBottom:10, letterSpacing:-0.5 }}>{nomeUsuario || "—"}</div>
+        <div style={{ fontSize:13, color:C.muted, marginBottom:16 }}>da empresa <strong style={{ color:C.text }}>{nomeEmpresa || "—"}</strong> concluiu com êxito o programa de treinamento oficial da plataforma C4OS.</div>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:"4px 16px", marginBottom:14 }}>
           {modules.map(m => (
-            <div key={m.id} style={{ fontSize:11, color:C.muted }}>{m.icon} {m.title}</div>
+            <div key={m.id} style={{ fontSize:11, color:C.muted, display:"flex", alignItems:"center", gap:5 }}><span style={{ color:C.green }}>✓</span>{m.icon} {m.title}</div>
           ))}
         </div>
-        <div style={{ marginTop:14, paddingTop:12, borderTop:`1px solid ${C.border}`, fontSize:11, color:C.muted }}>
-          Concluído em {dataConc} · c4os.com.br
+        <div style={{ paddingTop:12, borderTop:`1px solid ${C.border}`, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+          <div style={{ fontSize:11, color:C.muted }}>Concluído em {dataConc}</div>
+          <div style={{ fontSize:11, color:C.muted }}>c4os.com.br</div>
         </div>
       </div>
 
+      {/* CTA */}
       <button onClick={emitir} disabled={emitindo}
-        style={{ background:`linear-gradient(135deg,${C.green},${C.teal})`, border:"none", borderRadius:12, padding:"14px 36px", fontSize:15, fontWeight:700, color:"#fff", cursor:"pointer", display:"flex", alignItems:"center", gap:10, opacity:emitindo?.8:1, marginBottom:16 }}>
-        {emitindo ? "⟳ Abrindo certificado..." : "🏆 Emitir Certificado de Conclusão"}
+        style={{ background:emitindo?C.card:`linear-gradient(135deg,${C.green},${C.teal})`, border:"none", borderRadius:14, padding:"16px 40px", fontSize:16, fontWeight:800, color:emitindo?C.muted:"#fff", cursor:"pointer", display:"flex", alignItems:"center", gap:12, transition:"all .2s", boxShadow:emitindo?"none":`0 8px 32px ${C.green}40`, marginBottom:14, letterSpacing:-0.3 }}>
+        {emitindo ? "⟳ Abrindo certificado..." : "🏅 Emitir Certificado em PDF"}
       </button>
-      <p style={{ fontSize:12, color:C.muted }}>O certificado abre em uma nova aba pronto para salvar como PDF ou imprimir.</p>
-      <p style={{ fontSize:12, color:C.muted, marginTop:20 }}>Dúvidas? Entre em contato com nosso suporte. 💚</p>
+      <p style={{ fontSize:12, color:C.muted }}>O certificado abre em uma nova aba — salve como PDF ou imprima.</p>
     </div>
   );
 }
@@ -1868,7 +1929,17 @@ function TrainingApp({ authUser, onLogout }) {
 
   return (
     <div style={{ display:"flex", height:"100vh", background:C.bg, fontFamily:"-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif", overflow:"hidden" }}>
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}} * { box-sizing: border-box; } ::-webkit-scrollbar{width:5px} ::-webkit-scrollbar-track{background:${C.bg}} ::-webkit-scrollbar-thumb{background:${C.borderLt};border-radius:3px}`}</style>
+      <style>{`
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @keyframes fadeSlide{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+  @keyframes floatUp{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+  *{box-sizing:border-box}
+  ::-webkit-scrollbar{width:5px}
+  ::-webkit-scrollbar-track{background:transparent}
+  ::-webkit-scrollbar-thumb{background:${C.borderLt};border-radius:3px}
+  ::-webkit-scrollbar-thumb:hover{background:${C.slate}}
+  .lesson-content{animation:fadeSlide .35s ease}
+`}</style>
 
       {/* Sidebar */}
       <Sidebar
