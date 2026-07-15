@@ -1656,12 +1656,11 @@ function Sidebar({ modules, progress, activeMod, activeLesson, onSelect, overall
 
 // ─── Certificado ─────────────────────────────────────────────────────────────
 function imprimirCertificado({ nomeUsuario, nomeEmpresa, dataConc, modulos }) {
-  const col1 = modulos.slice(0, Math.ceil(modulos.length / 2));
-  const col2 = modulos.slice(Math.ceil(modulos.length / 2));
-  const colHtml = (arr) => arr.map(m =>
-    `<div style="display:flex;align-items:center;gap:7px;padding:5px 0;border-bottom:1px solid #f3f4f6;">
-      <span style="color:#059669;font-weight:800;font-size:11px;">✓</span>
-      <span style="font-size:12px;color:#374151;">${m.icon} ${m.title}</span>
+  const totalAulas = modulos.reduce((a,m) => a + m.lessons.length, 0);
+  const modsHtml = modulos.map(m =>
+    `<div style="display:flex;align-items:center;gap:6px;padding:3.5px 0;">
+      <span style="color:#10b981;font-size:9px;font-weight:900;">✓</span>
+      <span style="font-size:10.5px;color:#e2e8f0;white-space:nowrap;">${m.title}</span>
     </div>`
   ).join("");
 
@@ -1673,199 +1672,263 @@ function imprimirCertificado({ nomeUsuario, nomeEmpresa, dataConc, modulos }) {
   <style>
     @page { size: A4 landscape; margin: 0; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #e8f5e9; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; }
 
-    /* ── Toolbar ── */
+    /* ── Toolbar (oculta na impressão) ── */
     .toolbar {
       position: fixed; top: 0; left: 0; right: 0; z-index: 100;
-      background: #111827; padding: 12px 28px;
+      background: #020617; padding: 11px 28px;
       display: flex; align-items: center; justify-content: space-between;
-      box-shadow: 0 2px 16px rgba(0,0,0,.4);
+      border-bottom: 1px solid #1e293b;
     }
-    .toolbar-info { font-size: 13px; color: #6b7280; }
-    .toolbar-info strong { color: #f9fafb; }
-    .toolbar-btns { display: flex; gap: 10px; }
+    .toolbar-info { font-size: 13px; color: #64748b; }
+    .toolbar-info strong { color: #f1f5f9; }
     .btn-print {
       background: linear-gradient(135deg,#059669,#0891b2); color:#fff;
-      border:none; border-radius:8px; padding:10px 24px;
-      font-size:14px; font-weight:700; cursor:pointer; letter-spacing:-.2px;
-      box-shadow:0 4px 16px rgba(5,150,105,.4); transition:transform .1s,opacity .15s;
+      border:none; border-radius:8px; padding:9px 22px;
+      font-size:13px; font-weight:700; cursor:pointer;
+      box-shadow:0 4px 18px rgba(5,150,105,.45); transition:opacity .15s;
     }
-    .btn-print:hover { opacity:.9; transform:translateY(-1px); }
+    .btn-print:hover { opacity:.88; }
     .btn-close {
-      background:transparent; color:#9ca3af;
-      border:1px solid #374151; border-radius:8px; padding:10px 20px;
-      font-size:13px; font-weight:600; cursor:pointer; transition:all .15s;
+      background:transparent; color:#64748b;
+      border:1px solid #1e293b; border-radius:8px; padding:9px 18px;
+      font-size:13px; font-weight:600; cursor:pointer; margin-left:8px;
     }
-    .btn-close:hover { color:#fff; border-color:#6b7280; }
+    .btn-close:hover { color:#f1f5f9; border-color:#475569; }
 
     /* ── Wrapper ── */
-    .page { padding:70px 32px 40px; display:flex; align-items:center; justify-content:center; min-height:100vh; }
+    .page { padding: 64px 32px 40px; display:flex; align-items:center; justify-content:center; min-height:100vh; }
 
-    /* ── Certificate card ── */
+    /* ── Certificate ── */
     .cert {
-      background:#fff;
-      width:277mm; height:190mm;
-      border-radius:4px;
-      box-shadow:0 20px 80px rgba(0,0,0,.18);
-      display:flex; flex-direction:column;
-      position:relative; overflow:hidden;
+      width: 277mm; height: 193mm;
+      background: linear-gradient(145deg, #0f172a 0%, #0c1a2e 50%, #091229 100%);
+      border-radius: 6px;
+      box-shadow: 0 0 0 1px rgba(16,185,129,.2), 0 32px 96px rgba(0,0,0,.6);
+      display: flex; position: relative; overflow: hidden;
     }
 
-    /* Corner decorations */
-    .cert::before, .cert::after {
-      content:''; position:absolute;
-      width:120px; height:120px;
-      border-radius:50%;
-      background:radial-gradient(circle,#10b98112 0%,transparent 70%);
+    /* ─ Decorative geometric lines ─ */
+    .cert::before {
+      content: ''; position:absolute; inset:0;
+      background:
+        linear-gradient(rgba(16,185,129,.06) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(16,185,129,.06) 1px, transparent 1px);
+      background-size: 32px 32px;
+      pointer-events: none;
     }
-    .cert::before { top:-40px; right:-30px; }
-    .cert::after  { bottom:-40px; left:-30px; }
 
-    /* Top border strip */
-    .top-strip { height:7px; background:linear-gradient(90deg,#059669 0%,#0891b2 60%,#059669 100%); flex-shrink:0; }
+    /* ─ Glow orbs ─ */
+    .orb1 { position:absolute; width:280px; height:280px; border-radius:50%;
+      background:radial-gradient(circle, rgba(16,185,129,.12) 0%, transparent 65%);
+      top:-80px; right:-60px; pointer-events:none; }
+    .orb2 { position:absolute; width:200px; height:200px; border-radius:50%;
+      background:radial-gradient(circle, rgba(6,182,212,.09) 0%, transparent 65%);
+      bottom:-60px; left:60px; pointer-events:none; }
 
-    /* Header */
-    .cert-header {
-      background:linear-gradient(135deg,#064e3b 0%,#0c4a6e 100%);
-      padding:18px 40px;
-      display:flex; align-items:center; justify-content:space-between;
-      flex-shrink:0; position:relative; overflow:hidden;
+    /* ─ Left dark panel ─ */
+    .panel-left {
+      width: 192px; flex-shrink:0;
+      background: linear-gradient(180deg, #020617 0%, #030d1a 100%);
+      border-right: 1px solid rgba(16,185,129,.18);
+      display: flex; flex-direction: column; padding: 0;
+      position: relative; z-index: 1;
     }
-    .cert-header::after {
-      content:''; position:absolute; right:-60px; top:-60px;
-      width:200px; height:200px; border-radius:50%;
-      background:rgba(255,255,255,.04);
+    .panel-left::after {
+      content:''; position:absolute; top:0; right:-1px; width:1px; height:100%;
+      background: linear-gradient(180deg, transparent, #10b981, #06b6d4, transparent);
     }
-    .hdr-left { display:flex; align-items:center; gap:14px; }
-    .logo-box {
-      width:44px; height:44px; border-radius:12px;
-      background:linear-gradient(135deg,#10b981,#06b6d4);
+
+    .pl-top {
+      padding: 24px 20px 20px;
+      flex:1; display:flex; flex-direction:column; gap:14px;
+    }
+    .brand-row { display:flex; align-items:center; gap:10px; }
+    .brand-box {
+      width: 38px; height: 38px; border-radius: 10px;
+      background: linear-gradient(135deg, #059669, #0891b2);
       display:flex; align-items:center; justify-content:center;
-      font-size:24px; font-weight:900; color:#fff;
-      box-shadow:0 4px 16px rgba(16,185,129,.4);
+      font-size: 20px; font-weight: 900; color: #fff;
+      box-shadow: 0 4px 16px rgba(5,150,105,.5), inset 0 1px 0 rgba(255,255,255,.15);
     }
-    .logo-name { font-size:20px; font-weight:900; color:#fff; letter-spacing:-.5px; }
-    .logo-sub  { font-size:9px; color:rgba(255,255,255,.5); font-weight:700; letter-spacing:2px; text-transform:uppercase; margin-top:2px; }
-    .hdr-right { text-align:right; }
-    .hdr-label { font-size:9px; font-weight:700; letter-spacing:3px; text-transform:uppercase; color:rgba(255,255,255,.45); }
-    .hdr-title { font-size:20px; font-weight:800; color:#fff; margin-top:3px; letter-spacing:-.4px; }
+    .brand-name { font-size: 17px; font-weight: 900; color: #f1f5f9; letter-spacing: -.5px; }
+    .brand-sub  { font-size: 8px; color: #475569; font-weight: 700; letter-spacing: 1.8px; text-transform: uppercase; margin-top: 1px; }
 
-    /* Body */
-    .cert-body { flex:1; display:flex; overflow:hidden; }
+    .divider { height: 1px; background: linear-gradient(90deg, rgba(16,185,129,.4), transparent); }
 
-    .body-left {
-      flex:1; padding:22px 32px 18px 40px;
+    .cert-label { font-size: 8px; font-weight: 700; letter-spacing: 2.5px; text-transform: uppercase; color: #10b981; margin-bottom: 4px; }
+    .cert-title { font-size: 13px; font-weight: 800; color: #e2e8f0; line-height: 1.35; }
+
+    .mods-section { flex:1; }
+    .mods-heading { font-size: 8px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: #475569; margin-bottom: 10px; }
+    .mod-item { display:flex; align-items:center; gap:6px; padding: 3px 0; }
+    .mod-check { width:14px; height:14px; border-radius:50%;
+      background:linear-gradient(135deg,#059669,#06b6d4);
+      display:flex; align-items:center; justify-content:center;
+      font-size:8px; color:#fff; font-weight:900; flex-shrink:0; }
+    .mod-name { font-size:10px; color:#94a3b8; font-weight:500; }
+
+    .pl-footer { padding:16px 20px; border-top:1px solid rgba(16,185,129,.12); }
+    .footer-stat { font-size:9px; color:#475569; line-height:1.8; }
+    .footer-stat strong { color:#94a3b8; }
+
+    /* ─ Right main panel ─ */
+    .panel-right {
+      flex:1; padding: 30px 36px 28px 40px;
       display:flex; flex-direction:column; justify-content:space-between;
-      border-right:1px solid #f0fdf4;
-    }
-    .body-right {
-      width:230px; padding:20px 28px 20px 24px;
-      display:flex; flex-direction:column;
-      background:#fafffe;
+      position:relative; z-index:1;
     }
 
-    .declares { font-size:9px; font-weight:700; letter-spacing:2.5px; text-transform:uppercase; color:#9ca3af; margin-bottom:6px; }
-    .name {
-      font-size:30px; font-weight:900; color:#111827; letter-spacing:-.8px; line-height:1.05;
-      padding-bottom:9px;
-      border-bottom:3px solid #10b981;
-      margin-bottom:8px;
-      background:linear-gradient(135deg,#111827,#374151);
-      -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
+    .pr-top {}
+    .declares-lbl { font-size:9px; font-weight:700; letter-spacing:3px; text-transform:uppercase; color:#475569; margin-bottom:8px; }
+    .cert-name {
+      font-size: 34px; font-weight: 900; letter-spacing: -1px; line-height: 1.05;
+      background: linear-gradient(135deg, #f1f5f9 0%, #10b981 50%, #06b6d4 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+      margin-bottom: 4px;
     }
-    .company { font-size:12.5px; color:#6b7280; margin-bottom:8px; }
-    .company strong { color:#374151; }
-    .desc { font-size:11.5px; color:#6b7280; line-height:1.75; }
-    .desc strong { color:#374151; }
+    .name-line {
+      height: 3px; width: 80px; margin-bottom: 14px;
+      background: linear-gradient(90deg, #10b981, #06b6d4);
+      border-radius: 2px;
+    }
+    .company-line { font-size: 12.5px; color: #64748b; margin-bottom: 10px; }
+    .company-line strong { color: #94a3b8; }
+    .desc-text { font-size: 11.5px; color: #64748b; line-height: 1.8; max-width: 420px; }
+    .desc-text strong { color: #94a3b8; }
 
-    .footer-row { display:flex; align-items:flex-end; justify-content:space-between; padding-top:12px; border-top:1px solid #f3f4f6; }
-    .footer-info { font-size:10px; color:#9ca3af; line-height:1.7; }
-    .footer-info strong { color:#6b7280; }
-    .sig-wrap { display:flex; align-items:flex-end; gap:20px; }
-    .sig-line { width:120px; border-top:1px solid #d1d5db; padding-top:5px; font-size:9.5px; color:#9ca3af; text-align:center; }
-    .seal {
-      width:60px; height:60px; border-radius:50%;
-      border:2.5px solid #10b981;
-      background:linear-gradient(145deg,#f0fdf4,#ecfdf5);
+    /* 4 C values */
+    .values-row {
+      display:flex; gap:8px; margin-top:18px;
+    }
+    .value-pill {
+      display:flex; flex-direction:column; align-items:center;
+      padding: 8px 14px; border-radius: 10px;
+      border: 1px solid rgba(16,185,129,.2);
+      background: rgba(16,185,129,.06);
+      flex:1;
+    }
+    .value-letter { font-size: 16px; font-weight: 900; background: linear-gradient(135deg,#10b981,#06b6d4); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; }
+    .value-word   { font-size: 8.5px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 1px; margin-top: 2px; }
+
+    /* Footer */
+    .pr-footer { display:flex; align-items:flex-end; justify-content:space-between; padding-top:14px; border-top:1px solid rgba(255,255,255,.06); }
+    .sig-col { display:flex; align-items:flex-end; gap:24px; }
+    .sig-block { text-align:center; }
+    .sig-name  { font-size:10px; font-weight:700; color:#94a3b8; margin-bottom:6px; }
+    .sig-line-el { height:1px; background:linear-gradient(90deg, rgba(16,185,129,.5), rgba(6,182,212,.5)); margin-bottom:4px; }
+    .sig-role  { font-size:8.5px; color:#475569; }
+    .seal-circle {
+      width:64px; height:64px; border-radius:50%;
+      border: 2px solid #10b981;
+      background: linear-gradient(145deg, rgba(16,185,129,.12), rgba(6,182,212,.08));
       display:flex; flex-direction:column; align-items:center; justify-content:center;
-      box-shadow:0 0 0 4px #10b98115;
+      box-shadow: 0 0 0 5px rgba(16,185,129,.06), 0 0 24px rgba(16,185,129,.2);
     }
-    .seal-txt { font-size:8px; font-weight:900; color:#059669; text-transform:uppercase; letter-spacing:.5px; line-height:1.5; text-align:center; }
-
-    /* Right column */
-    .mods-label { font-size:9px; font-weight:700; letter-spacing:2px; text-transform:uppercase; color:#9ca3af; margin-bottom:10px; padding-bottom:8px; border-bottom:1px solid #e5e7eb; }
-
-    /* Bottom strip */
-    .bot-strip { height:5px; background:linear-gradient(90deg,#059669,#0891b2,#059669); flex-shrink:0; }
+    .seal-check { font-size:18px; color:#10b981; line-height:1; }
+    .seal-txt   { font-size:7.5px; font-weight:800; color:#059669; text-transform:uppercase; letter-spacing:.5px; line-height:1.5; text-align:center; }
+    .footer-meta { font-size:9px; color:#334155; text-align:right; line-height:1.9; }
+    .footer-meta strong { color:#475569; }
 
     @media print {
       .toolbar { display:none !important; }
-      body { background:#fff; }
-      .page { padding:0; min-height:unset; background:#fff; }
-      .cert { box-shadow:none; border-radius:0; width:100%; height:100%; page-break-inside:avoid; }
+      body { background:#0f172a; }
+      .page { padding:0; min-height:unset; }
+      .cert { width:100%; height:100%; border-radius:0; box-shadow:none; }
     }
   </style>
 </head>
 <body>
 <div class="toolbar">
-  <div class="toolbar-info">Certificado de <strong>${nomeUsuario}</strong> &mdash; C4OS Treinamentos</div>
-  <div class="toolbar-btns">
-    <button class="btn-print" onclick="window.print()">🖨️&nbsp; Imprimir / Salvar PDF</button>
+  <div class="toolbar-info">Certificado de <strong>${nomeUsuario}</strong> &mdash; C4HUB · C4OS Treinamentos</div>
+  <div>
+    <button class="btn-print" onclick="window.print()">🖨️ Imprimir / Salvar PDF</button>
     <button class="btn-close" onclick="window.close()">✕ Fechar</button>
   </div>
 </div>
 
 <div class="page">
 <div class="cert">
-  <div class="top-strip"></div>
+  <div class="orb1"></div>
+  <div class="orb2"></div>
 
-  <div class="cert-header">
-    <div class="hdr-left">
-      <div class="logo-box">C</div>
-      <div>
-        <div class="logo-name">C4OS</div>
-        <div class="logo-sub">Treinamentos Oficiais</div>
-      </div>
-    </div>
-    <div class="hdr-right">
-      <div class="hdr-label">Documento Oficial &nbsp;·&nbsp; c4os.com.br</div>
-      <div class="hdr-title">Certificado de Conclusão</div>
-    </div>
-  </div>
-
-  <div class="cert-body">
-    <div class="body-left">
-      <div>
-        <div class="declares">Certificamos que</div>
-        <div class="name">${nomeUsuario}</div>
-        <div class="company">da empresa <strong>${nomeEmpresa}</strong></div>
-        <div class="desc">concluiu com êxito o <strong>Programa de Treinamento Completo da Plataforma C4OS</strong>,
-          abrangendo todos os módulos, aulas teóricas, práticas e laboratórios
-          do programa de capacitação oficial.</div>
-      </div>
-      <div class="footer-row">
-        <div class="footer-info">
-          <div><strong>Concluído em:</strong> ${dataConc}</div>
-          <div><strong>Carga horária:</strong> ${modulos.reduce((a,m)=>a+m.lessons.length,0)} aulas</div>
-        </div>
-        <div class="sig-wrap">
-          <div class="sig-line">Equipe C4HUB</div>
-          <div class="seal"><div class="seal-txt">✓<br/>100%<br/>Concluído</div></div>
+  <!-- ─ Left panel ─ -->
+  <div class="panel-left">
+    <div class="pl-top">
+      <div class="brand-row">
+        <div class="brand-box">C</div>
+        <div>
+          <div class="brand-name">C4OS</div>
+          <div class="brand-sub">by C4HUB</div>
         </div>
       </div>
+
+      <div class="divider"></div>
+
+      <div>
+        <div class="cert-label">Documento Oficial</div>
+        <div class="cert-title">Certificado<br/>de Conclusão</div>
+      </div>
+
+      <div class="divider"></div>
+
+      <div class="mods-section">
+        <div class="mods-heading">Módulos Concluídos</div>
+        ${modsHtml}
+      </div>
     </div>
 
-    <div class="body-right">
-      <div class="mods-label">Módulos Concluídos</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 8px;">
-        <div>${colHtml(col1)}</div>
-        <div>${colHtml(col2)}</div>
+    <div class="pl-footer">
+      <div class="footer-stat">
+        <div><strong>Concluído:</strong> ${dataConc}</div>
+        <div><strong>Aulas:</strong> ${totalAulas} aulas</div>
+        <div><strong>Site:</strong> c4os.com.br</div>
       </div>
     </div>
   </div>
 
-  <div class="bot-strip"></div>
+  <!-- ─ Right panel ─ -->
+  <div class="panel-right">
+    <div class="pr-top">
+      <div class="declares-lbl">Certificamos que</div>
+      <div class="cert-name">${nomeUsuario}</div>
+      <div class="name-line"></div>
+      <div class="company-line">da empresa <strong>${nomeEmpresa}</strong></div>
+      <div class="desc-text">
+        concluiu com êxito o <strong>Programa de Treinamento Completo da Plataforma C4OS</strong>,
+        abrangendo todos os módulos, aulas teóricas, práticas e laboratórios
+        do programa de capacitação oficial C4HUB.
+      </div>
+
+      <!-- 4 C values -->
+      <div class="values-row">
+        <div class="value-pill"><div class="value-letter">C</div><div class="value-word">Começar</div></div>
+        <div class="value-pill"><div class="value-letter">C</div><div class="value-word">Constância</div></div>
+        <div class="value-pill"><div class="value-letter">C</div><div class="value-word">Crescer</div></div>
+        <div class="value-pill"><div class="value-letter">C</div><div class="value-word">Conquistar</div></div>
+      </div>
+    </div>
+
+    <div class="pr-footer">
+      <div class="sig-col">
+        <div class="seal-circle">
+          <div class="seal-check">✓</div>
+          <div class="seal-txt">100%<br/>Concluído</div>
+        </div>
+        <div class="sig-block" style="width:140px;">
+          <div class="sig-name">Equipe C4HUB</div>
+          <div class="sig-line-el"></div>
+          <div class="sig-role">Programa de Treinamento C4OS</div>
+        </div>
+      </div>
+      <div class="footer-meta">
+        <div><strong>Emitido em:</strong> ${dataConc}</div>
+        <div><strong>Verificável em:</strong> c4os.com.br</div>
+        <div style="margin-top:4px;font-size:8px;color:#1e293b;">© C4HUB Tecnologia · Todos os direitos reservados</div>
+      </div>
+    </div>
+  </div>
 </div>
 </div>
 </body>
