@@ -1181,28 +1181,48 @@ Deno.serve(async (req) => {
     if (action === "fetchMedia") {
       const { wamid } = body;
       if (!wamid) return json({ error: "wamid obrigatório" }, 400);
-      try {
-        const r = await iFetch(`/message/getBase64FromMediaMessage/${instName}`, {
-          method: "POST",
-          body: JSON.stringify({ id: String(wamid) }),
-        });
-        if (!r.ok) {
-          const errTxt = await r.text().catch(() => "");
-          return json({ error: `Evolution ${r.status}: ${errTxt.slice(0, 120)}` }, 502);
-        }
-        const d = await r.json();
-        // Evolution pode retornar em diferentes formatos dependendo da versão
-        const rawB64   = d?.base64   ?? d?.data?.base64   ?? d?.media?.base64   ?? null;
-        const mimetype = d?.mimetype ?? d?.data?.mimetype ?? d?.media?.mimetype ?? d?.type ?? "application/octet-stream";
-        // Pode vir como data URL ("data:audio/ogg;base64,...") — strip prefix
+
+      const extractB64 = (d: Record<string, unknown>) => {
+        type Nested = { base64?: string; mimetype?: string };
+        const rawB64 = (d?.base64 ?? (d?.data as Nested)?.base64 ?? (d?.media as Nested)?.base64 ?? null) as string | null;
+        const mimetype = ((d?.mimetype ?? (d?.data as Nested)?.mimetype ?? (d?.media as Nested)?.mimetype ?? d?.type ?? "application/octet-stream") as string);
         const base64 = typeof rawB64 === "string" && rawB64.startsWith("data:")
           ? (rawB64.indexOf(",") >= 0 ? rawB64.slice(rawB64.indexOf(",") + 1) : null)
           : rawB64;
-        if (base64) return json({ success: true, base64, mimetype });
-        return json({ success: false, error: "Mídia não disponível ou expirada" });
-      } catch (e) {
-        return json({ error: (e as Error).message }, 500);
+        return base64 ? { base64, mimetype } : null;
+      };
+
+      // Try standard payload first, then legacy nested format as fallback
+      const payloads = [
+        { id: String(wamid) },
+        { message: { key: { id: String(wamid) } } },
+      ];
+
+      let lastErr = "Mídia não disponível ou expirada";
+      for (const payload of payloads) {
+        try {
+          const r = await iFetch(`/message/getBase64FromMediaMessage/${instName}`, {
+            method: "POST",
+            body: JSON.stringify(payload),
+          });
+          if (!r.ok) {
+            const errTxt = await r.text().catch(() => "");
+            lastErr = `Evolution ${r.status}: ${errTxt.slice(0, 120)}`;
+            console.warn(`fetchMedia attempt failed (${JSON.stringify(payload)}): ${lastErr}`);
+            continue;
+          }
+          const d = await r.json() as Record<string, unknown>;
+          const result = extractB64(d);
+          if (result) return json({ success: true, ...result });
+          lastErr = "Mídia não disponível ou expirada";
+        } catch (e) {
+          lastErr = (e as Error).message;
+          console.warn(`fetchMedia attempt threw: ${lastErr}`);
+        }
       }
+
+      console.error(`fetchMedia falhou para wamid=${wamid} inst=${instName}: ${lastErr}`);
+      return json({ success: false, error: lastErr });
     }
 
     // ────────────────────────────────────────────────────────────────────────
@@ -1226,6 +1246,210 @@ Deno.serve(async (req) => {
       } catch (e) {
         return json({ error: (e as Error).message }, 500);
       }
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // MULTI-INSTÂNCIA: listInstancias — lista instâncias secundárias da empresa
+    // ────────────────────────────────────────────────────────────────────────
+    if (action === "listInstancias") {
+      const { data: insts, error: instErr } = await supabase
+        .from("empresa_instancias")
+        .select("id, nome, evolution_instance_id, evolution_connected, evolution_phone, eh_principal, ativo, evolution_qr_temp")
+        .eq("empresa_id", empresa_id)
+        .order("created_at");
+      if (instErr) return json({ error: instErr.message }, 500);
+      return json({ success: true, instancias: insts || [] });
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // MULTI-INSTÂNCIA: createInstancia — cria nova instância secundária
+    // ────────────────────────────────────────────────────────────────────────
+    if (action === "createInstancia") {
+      const { nome: instNome } = body;
+      if (!instNome?.trim()) return json({ error: "nome da instância é obrigatório" }, 400);
+
+      const myToken    = crypto.randomUUID();
+      const safeName   = `c4HUB-${sanitizeName(emp.nome || empresa_id.slice(0, 8))}-${sanitizeName(instNome)}-${myToken.slice(0, 6)}`;
+      const webhookUrl = `${SUPA_URL}/functions/v1/evolution-webhook?token=${myToken}`;
+
+      // Insere registro no banco antes de criar na API (para webhook encontrar empresa_id)
+      const { data: newInst, error: dbErr } = await supabase
+        .from("empresa_instancias")
+        .insert({
+          empresa_id,
+          nome:                     instNome.trim(),
+          evolution_instance_id:    safeName,
+          evolution_instance_token: myToken,
+          evolution_api_url:        evoUrl,
+          eh_principal:             false,
+          ativo:                    true,
+          evolution_connected:      false,
+        })
+        .select("id")
+        .single();
+      if (dbErr || !newInst) return json({ error: dbErr?.message || "Erro ao criar instância no banco" }, 500);
+
+      try {
+        const cr = await gFetch("/instance/create", {
+          method: "POST",
+          body: JSON.stringify({
+            instanceName:    safeName,
+            name:            safeName,
+            token:           myToken,
+            qrcode:          true,
+            integration:     "WHATSAPP-BAILEYS",
+            syncFullHistory: true,
+            webhookByEvents: false,
+            webhook_by_events: false,
+            webhook: {
+              url:             webhookUrl,
+              events:          WEBHOOK_EVENTS,
+              webhookByEvents: false,
+              base64:          true,
+            },
+            webhookUrl,
+          }),
+        });
+        const cd = await cr.json();
+        console.log("[createInstancia] status:", cr.status, JSON.stringify(cd).slice(0, 400));
+
+        if (!cr.ok) {
+          // Reverte o banco se a API falhou
+          await supabase.from("empresa_instancias").delete().eq("id", newInst.id);
+          return json({ error: cd.message || cd.error || JSON.stringify(cd) }, 400);
+        }
+
+        const tok  = cd?.hash?.apikey || cd?.data?.token || cd?.token || myToken;
+        const nm   = cd?.instance?.instanceName || cd?.data?.name || cd?.name || safeName;
+        const qr   = cd?.qrcode?.base64 || cd?.data?.Qrcode || cd?.Qrcode || cd?.instance?.qrcode?.base64 || "";
+
+        // Atualiza com token/nome retornados pela API
+        await supabase.from("empresa_instancias").update({
+          evolution_instance_id:    nm,
+          evolution_instance_token: tok,
+          evolution_qr_temp:        qr || null,
+        }).eq("id", newInst.id);
+
+        // Configura webhook explicitamente
+        fetch(`${evoUrl}/webhook/set`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "apikey": tok },
+          body: JSON.stringify({
+            instanceName:    nm,
+            url:             `${SUPA_URL}/functions/v1/evolution-webhook?token=${tok}`,
+            events:          WEBHOOK_EVENTS,
+            enabled:         true,
+            webhookByEvents: false,
+            base64:          true,
+          }),
+        }).catch(() => {});
+
+        return json({ success: true, instancia_id: newInst.id, instanceName: nm, token: tok, qrBase64: qr });
+      } catch (e) {
+        await supabase.from("empresa_instancias").delete().eq("id", newInst.id);
+        return json({ error: (e as Error).message }, 500);
+      }
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // MULTI-INSTÂNCIA: connectInstancia — gera QR para instância secundária
+    // ────────────────────────────────────────────────────────────────────────
+    if (action === "connectInstancia") {
+      const { instancia_id } = body;
+      if (!instancia_id) return json({ error: "instancia_id obrigatório" }, 400);
+
+      const { data: inst, error: instErr } = await supabase
+        .from("empresa_instancias")
+        .select("*")
+        .eq("id", instancia_id)
+        .eq("empresa_id", empresa_id)
+        .single();
+      if (instErr || !inst) return json({ error: "Instância não encontrada" }, 404);
+
+      const iToken = inst.evolution_instance_token;
+      const iName  = inst.evolution_instance_id;
+      const iUrl   = ((inst.evolution_api_url || evoUrl) as string).replace(/\/$/, "");
+
+      const iFetchInst = (path: string, opts: RequestInit = {}) =>
+        fetch(`${iUrl}${path}`, {
+          ...opts,
+          headers: { "Content-Type": "application/json", "apikey": iToken || apiKey, ...(opts.headers || {}) },
+        });
+
+      const extractQr = (d: Record<string, unknown>): string =>
+        (d?.base64 || d?.qrcode?.base64 || d?.Qrcode || d?.data?.Qrcode || d?.data?.qrcode || d?.instance?.qrcode?.base64 || "") as string;
+
+      // Tenta conectar
+      let qrBase64 = "";
+      try {
+        const r = await iFetchInst(`/instance/connect/${iName}`);
+        const d = await r.json();
+        qrBase64 = extractQr(d);
+        const state = d?.instance?.state || d?.state || d?.data?.state || "";
+        if (!qrBase64 && state === "open") {
+          await supabase.from("empresa_instancias").update({ evolution_connected: true, evolution_qr_temp: null }).eq("id", instancia_id);
+          return json({ success: true, alreadyConnected: true });
+        }
+      } catch (_) {}
+
+      if (qrBase64) {
+        await supabase.from("empresa_instancias").update({ evolution_qr_temp: qrBase64 }).eq("id", instancia_id);
+        return json({ success: true, qrBase64 });
+      }
+
+      return json({ success: false, qrBase64: "", needsRetry: true });
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // MULTI-INSTÂNCIA: qrInstancia — polling de QR para instância secundária
+    // ────────────────────────────────────────────────────────────────────────
+    if (action === "qrInstancia") {
+      const { instancia_id } = body;
+      if (!instancia_id) return json({ error: "instancia_id obrigatório" }, 400);
+
+      const { data: inst } = await supabase
+        .from("empresa_instancias")
+        .select("evolution_qr_temp, evolution_connected")
+        .eq("id", instancia_id)
+        .eq("empresa_id", empresa_id)
+        .single();
+      if (!inst) return json({ error: "Instância não encontrada" }, 404);
+
+      if (inst.evolution_connected) return json({ data: { Connected: true } });
+      if (inst.evolution_qr_temp)   return json({ data: { Qrcode: inst.evolution_qr_temp } });
+
+      return json({ data: { Qrcode: null, Connected: false } });
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // MULTI-INSTÂNCIA: deleteInstancia — remove instância secundária
+    // ────────────────────────────────────────────────────────────────────────
+    if (action === "deleteInstancia") {
+      const { instancia_id } = body;
+      if (!instancia_id) return json({ error: "instancia_id obrigatório" }, 400);
+
+      const { data: inst } = await supabase
+        .from("empresa_instancias")
+        .select("*")
+        .eq("id", instancia_id)
+        .eq("empresa_id", empresa_id)
+        .single();
+      if (!inst) return json({ error: "Instância não encontrada" }, 404);
+
+      // Best-effort: deleta na API
+      const iUrl   = ((inst.evolution_api_url || evoUrl) as string).replace(/\/$/, "");
+      const iToken = inst.evolution_instance_token;
+      const iName  = inst.evolution_instance_id;
+      try {
+        await fetch(`${iUrl}/instance/delete/${iName}`, {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json", "apikey": iToken || apiKey },
+        });
+      } catch (_) {}
+
+      // Remove do banco
+      await supabase.from("empresa_instancias").delete().eq("id", instancia_id);
+      return json({ success: true });
     }
 
     return json({ error: `Ação desconhecida: ${action}` }, 400);

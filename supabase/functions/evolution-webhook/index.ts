@@ -66,6 +66,7 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
   );
   const GLOBAL_URL = Deno.env.get("EVOLUTION_GLOBAL_URL") ?? "https://evolutionapi-evolution-api.kwjuno.easypanel.host";
+  const GLOBAL_KEY = Deno.env.get("EVOLUTION_GLOBAL_KEY") ?? "";
 
   try {
     const reqUrl       = new URL(req.url);
@@ -114,7 +115,25 @@ Deno.serve(async (req) => {
     const instanceId    = body.instance?.id || body.instanceId || "";
 
     let empresa_id: string | null = null;
+    let instanciaId: string | null = null;       // id em empresa_instancias (null = instância principal via empresas)
+    let instanciaEhPrincipal = true;             // false = número secundário (escuta apenas, sem bot/round-robin)
+
+    // 1. Tenta empresa_instancias primeiro (números secundários dos vendedores)
     if (instanceToken) {
+      const { data: inst } = await supabase.from("empresa_instancias")
+        .select("id, empresa_id, eh_principal")
+        .eq("evolution_instance_token", instanceToken).maybeSingle();
+      if (inst) { empresa_id = inst.empresa_id; instanciaId = inst.id; instanciaEhPrincipal = inst.eh_principal; }
+    }
+    if (!empresa_id && instanceName) {
+      const { data: inst } = await supabase.from("empresa_instancias")
+        .select("id, empresa_id, eh_principal")
+        .eq("evolution_instance_id", instanceName).maybeSingle();
+      if (inst) { empresa_id = inst.empresa_id; instanciaId = inst.id; instanciaEhPrincipal = inst.eh_principal; }
+    }
+
+    // 2. Fallback: instância principal via tabela empresas
+    if (!empresa_id && instanceToken) {
       const { data: emp } = await supabase.from("empresas").select("id").eq("evolution_instance_token", instanceToken).maybeSingle();
       if (emp) empresa_id = emp.id;
     }
@@ -169,7 +188,13 @@ Deno.serve(async (req) => {
     // ── QR CODE ─────────────────────────────────────────────────────────────
     if (["QRCODE","QRCODE_UPDATED","qrcode.updated"].includes(event)) {
       const qr = data?.qrcode?.base64 || data?.base64 || data?.Qrcode || (typeof data?.qrcode === "string" ? data.qrcode : "");
-      if (qr) await supabase.from("empresas").update({ evolution_qr_temp: qr }).eq("id", empresa_id);
+      if (qr) {
+        if (instanciaId) {
+          await supabase.from("empresa_instancias").update({ evolution_qr_temp: qr }).eq("id", instanciaId);
+        } else {
+          await supabase.from("empresas").update({ evolution_qr_temp: qr }).eq("id", empresa_id);
+        }
+      }
       return new Response("OK");
     }
 
@@ -180,18 +205,26 @@ Deno.serve(async (req) => {
       if (state === "open" || event === "Connected") {
         const jid   = data?.jid || data?.instance?.jid || "";
         const phone = jid.replace(/@s\.whatsapp\.net$/, "").replace(/:.*$/, "");
-        await supabase.from("empresas").update({ evolution_connected: true, evolution_phone: phone || "", evolution_qr_temp: null }).eq("id", empresa_id);
+        if (instanciaId) {
+          await supabase.from("empresa_instancias").update({ evolution_connected: true, evolution_phone: phone || "", evolution_qr_temp: null }).eq("id", instanciaId);
+        } else {
+          await supabase.from("empresas").update({ evolution_connected: true, evolution_phone: phone || "", evolution_qr_temp: null }).eq("id", empresa_id);
+        }
         await logWA(supabase, {
           empresa_id, tipo: "conexao", nivel: "info", origem: "evolution-webhook", evento: event,
-          resumo: `WhatsApp conectado${phone ? ` — ${phone}` : ""}`,
-          payload: { state, phone },
+          resumo: `WhatsApp conectado${instanciaId ? " (número secundário)" : ""}${phone ? ` — ${phone}` : ""}`,
+          payload: { state, phone, instanciaId },
         });
       } else if (state === "close" || state === "connecting" || event === "Disconnected") {
-        await supabase.from("empresas").update({ evolution_connected: false }).eq("id", empresa_id);
+        if (instanciaId) {
+          await supabase.from("empresa_instancias").update({ evolution_connected: false }).eq("id", instanciaId);
+        } else {
+          await supabase.from("empresas").update({ evolution_connected: false }).eq("id", empresa_id);
+        }
         await logWA(supabase, {
           empresa_id, tipo: "conexao", nivel: "warn", origem: "evolution-webhook", evento: event,
-          resumo: `WhatsApp desconectado (${state || event})`,
-          payload: { state },
+          resumo: `WhatsApp desconectado${instanciaId ? " (número secundário)" : ""} (${state || event})`,
+          payload: { state, instanciaId },
         });
       }
       return new Response("OK");
@@ -224,7 +257,7 @@ Deno.serve(async (req) => {
           if (Array.isArray(conv?.messages)) allMsgs.push(...conv.messages);
         }
       }
-      if (allMsgs.length > 0) await processMessages(allMsgs, empresa_id, supabase, GLOBAL_URL, now, true);
+      if (allMsgs.length > 0) await processMessages(allMsgs, empresa_id, supabase, GLOBAL_URL, GLOBAL_KEY, now, true, instanciaEhPrincipal);
       return new Response("OK");
     }
 
@@ -235,7 +268,7 @@ Deno.serve(async (req) => {
         resumo: `Webhook de mensagem recebido (${event})`,
       });
       const msgs = Array.isArray(data) ? data : [data];
-      await processMessages(msgs, empresa_id, supabase, GLOBAL_URL, now, false);
+      await processMessages(msgs, empresa_id, supabase, GLOBAL_URL, GLOBAL_KEY, now, false, instanciaEhPrincipal);
 
       // ── CSAT: verifica se alguma mensagem recebida é resposta de satisfação ──
       for (const msg of msgs) {
@@ -708,7 +741,8 @@ function interpolarVariaveis(texto: string, variaveis: Record<string, string>): 
 // ─────────────────────────────────────────────────────────────────────────────
 async function processMessages(
   msgs: unknown[], empresa_id: string, supabase: ReturnType<typeof createClient>,
-  GLOBAL_URL: string, now: string, isHistory: boolean
+  GLOBAL_URL: string, GLOBAL_KEY: string, now: string, isHistory: boolean,
+  instanciaEhPrincipal = true
 ) {
   // Load chatbot_config once per batch to get setor_padrao_id for auto-assignment
   let cfgEarly: Record<string, unknown> | null = null;
@@ -861,7 +895,8 @@ async function processMessages(
       // ── Round-robin: distribui novo cliente para o próximo vendedor ──────────
       // Só é bloqueado quando algum fluxo ativo tem menu de opções levando a setores;
       // qualquer outra configuração de fluxo visual permite distribuição normal por vendedor.
-      if (!fromMe && conv?.id && !roundRobinBloqueadoPorFluxo) {
+      // Números secundários (instanciaEhPrincipal=false) não acionam round-robin.
+      if (!fromMe && conv?.id && !roundRobinBloqueadoPorFluxo && instanciaEhPrincipal) {
         try {
           const [{ data: dist }, { data: setorVendas }] = await Promise.all([
             supabase.from("distribuicao_atendimento")
@@ -929,7 +964,8 @@ async function processMessages(
         contato_nome: senderName || conv.contato_nome,
       };
       // Reabre conversa resolvida automaticamente quando cliente envia nova mensagem
-      if (conv.status === "resolvida") {
+      const wasResolvida = conv.status === "resolvida";
+      if (wasResolvida) {
         reopenFields.status = "aberta";
         reopenFields.atendente_id = null;
         reopenFields.fluxo_estado = null;
@@ -942,8 +978,18 @@ async function processMessages(
       await supabase.from("conversas").update(reopenFields).eq("id", conv.id);
 
       // Round-robin para conversas sem atendente — só bloqueado quando fluxo tem menu → setor
-      const precisaAtribuir = !roundRobinBloqueadoPorFluxo &&
-        (conv.status === "resolvida" || !(conv as Record<string, unknown>).atendente_id);
+      // Números secundários (instanciaEhPrincipal=false) não acionam round-robin.
+      let precisaAtribuir = instanciaEhPrincipal && !roundRobinBloqueadoPorFluxo &&
+        (wasResolvida || !(conv as Record<string, unknown>).atendente_id);
+      // Também atribui se o atendente atual foi excluído/desativado
+      if (!precisaAtribuir && !roundRobinBloqueadoPorFluxo && conv.atendente_id) {
+        const { data: atendenteOk } = await supabase.from("usuarios")
+          .select("id").eq("id", String(conv.atendente_id)).eq("ativo", true).maybeSingle();
+        if (!atendenteOk) {
+          precisaAtribuir = true;
+          console.log(`[round-robin] atendente ${conv.atendente_id} não encontrado/inativo → forçando atribuição`);
+        }
+      }
       if (precisaAtribuir) {
         try {
           const [{ data: dist }, { data: setorVendas }] = await Promise.all([
@@ -1053,9 +1099,9 @@ async function processMessages(
               .select("evolution_instance_id, evolution_instance_token, evolution_api_url")
               .eq("id", empresa_id).maybeSingle();
             const evoInst  = empInfo?.evolution_instance_id  as string | null;
-            const evoToken = empInfo?.evolution_instance_token as string | null;
+            const evoToken = (empInfo?.evolution_instance_token as string | null) || GLOBAL_KEY;
             const evoBase  = ((empInfo?.evolution_api_url as string | null) || GLOBAL_URL).replace(/\/$/, "");
-            console.log(`[webhook] getBase64 inst:${evoInst} url:${evoBase}`);
+            console.log(`[webhook] getBase64 inst:${evoInst} url:${evoBase} hasToken:${!!evoToken}`);
             if (evoInst && evoToken) {
               // Evolution API pode ter o endpoint em diferentes caminhos dependendo da versão.
               // Tenta /message/getBase64FromMediaMessage (v2 padrão), depois /chat/getBase64FromMediaMessage (v1/fork).
@@ -1063,16 +1109,25 @@ async function processMessages(
                 `${evoBase}/message/getBase64FromMediaMessage/${evoInst}`,
                 `${evoBase}/chat/getBase64FromMediaMessage/${evoInst}`,
               ];
+              // Tenta diferentes payloads — formato varia entre versões da Evolution API
+              const payloads = [
+                { id: wamid },
+                { message: { key: { id: wamid } } },
+              ];
               let fr: Response | null = null;
+              outer:
               for (const ep of endpoints) {
-                const r = await fetch(ep, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json", "apikey": evoToken },
-                  body: JSON.stringify({ id: wamid }),
-                  signal: AbortSignal.timeout(15000),
-                });
-                console.log(`[webhook] getBase64 ${ep} → ${r.status}`);
-                if (r.ok || r.status !== 404) { fr = r; break; }
+                for (const payload of payloads) {
+                  const r = await fetch(ep, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", "apikey": evoToken },
+                    body: JSON.stringify(payload),
+                    signal: AbortSignal.timeout(15000),
+                  });
+                  console.log(`[webhook] getBase64 ${ep} payload:${JSON.stringify(payload).slice(0,60)} → ${r.status}`);
+                  if (r.ok) { fr = r; break outer; }
+                  if (r.status !== 404 && r.status !== 400) { fr = r; break outer; }
+                }
               }
               if (!fr) fr = new Response("{}", { status: 404 });
               debugStep = `getBase64-http:${fr.status}`;
@@ -1203,6 +1258,10 @@ async function processMessages(
     }
 
     // ── Chatbot ──────────────────────────────────────────────────────────────
+    // Números secundários (instanciaEhPrincipal=false) só recebem/armazenam mensagens;
+    // bot e automações rodam apenas na instância principal.
+    if (!instanciaEhPrincipal) continue;
+
     // Pre-check: look up a per-seller flow for conversations assigned to a seller.
     // This runs before the em_atendimento gate so seller flows can activate even
     // when a human agent is assigned (status = em_atendimento).
