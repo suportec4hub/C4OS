@@ -84,13 +84,14 @@ function lazyLoad(factory) {
   );
 }
 
-const PageLanding  = lazyLoad(() => import("./pages/PageLanding"));
-const PageBlog     = lazyLoad(() => import("./pages/PageBlog"));
-const PageDocs     = lazyLoad(() => import("./pages/PageDocs"));
-const PageObrigado = lazyLoad(() => import("./pages/PageObrigado"));
+const PageLanding     = lazyLoad(() => import("./pages/PageLanding"));
+const PageBlog        = lazyLoad(() => import("./pages/PageBlog"));
+const PageDocs        = lazyLoad(() => import("./pages/PageDocs"));
+const PageObrigado    = lazyLoad(() => import("./pages/PageObrigado"));
+const PageTreinamento = lazyLoad(() => import("./pages/PageTreinamento"));
 
-const PATH_MAP  = { "/c4os": "login", "/c4blog": "blog", "/c4docs": "docs", "/obrigado": "obrigado" };
-const PAGE_PATH = { landing: "/", login: "/C4OS", blog: "/C4BLOG", docs: "/C4DOCS", obrigado: "/obrigado" };
+const PATH_MAP  = { "/c4os": "login", "/c4blog": "blog", "/c4docs": "docs", "/obrigado": "obrigado", "/treinamento": "treinamento" };
+const PAGE_PATH = { landing: "/", login: "/C4OS", blog: "/C4BLOG", docs: "/C4DOCS", obrigado: "/obrigado", treinamento: "/treinamento" };
 
 const pathToPage = (path) =>
   PATH_MAP[path.toLowerCase().replace(/\/$/, "")] ?? "landing";
@@ -197,6 +198,15 @@ function AppInner() {
       <div style={{width:18,height:18,borderRadius:"50%",border:"2px solid #bbf7d0",borderTopColor:"#16a34a",animation:"spin .7s linear infinite"}}/>
     </div>
   );
+
+  // Treinamento: sempre renderiza com auth própria (lida internamente)
+  if (publicPage === "treinamento") {
+    return (
+      <Suspense fallback={publicFallback}>
+        <PageTreinamento />
+      </Suspense>
+    );
+  }
 
   // Páginas públicas não precisam esperar auth — renderizar imediatamente
   if (["landing", "blog", "docs", "obrigado"].includes(publicPage) && !user) {
