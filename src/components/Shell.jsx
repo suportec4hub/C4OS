@@ -35,7 +35,6 @@ const PageFinanceiro       = lazyLoad(() => import("../pages/PageFinanceiro"));
 const PageRH               = lazyLoad(() => import("../pages/PageRH"));
 const PageMarketing        = lazyLoad(() => import("../pages/PageMarketing"));
 const PageDigital          = lazyLoad(() => import("../pages/PageDigital"));
-const PageWorkspace        = lazyLoad(() => import("../pages/PageWorkspace"));
 const PageAgenda           = lazyLoad(() => import("../pages/PageAgenda"));
 const PageContratos        = lazyLoad(() => import("../pages/PageContratos"));
 const PagePropostas        = lazyLoad(() => import("../pages/PagePropostas"));
@@ -63,7 +62,6 @@ const NAV_ITEMS = [
   {id:"chatbot",    label:"Chatbot",        ico:"🤖", g:"comunicação"},
   {id:"chatbotbuilder",  label:"Fluxo Visual",   ico:"⬡", g:"comunicação"},
   {id:"disparos",   label:"Disparos",       ico:"◉",  g:"comunicação"},
-  {id:"workspace",  label:"Workspace",      ico:"◫",  g:"comunicação"},
   {id:"followup",   label:"Follow-ups",     ico:"◷", g:"atividades"},
   {id:"agenda",     label:"Agenda",         ico:"◷", g:"atividades"},
   {id:"financeiro", label:"Financeiro",     ico:"◈", g:"gestão"},
@@ -454,7 +452,6 @@ export default function Shell({user,onLogout,onProfileUpdate,theme,toggleTheme})
           {safe==="marketing" && <PageMarketing user={user} isAdmin={isAdmin}/>}
           {safe==="trafico"  && <PageTrafico  user={user}/>}
           {safe==="digital"   && <PageDigital   user={user} isAdmin={isAdmin}/>}
-          {safe==="workspace" && <PageWorkspace user={user}/>}
           {safe==="agenda"    && <PageAgenda    user={user}/>}
           {safe==="contratos" && <PageContratos user={user}/>}
           {safe==="propostas" && <PagePropostas user={user}/>}
