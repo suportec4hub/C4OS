@@ -100,11 +100,11 @@ Deno.serve(async (req) => {
 
     if (!evoUrl) return json({ error: "Servidor Evolution não configurado. Verifique as Secrets EVOLUTION_GLOBAL_URL e EVOLUTION_GLOBAL_KEY no Supabase." });
 
-    /** Fetch autenticado com global apikey — sempre usa GLOBAL_KEY para operações admin */
+    /** Fetch autenticado com global apikey — usa apiKey do banco (ou GLOBAL_KEY como fallback) */
     const gFetch = (path: string, opts: RequestInit = {}) =>
       fetch(`${evoUrl}${path}`, {
         ...opts,
-        headers: { "Content-Type": "application/json", "apikey": GLOBAL_KEY || apiKey, ...(opts.headers || {}) },
+        headers: { "Content-Type": "application/json", "apikey": apiKey || GLOBAL_KEY, ...(opts.headers || {}) },
       });
 
     /** Fetch autenticado com instance apikey */
