@@ -100,11 +100,11 @@ Deno.serve(async (req) => {
 
     if (!evoUrl) return json({ error: "Servidor Evolution não configurado. Verifique as Secrets EVOLUTION_GLOBAL_URL e EVOLUTION_GLOBAL_KEY no Supabase." });
 
-    /** Fetch autenticado com global apikey */
+    /** Fetch autenticado com global apikey — sempre usa GLOBAL_KEY para operações admin */
     const gFetch = (path: string, opts: RequestInit = {}) =>
       fetch(`${evoUrl}${path}`, {
         ...opts,
-        headers: { "Content-Type": "application/json", "apikey": apiKey, ...(opts.headers || {}) },
+        headers: { "Content-Type": "application/json", "apikey": GLOBAL_KEY || apiKey, ...(opts.headers || {}) },
       });
 
     /** Fetch autenticado com instance apikey */
@@ -260,7 +260,6 @@ Deno.serve(async (req) => {
           const errMsg = ((cd?.message || cd?.error || "") as string).toLowerCase();
           const alreadyExists = errMsg.includes("already") || errMsg.includes("exists") ||
             errMsg.includes("duplicate") || sc === 409;
-          const isForbidden = sc === 403 || errMsg.includes("forbidden");
 
           if (alreadyExists) {
             console.log("[connect] createFresh: instance already exists — deleting and retrying...");
@@ -269,23 +268,6 @@ Deno.serve(async (req) => {
             cr = await doCreate();
             cd = await cr.json();
             console.log("[connect] createFresh retry status:", cr.status, JSON.stringify(cd).slice(0, 400));
-          } else if (isForbidden && apiKey !== GLOBAL_KEY && GLOBAL_KEY) {
-            // Chave própria da empresa está obsoleta — tenta criar com GLOBAL_KEY
-            console.log("[connect] createFresh: 403 with company key — retrying with GLOBAL_KEY...");
-            const globalCreate = () => fetch(`${evoUrl}/instance/create`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json", "apikey": GLOBAL_KEY },
-              body: JSON.stringify({
-                instanceName: name, name, token: myToken, qrcode: true,
-                integration: "WHATSAPP-BAILEYS", syncFullHistory: true,
-                webhookByEvents: false, webhook_by_events: false,
-                webhook: { url: whUrl, events: WEBHOOK_EVENTS, webhookByEvents: false, base64: true },
-                webhookUrl: whUrl,
-              }),
-            });
-            cr = await globalCreate();
-            cd = await cr.json();
-            console.log("[connect] createFresh globalKey retry status:", cr.status, JSON.stringify(cd).slice(0, 400));
           }
         }
 
@@ -293,7 +275,12 @@ Deno.serve(async (req) => {
           await supabase.from("empresas").update({
             evolution_instance_id: null, evolution_instance_token: null,
           }).eq("id", empresa_id);
-          throw new Error(cd.message || cd.error || JSON.stringify(cd));
+          const sc2 = (cd?.statusCode ?? cd?.status ?? cr.status) as number;
+          const msg = String(cd?.message || cd?.error || JSON.stringify(cd));
+          if (sc2 === 403) {
+            throw new Error(`Chave EVOLUTION_GLOBAL_KEY inválida ou não configurada no Supabase Secrets. Verifique nas configurações. (${msg})`);
+          }
+          throw new Error(msg);
         }
 
         const tok  = cd?.hash?.apikey || cd?.data?.token || cd?.token || myToken;
