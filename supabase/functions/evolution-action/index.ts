@@ -204,6 +204,20 @@ Deno.serve(async (req) => {
         const whUrl   = `${SUPA_URL}/functions/v1/evolution-webhook?token=${myToken}`;
         const name    = computedName;
 
+        // ── Garante que não existe instância com esse nome no servidor ──
+        // Tenta deletar com a global key, depois com o token antigo (migração de servidor)
+        try { await gFetch(`/instance/delete/${name}`, { method: "DELETE" }); } catch (_) {}
+        if (instToken && instToken !== myToken) {
+          try {
+            await fetch(`${evoUrl}/instance/delete/${name}`, {
+              method: "DELETE",
+              headers: { "Content-Type": "application/json", "apikey": instToken },
+            });
+          } catch (_) {}
+        }
+        // Pequena pausa para o servidor processar a deleção
+        await new Promise(r => setTimeout(r, 500));
+
         // Salva token ANTES de chamar a API para evitar race condition com webhooks
         await supabase.from("empresas").update({
           evolution_instance_id:    name,
@@ -212,7 +226,7 @@ Deno.serve(async (req) => {
           evolution_qr_temp:        null,
         }).eq("id", empresa_id);
 
-        const cr = await gFetch("/instance/create", {
+        const doCreate = () => gFetch("/instance/create", {
           method: "POST",
           body: JSON.stringify({
             instanceName:    name,
@@ -232,8 +246,25 @@ Deno.serve(async (req) => {
             webhookUrl: whUrl,
           }),
         });
-        const cd = await cr.json();
+
+        let cr = await doCreate();
+        let cd = await cr.json();
         console.log("[connect] createFresh status:", cr.status, JSON.stringify(cd).slice(0, 400));
+
+        // Se "already exists" → deleta e tenta novamente uma vez
+        if (!cr.ok) {
+          const errMsg = ((cd?.message || cd?.error || "") as string).toLowerCase();
+          const alreadyExists = errMsg.includes("already") || errMsg.includes("exists") ||
+            errMsg.includes("duplicate") || (cd?.statusCode ?? cd?.status ?? cr.status) === 409;
+          if (alreadyExists) {
+            console.log("[connect] createFresh: instance already exists — deleting and retrying...");
+            try { await gFetch(`/instance/delete/${name}`, { method: "DELETE" }); } catch (_) {}
+            await new Promise(r => setTimeout(r, 1000));
+            cr = await doCreate();
+            cd = await cr.json();
+            console.log("[connect] createFresh retry status:", cr.status, JSON.stringify(cd).slice(0, 400));
+          }
+        }
 
         if (!cr.ok) {
           await supabase.from("empresas").update({
@@ -617,9 +648,13 @@ Deno.serve(async (req) => {
           });
         } catch (_) { /* best-effort */ }
       }
+      // Limpa token + instance_id: na próxima conexão, vai para createFresh diretamente
+      // sem tentar estratégias 1-4 com credenciais antigas (evita erro ao migrar servidor)
       await supabase.from("empresas").update({
-        evolution_connected: false,
-        evolution_qr_temp:   null,
+        evolution_connected:      false,
+        evolution_qr_temp:        null,
+        evolution_instance_token: null,
+        evolution_instance_id:    null,
       }).eq("id", empresa_id);
       return json({ success: true });
     }
