@@ -71,21 +71,21 @@ Deno.serve(async (req) => {
 
     const { data: emp, error: empErr } = await supabase
       .from("empresas")
-      .select("id, nome, evolution_instance_id, evolution_instance_token, evolution_api_url, evolution_api_key, evolution_connected")
+      .select("id, nome, evolution_instance_id, evolution_instance_token, evolution_connected")
       .eq("id", empresa_id)
       .single();
 
     if (empErr || !emp) return json({ error: "Empresa não encontrada" }, 404);
 
-    const evoUrl       = ((emp.evolution_api_url?.trim() || GLOBAL_URL) || "").replace(/\/$/, "");
+    // URL e chave lidos exclusivamente dos Supabase Secrets (EVOLUTION_GLOBAL_URL / EVOLUTION_GLOBAL_KEY)
+    const evoUrl       = GLOBAL_URL.replace(/\/$/, "");
     const instToken    = emp.evolution_instance_token || "";
     // evolution_instance_id guarda o instanceName (string como "c4HUB-Lucas-Machado")
     const instName     = emp.evolution_instance_id || `c4HUB-${sanitizeName(emp.nome || empresa_id.slice(0, 12))}`;
     const computedName = `c4HUB-${sanitizeName(emp.nome || empresa_id.slice(0, 12))}`;
-    // DB key takes priority over Supabase Secret (fallback for secret propagation issues)
-    const apiKey       = (emp as Record<string, string>).evolution_api_key?.trim() || GLOBAL_KEY;
+    const apiKey       = GLOBAL_KEY;
 
-    console.log("[config] evoUrl:", evoUrl, "| apiKey set:", !!apiKey, "| action:", action);
+    console.log("[config] evoUrl set:", !!evoUrl, "| apiKey set:", !!apiKey, "| action:", action);
 
     // Desconectar/logout: limpa o banco SEMPRE, independente de URL configurada
     if ((action === "disconnect" || action === "logout") && !evoUrl) {
@@ -100,11 +100,11 @@ Deno.serve(async (req) => {
 
     if (!evoUrl) return json({ error: "Servidor Evolution não configurado. Verifique as Secrets EVOLUTION_GLOBAL_URL e EVOLUTION_GLOBAL_KEY no Supabase." });
 
-    /** Fetch autenticado com global apikey — sempre usa GLOBAL_KEY para operações admin */
+    /** Fetch autenticado com global apikey — usa apiKey do banco (ou GLOBAL_KEY como fallback) */
     const gFetch = (path: string, opts: RequestInit = {}) =>
       fetch(`${evoUrl}${path}`, {
         ...opts,
-        headers: { "Content-Type": "application/json", "apikey": GLOBAL_KEY || apiKey, ...(opts.headers || {}) },
+        headers: { "Content-Type": "application/json", "apikey": apiKey || GLOBAL_KEY, ...(opts.headers || {}) },
       });
 
     /** Fetch autenticado com instance apikey */
@@ -1325,7 +1325,6 @@ Deno.serve(async (req) => {
           nome:                     instNome.trim(),
           evolution_instance_id:    safeName,
           evolution_instance_token: myToken,
-          evolution_api_url:        evoUrl,
           eh_principal:             false,
           ativo:                    true,
           evolution_connected:      false,
@@ -1413,10 +1412,9 @@ Deno.serve(async (req) => {
 
       const iToken = inst.evolution_instance_token;
       const iName  = inst.evolution_instance_id;
-      const iUrl   = ((inst.evolution_api_url || evoUrl) as string).replace(/\/$/, "");
 
       const iFetchInst = (path: string, opts: RequestInit = {}) =>
-        fetch(`${iUrl}${path}`, {
+        fetch(`${evoUrl}${path}`, {
           ...opts,
           headers: { "Content-Type": "application/json", "apikey": iToken || apiKey, ...(opts.headers || {}) },
         });
@@ -1482,11 +1480,10 @@ Deno.serve(async (req) => {
       if (!inst) return json({ error: "Instância não encontrada" }, 404);
 
       // Best-effort: deleta na API
-      const iUrl   = ((inst.evolution_api_url || evoUrl) as string).replace(/\/$/, "");
       const iToken = inst.evolution_instance_token;
       const iName  = inst.evolution_instance_id;
       try {
-        await fetch(`${iUrl}/instance/delete/${iName}`, {
+        await fetch(`${evoUrl}/instance/delete/${iName}`, {
           method: "DELETE",
           headers: { "Content-Type": "application/json", "apikey": iToken || apiKey },
         });
