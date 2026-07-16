@@ -90,8 +90,10 @@ Deno.serve(async (req) => {
     // Desconectar/logout: limpa o banco SEMPRE, independente de URL configurada
     if ((action === "disconnect" || action === "logout") && !evoUrl) {
       await supabase.from("empresas").update({
-        evolution_connected: false,
-        evolution_qr_temp:   null,
+        evolution_connected:      false,
+        evolution_qr_temp:        null,
+        evolution_instance_token: null,
+        evolution_instance_id:    null,
       }).eq("id", empresa_id);
       return json({ success: true });
     }
@@ -252,10 +254,14 @@ Deno.serve(async (req) => {
         console.log("[connect] createFresh status:", cr.status, JSON.stringify(cd).slice(0, 400));
 
         // Se "already exists" → deleta e tenta novamente uma vez
+        // Se "forbidden/403" e temos chave própria obsoleta → retenta com GLOBAL_KEY
         if (!cr.ok) {
+          const sc = (cd?.statusCode ?? cd?.status ?? cr.status) as number;
           const errMsg = ((cd?.message || cd?.error || "") as string).toLowerCase();
           const alreadyExists = errMsg.includes("already") || errMsg.includes("exists") ||
-            errMsg.includes("duplicate") || (cd?.statusCode ?? cd?.status ?? cr.status) === 409;
+            errMsg.includes("duplicate") || sc === 409;
+          const isForbidden = sc === 403 || errMsg.includes("forbidden");
+
           if (alreadyExists) {
             console.log("[connect] createFresh: instance already exists — deleting and retrying...");
             try { await gFetch(`/instance/delete/${name}`, { method: "DELETE" }); } catch (_) {}
@@ -263,6 +269,23 @@ Deno.serve(async (req) => {
             cr = await doCreate();
             cd = await cr.json();
             console.log("[connect] createFresh retry status:", cr.status, JSON.stringify(cd).slice(0, 400));
+          } else if (isForbidden && apiKey !== GLOBAL_KEY && GLOBAL_KEY) {
+            // Chave própria da empresa está obsoleta — tenta criar com GLOBAL_KEY
+            console.log("[connect] createFresh: 403 with company key — retrying with GLOBAL_KEY...");
+            const globalCreate = () => fetch(`${evoUrl}/instance/create`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "apikey": GLOBAL_KEY },
+              body: JSON.stringify({
+                instanceName: name, name, token: myToken, qrcode: true,
+                integration: "WHATSAPP-BAILEYS", syncFullHistory: true,
+                webhookByEvents: false, webhook_by_events: false,
+                webhook: { url: whUrl, events: WEBHOOK_EVENTS, webhookByEvents: false, base64: true },
+                webhookUrl: whUrl,
+              }),
+            });
+            cr = await globalCreate();
+            cd = await cr.json();
+            console.log("[connect] createFresh globalKey retry status:", cr.status, JSON.stringify(cd).slice(0, 400));
           }
         }
 
@@ -347,11 +370,11 @@ Deno.serve(async (req) => {
       const isMissingResponse = (status: number, d: Record<string, unknown>): boolean => {
         const sc = (d?.statusCode ?? d?.status ?? status) as number;
         const msg = ((d?.message || d?.error || d?.response || "") as string).toLowerCase();
-        return sc === 404 || sc === 401 ||
+        return sc === 404 || sc === 401 || sc === 403 ||
           msg.includes("not found") || msg.includes("no instance") ||
           msg.includes("not exists") || msg.includes("doesn't exist") ||
           msg.includes("instance not") || msg.includes("unauthorized") ||
-          msg.includes("bad request");
+          msg.includes("forbidden") || msg.includes("bad request");
       };
 
       // Estratégia 1: GET /instance/connect/{name} com token da instância
