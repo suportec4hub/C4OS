@@ -277,6 +277,8 @@ Deno.serve(async (req) => {
 
     // ── HISTORY SYNC ─────────────────────────────────────────────────────────
     if (["HISTORY_SYNC","messaging-history.set"].includes(event)) {
+      // Números secundários não importam histórico — só a instância principal sincroniza
+      if (!instanciaEhPrincipal) return new Response("OK");
       const allMsgs: unknown[] = [];
       if (Array.isArray(data?.messages)) allMsgs.push(...data.messages);
       if (Array.isArray(data?.conversations)) {
