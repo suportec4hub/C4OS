@@ -117,7 +117,23 @@ async function fetchMediaViaWamid(wamid, empresaId) {
   const blob  = new Blob([bytes], { type: data.mimetype || "application/octet-stream" });
   return { blobUrl: URL.createObjectURL(blob), mimetype: data.mimetype };
 }
+
+// Busca qualquer URL de mídia server-side (evita CORS — usada para URLs R2)
+async function fetchMediaViaProxy(url, empresaId, fallbackMime = "application/octet-stream") {
+  const { data } = await supabase.functions.invoke("evolution-action", {
+    body: { action: "proxyMedia", empresa_id: empresaId, url },
+  });
+  if (!data?.base64) throw new Error(data?.error || "proxyMedia sem base64");
+  const raw = data.base64;
+  const b64str = raw.startsWith("data:") ? (raw.includes(",") ? raw.slice(raw.indexOf(",") + 1) : raw) : raw;
+  const bytes = Uint8Array.from(atob(b64str), c => c.charCodeAt(0));
+  const mime = data.contentType || fallbackMime;
+  const blob = new Blob([bytes], { type: mime });
+  return { blobUrl: URL.createObjectURL(blob), mimetype: mime };
+}
+
 const isEncUrl = (u) => u && (u.includes(".enc") || u.includes("t62.7") || u.includes("mmg.whatsapp.net"));
+const isR2Url  = (u) => u && u.includes("r2.dev");
 
 // ─── Helper de download de mídia ─────────────────────────────────────────────
 async function triggerDownload(directUrl, blobUrl, wamid, empresaId, filename = "download") {
@@ -133,16 +149,24 @@ async function triggerDownload(directUrl, blobUrl, wamid, empresaId, filename = 
 
 // ─── MediaImage — imagem com lazy-load/descriptografia automática ─────────────
 function MediaImage({ url, wamid, out, onImageClick, empresaId, caption }) {
-  const needsFetch = isEncUrl(url) || !url;
+  const needsFetch = isEncUrl(url) || isR2Url(url) || !url;
   const [blobUrl,  setBlobUrl]  = useState(null);
   const [loading,  setLoading]  = useState(false);
   const [failed,   setFailed]   = useState(false);
 
   const load = async () => {
-    if (loading || blobUrl || !wamid || !empresaId) { if (!wamid) setFailed(true); return; }
+    if (loading || blobUrl) return;
+    if (!url && !wamid) { setFailed(true); return; }
     setLoading(true);
     try {
-      const { blobUrl: bu } = await fetchMediaViaWamid(wamid, empresaId);
+      let bu;
+      if (url && !isEncUrl(url)) {
+        ({ blobUrl: bu } = await fetchMediaViaProxy(url, empresaId, "image/jpeg"));
+      } else if (wamid && empresaId) {
+        ({ blobUrl: bu } = await fetchMediaViaWamid(wamid, empresaId));
+      } else {
+        setFailed(true); setLoading(false); return;
+      }
       setBlobUrl(bu);
     } catch { setFailed(true); }
     setLoading(false);
@@ -176,7 +200,7 @@ function MediaImage({ url, wamid, out, onImageClick, empresaId, caption }) {
     <div style={{ position:"relative", display:"inline-block", maxWidth:"100%" }}>
       <img src={displayUrl} alt="imagem"
         onClick={() => onImageClick?.(displayUrl)}
-        onError={() => { if (!blobUrl && wamid) load(); else setFailed(true); }}
+        onError={() => { if (!blobUrl) load(); else setFailed(true); }}
         style={{ maxWidth:"100%", borderRadius:8, marginBottom: caption ? 4 : 0,
           cursor:"zoom-in", display:"block" }} />
       <button style={dlStyle}
@@ -190,7 +214,8 @@ function MediaImage({ url, wamid, out, onImageClick, empresaId, caption }) {
 
 // ─── Custom Audio Player (WhatsApp-style) ────────────────────────────────────
 function AudioPlayer({ src, wamid, out, empresaId }) {
-  const needsFetch = isEncUrl(src) || !src;
+  // R2 URLs need server-side proxy; encrypted URLs need wamid fetch; no URL → same
+  const needsFetch = isEncUrl(src) || isR2Url(src) || !src;
   const [playing,   setPlaying]   = useState(false);
   const [progress,  setProgress]  = useState(0);
   const [duration,  setDuration]  = useState(0);
@@ -204,10 +229,18 @@ function AudioPlayer({ src, wamid, out, empresaId }) {
   const activeSrc = blobSrc || (!needsFetch ? src : null);
 
   const fetchAndPlay = async () => {
-    if (fetching || blobSrc || !wamid || !empresaId) { if (!wamid && !blobSrc) setErrored(true); return; }
+    if (fetching || blobSrc) return;
+    if (!src && !wamid) { setErrored(true); return; }
     setFetching(true);
     try {
-      const { blobUrl, mimetype } = await fetchMediaViaWamid(wamid, empresaId);
+      let blobUrl;
+      if (src && !isEncUrl(src)) {
+        ({ blobUrl } = await fetchMediaViaProxy(src, empresaId, "audio/ogg"));
+      } else if (wamid && empresaId) {
+        ({ blobUrl } = await fetchMediaViaWamid(wamid, empresaId));
+      } else {
+        throw new Error("Sem fonte");
+      }
       setBlobSrc(blobUrl);
       setLoaded(false);
       if (audioRef.current) {
@@ -254,19 +287,11 @@ function AudioPlayer({ src, wamid, out, empresaId }) {
   const dimColor = out ? "rgba(255,255,255,.65)" : L.t4;
 
   if (errored) {
-    // Encrypted .enc URLs cannot be downloaded directly — show unavailability instead of a broken link
-    if (!src || isEncUrl(src)) return (
+    return (
       <div style={{ display:"flex", alignItems:"center", gap:7, fontSize:12,
         color: out ? "rgba(255,255,255,.45)" : L.t4 }}>
         <span>⚠</span> Áudio indisponível
       </div>
-    );
-    return (
-      <a href={src} download target="_blank" rel="noreferrer"
-        style={{ display:"flex", alignItems:"center", gap:7, fontSize:12,
-          color: out ? "rgba(255,255,255,.85)" : L.teal, textDecoration:"none" }}>
-        <span style={{ fontSize:18 }}>⬇</span> Baixar áudio
-      </a>
     );
   }
 
@@ -323,7 +348,7 @@ function AudioPlayer({ src, wamid, out, empresaId }) {
 
 // ─── VideoPlayer — vídeo com fallback wamid igual ao áudio/imagem ────────────
 function VideoPlayer({ src, wamid, out, empresaId, caption }) {
-  const needsFetch = isEncUrl(src) || !src;
+  const needsFetch = isEncUrl(src) || isR2Url(src) || !src;
   const [blobSrc,  setBlobSrc]  = useState(null);
   const [loading,  setLoading]  = useState(false);
   const [failed,   setFailed]   = useState(false);
@@ -331,10 +356,18 @@ function VideoPlayer({ src, wamid, out, empresaId, caption }) {
   const activeSrc = blobSrc || (!needsFetch ? src : null);
 
   const load = async () => {
-    if (loading || blobSrc || !wamid || !empresaId) { if (!wamid) setFailed(true); return; }
+    if (loading || blobSrc) return;
+    if (!src && !wamid) { setFailed(true); return; }
     setLoading(true);
     try {
-      const { blobUrl } = await fetchMediaViaWamid(wamid, empresaId);
+      let blobUrl;
+      if (src && !isEncUrl(src)) {
+        ({ blobUrl } = await fetchMediaViaProxy(src, empresaId, "video/mp4"));
+      } else if (wamid && empresaId) {
+        ({ blobUrl } = await fetchMediaViaWamid(wamid, empresaId));
+      } else {
+        setFailed(true); setLoading(false); return;
+      }
       setBlobSrc(blobUrl);
     } catch { setFailed(true); }
     setLoading(false);
