@@ -1096,11 +1096,11 @@ async function processMessages(
           debugStep = "getBase64-start";
           try {
             const { data: empInfo } = await supabase.from("empresas")
-              .select("evolution_instance_id, evolution_instance_token, evolution_api_url")
+              .select("evolution_instance_id, evolution_instance_token")
               .eq("id", empresa_id).maybeSingle();
             const evoInst  = empInfo?.evolution_instance_id  as string | null;
             const evoToken = (empInfo?.evolution_instance_token as string | null) || GLOBAL_KEY;
-            const evoBase  = ((empInfo?.evolution_api_url as string | null) || GLOBAL_URL).replace(/\/$/, "");
+            const evoBase  = GLOBAL_URL.replace(/\/$/, "");
             console.log(`[webhook] getBase64 inst:${evoInst} url:${evoBase} hasToken:${!!evoToken}`);
             if (evoInst && evoToken) {
               // Evolution API pode ter o endpoint em diferentes caminhos dependendo da versão.
@@ -1318,11 +1318,11 @@ async function processMessages(
         if (cfg?.nao_responder_aberta && conv.status === "aberta" && !hasActiveFlow && !vendedorFluxoId) continue;
 
         const { data: empData } = await supabase.from("empresas")
-          .select("evolution_instance_id, evolution_instance_token, evolution_api_url")
+          .select("evolution_instance_id, evolution_instance_token")
           .eq("id", empresa_id).single();
         const instId    = empData?.evolution_instance_id;
         const instToken = empData?.evolution_instance_token;
-        const evoUrl    = ((empData?.evolution_api_url || GLOBAL_URL) as string).replace(/\/$/, "");
+        const evoUrl    = GLOBAL_URL.replace(/\/$/, "");
 
         const sendBot = async (msgText: string, tipo = "texto", extra?: Record<string, unknown>) => {
           if (!instId || !instToken || !evoUrl) return;
