@@ -586,10 +586,10 @@ function MultiInstanciaCard({ user }) {
                         Sincronizando histórico...
                       </span>
                     )}
-                    {!inst.evolution_connected && qs.phase === "idle" && (
+                    {!inst.evolution_connected && (qs.phase === "idle" || qs.phase === "needsRetry") && (
                       <button onClick={() => conectarInstancia(inst.id)}
-                        style={{ fontSize: 11, fontWeight: 600, padding: "4px 10px", borderRadius: 7, cursor: "pointer", background: L.tealBg, color: L.teal, border: `1px solid ${L.tealA}`, fontFamily: "inherit" }}>
-                        Conectar
+                        style={{ fontSize: 11, fontWeight: 600, padding: "4px 10px", borderRadius: 7, cursor: "pointer", background: qs.phase === "needsRetry" ? L.redBg : L.tealBg, color: qs.phase === "needsRetry" ? L.red : L.teal, border: `1px solid ${qs.phase === "needsRetry" ? L.redA2 : L.tealA}`, fontFamily: "inherit" }}>
+                        {qs.phase === "needsRetry" ? "⟳ Tentar novamente" : "Conectar"}
                       </button>
                     )}
                     {qs.phase === "loading" && (

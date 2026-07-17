@@ -1422,7 +1422,7 @@ Deno.serve(async (req) => {
       const extractQr = (d: Record<string, unknown>): string =>
         (d?.base64 || d?.qrcode?.base64 || d?.Qrcode || d?.data?.Qrcode || d?.data?.qrcode || d?.instance?.qrcode?.base64 || "") as string;
 
-      // Tenta conectar
+      // Tenta conectar; se estiver travada em "connecting", faz logout e tenta de novo
       let qrBase64 = "";
       try {
         const r = await iFetchInst(`/instance/connect/${iName}`);
@@ -1432,6 +1432,14 @@ Deno.serve(async (req) => {
         if (!qrBase64 && state === "open") {
           await supabase.from("empresa_instancias").update({ evolution_connected: true, evolution_qr_temp: null }).eq("id", instancia_id);
           return json({ success: true, alreadyConnected: true });
+        }
+        // Instância travada em "connecting" — faz logout para limpar o estado e tenta QR fresh
+        if (!qrBase64 && state === "connecting") {
+          await iFetchInst(`/instance/logout/${iName}`, { method: "DELETE" }).catch(() => {});
+          await new Promise(r => setTimeout(r, 1500));
+          const r2 = await iFetchInst(`/instance/connect/${iName}`);
+          const d2 = await r2.json();
+          qrBase64 = extractQr(d2);
         }
       } catch (_) {}
 
