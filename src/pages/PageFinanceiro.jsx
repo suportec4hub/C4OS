@@ -78,13 +78,18 @@ export default function PageFinanceiro({ user }) {
   const receitas  = itens.filter(l => l.tipo==="receita" && l.status==="pago").reduce((s,l)=>s+parseFloat(l.valor||0),0);
   const despesas  = itens.filter(l => l.tipo==="despesa" && l.status==="pago").reduce((s,l)=>s+parseFloat(l.valor||0),0);
   const lucro     = receitas - despesas;
-  const aReceber  = itens.filter(l => l.tipo==="receita" && (l.status==="pendente"||l.status==="atrasado")).reduce((s,l)=>s+parseFloat(l.valor||0),0);
   const aPagar    = itens.filter(l => l.tipo==="despesa" && (l.status==="pendente"||l.status==="atrasado")).reduce((s,l)=>s+parseFloat(l.valor||0),0);
+
+  // A Receber dividido por ciclo (filtra pela data de vencimento)
+  const pendRec   = (l) => l.tipo==="receita" && (l.status==="pendente"||l.status==="atrasado");
+  const aReceberC1 = itens.filter(l=>pendRec(l)&&inCiclo(l,1)).reduce((s,l)=>s+parseFloat(l.valor||0),0);
+  const aReceberC2 = itens.filter(l=>pendRec(l)&&inCiclo(l,2)).reduce((s,l)=>s+parseFloat(l.valor||0),0);
+  const cntRcbC1   = itens.filter(l=>pendRec(l)&&inCiclo(l,1)).length;
+  const cntRcbC2   = itens.filter(l=>pendRec(l)&&inCiclo(l,2)).length;
 
   // Contagens para sub-labels dos KPIs
   const cntRec    = itens.filter(l=>l.tipo==="receita"&&l.status==="pago").length;
   const cntDesp   = itens.filter(l=>l.tipo==="despesa"&&l.status==="pago").length;
-  const cntRcb    = itens.filter(l=>l.tipo==="receita"&&(l.status==="pendente"||l.status==="atrasado")).length;
   const cntPag    = itens.filter(l=>l.tipo==="despesa"&&(l.status==="pendente"||l.status==="atrasado")).length;
   const cntAtras  = itens.filter(l=>l.status==="atrasado").length;
 
@@ -189,8 +194,8 @@ export default function PageFinanceiro({ user }) {
 
   const PIE_COLORS = [L.red, L.teal, L.copper, L.green, L.yellow, L.blue];
 
-  const openNew  = () => { setForm(VAZIO); setEdit(null); setErr(""); setModal(true); };
-  const openEdit = (l) => { setForm({...l,valor:String(l.valor)}); setEdit(l.id); setErr(""); setModal(true); };
+  const openNew  = () => { setForm(VAZIO); setEdit(null); setErr(""); setRecorrMeses(12); setModal(true); };
+  const openEdit = (l) => { setForm({...l,valor:String(l.valor)}); setEdit(l.id); setErr(""); setRecorrMeses(12); setModal(true); };
 
   const save = async () => {
     if (!form.descricao.trim()) { setErr("Descrição é obrigatória."); return; }
@@ -198,8 +203,21 @@ export default function PageFinanceiro({ user }) {
     setSaving(true); setErr("");
     const base = { ...form, valor:parseFloat(form.valor), empresa_id:user?.empresa_id };
 
-    if (!edit && form.recorrente && form.data_vencimento) {
-      // Gera N entradas mensais, a 1ª com status original, as demais sempre "pendente"
+    if (edit) {
+      // Atualiza a entrada atual
+      const { error: updErr } = await update(edit, base);
+      if (updErr) { setErr(updErr.message||"Erro ao salvar."); setSaving(false); return; }
+      // Se recorrente e usuário pediu gerar meses futuros, insere a partir do mês seguinte
+      if (form.recorrente && form.data_vencimento && recorrMeses > 0) {
+        const todasDatas = gerarDatasRecorrentes(form.data_vencimento, recorrMeses + 1);
+        const rows = todasDatas.slice(1).map(dt => ({
+          ...base, data_vencimento: dt, data_pagamento: null, status: "pendente",
+        }));
+        const { error: insErr } = await supabase.from("financeiro_lancamentos").insert(rows);
+        if (insErr) { setErr(insErr.message||"Erro ao criar entradas futuras."); setSaving(false); return; }
+      }
+    } else if (form.recorrente && form.data_vencimento) {
+      // Criação: gera N entradas mensais, 1ª com status/pagamento originais, demais "pendente"
       const datas = gerarDatasRecorrentes(form.data_vencimento, recorrMeses);
       const rows = datas.map((dt, i) => ({
         ...base,
@@ -209,12 +227,12 @@ export default function PageFinanceiro({ user }) {
       }));
       const { error } = await supabase.from("financeiro_lancamentos").insert(rows);
       if (error) { setErr(error.message||"Erro ao salvar."); setSaving(false); return; }
-      refetch(); setModal(false);
     } else {
-      const { error } = edit ? await update(edit, base) : await insert(base);
+      const { error } = await insert(base);
       if (error) { setErr(error.message||"Erro ao salvar."); setSaving(false); return; }
-      refetch(); setModal(false);
     }
+
+    refetch(); setModal(false);
     setSaving(false);
   };
 
@@ -261,15 +279,19 @@ export default function PageFinanceiro({ user }) {
       )}
 
       {/* KPIs */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10,marginBottom:14}} className="rg-auto">
+      <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:10,marginBottom:14}} className="rg-auto">
         {[
-          { l:"Receitas",      v:fmt(receitas),  c:L.green,  bg:L.greenBg,   icon:"↑", cnt:`${cntRec} pago${cntRec!==1?"s":""}` },
-          { l:"Despesas",      v:fmt(despesas),  c:L.red,    bg:L.redBg,     icon:"↓", cnt:`${cntDesp} pago${cntDesp!==1?"s":""}` },
-          { l:"Lucro Líquido", v:fmt(lucro),     c:lucro>=0?L.teal:L.red, bg:lucro>=0?L.tealBg:L.redBg, icon:"=", cnt:lucro>=0?"positivo":"negativo" },
-          { l:"A Receber",     v:fmt(aReceber),  c:L.copper, bg:L.copperBg,  icon:"⌛", cnt:`${cntRcb} em aberto` },
-          { l:"A Pagar",       v:fmt(aPagar),    c:L.yellow, bg:L.yellowBg,  icon:"📋", cnt:`${cntPag} em aberto` },
+          { l:"Receitas",         v:fmt(receitas),   c:L.green,  bg:L.greenBg,   icon:"↑",  cnt:`${cntRec} pago${cntRec!==1?"s":""}` },
+          { l:"Despesas",         v:fmt(despesas),   c:L.red,    bg:L.redBg,     icon:"↓",  cnt:`${cntDesp} pago${cntDesp!==1?"s":""}` },
+          { l:"Lucro Líquido",    v:fmt(lucro),      c:lucro>=0?L.teal:L.red, bg:lucro>=0?L.tealBg:L.redBg, icon:"=", cnt:lucro>=0?"positivo":"negativo" },
+          { l:"A Receber — C1",   v:fmt(aReceberC1), c:L.copper, bg:L.copperBg,  icon:"⌛", cnt:`${cntRcbC1} em aberto • até 5º dia útil`,
+            onClick:()=>{setFiltro("Ciclo 1");} },
+          { l:"A Receber — C2",   v:fmt(aReceberC2), c:L.teal,   bg:L.tealBg,    icon:"⌛", cnt:`${cntRcbC2} em aberto • dia 15`,
+            onClick:()=>{setFiltro("Ciclo 2");} },
+          { l:"A Pagar",          v:fmt(aPagar),     c:L.yellow, bg:L.yellowBg,  icon:"📋", cnt:`${cntPag} em aberto` },
         ].map((k,i)=>(
-          <div key={i} style={kpiCard(k.c)}>
+          <div key={i} style={{...kpiCard(k.c), cursor:k.onClick?"pointer":"default"}}
+            onClick={k.onClick} title={k.onClick?"Filtrar por este ciclo":undefined}>
             <div style={kpiIcon(k.bg, k.c)}>{k.icon}</div>
             <div style={{fontSize:9,color:L.t4,textTransform:"uppercase",letterSpacing:"1.2px",fontFamily:"'JetBrains Mono',monospace",fontWeight:700}}>{k.l}</div>
             <div style={{fontSize:20,fontWeight:800,color:k.c,fontFamily:"'Outfit',sans-serif",lineHeight:1.15,marginTop:1}}>{k.v}</div>
@@ -605,29 +627,45 @@ export default function PageFinanceiro({ user }) {
               <span style={{fontSize:12,color:L.t2}}>🔄 Lançamento recorrente — repete todo mês na mesma data</span>
             </label>
 
-            {form.recorrente && !edit && form.data_vencimento && (
+            {form.recorrente && form.data_vencimento && (
               <div style={{marginTop:10,padding:"10px 12px",background:L.tealBg,borderRadius:8,border:`1px solid ${L.tealA}`,fontSize:12,color:L.teal}}>
-                <div style={{marginBottom:6,fontWeight:600}}>Gerar automaticamente para quantos meses?</div>
-                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <div style={{marginBottom:6,fontWeight:600}}>
+                  {edit ? "Gerar entradas dos próximos meses a partir desta?" : "Gerar automaticamente para quantos meses?"}
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                   <select value={recorrMeses} onChange={e=>setRecorrMeses(Number(e.target.value))}
                     style={{height:30,borderRadius:6,border:`1px solid ${L.tealA}`,background:L.white,
                       color:L.teal,fontSize:12,padding:"0 8px",fontFamily:"inherit",fontWeight:600}}>
+                    {edit && <option value={0}>Não gerar — só salvar esta entrada</option>}
                     {[3,6,12,24].map(n=><option key={n} value={n}>{n} meses</option>)}
                   </select>
-                  <span style={{fontSize:11,color:L.teal}}>
-                    Dia {new Date(form.data_vencimento+"T12:00:00").getDate()} de cada mês • {recorrMeses} entradas serão criadas
-                  </span>
+                  {recorrMeses > 0 && (
+                    <span style={{fontSize:11,color:L.teal}}>
+                      {edit
+                        ? `${recorrMeses} entradas a partir de ${new Date(form.data_vencimento+"T12:00:00").toLocaleString("pt-BR",{month:"short",year:"numeric"}).replace(" de ","/").replace(/^\w/,c=>c.toUpperCase())} + 1 mês`
+                        : `Dia ${new Date(form.data_vencimento+"T12:00:00").getDate()} de cada mês • ${recorrMeses} entradas criadas`
+                      }
+                    </span>
+                  )}
                 </div>
               </div>
             )}
-            {form.recorrente && !edit && !form.data_vencimento && (
+            {form.recorrente && !form.data_vencimento && (
               <div style={{marginTop:8,fontSize:11,color:L.yellow}}>⚠ Defina a data de vencimento para gerar as entradas mensais.</div>
             )}
           </div>
 
           {err&&<div style={{padding:"8px 12px",background:L.redBg,borderRadius:8,fontSize:12,color:L.red,marginTop:8}}>{err}</div>}
           <ModalFooter onClose={()=>setModal(false)} onSave={save} loading={saving}
-            label={edit?"Salvar Alterações":form.recorrente&&form.data_vencimento?`Criar ${recorrMeses} lançamentos`:"Criar Lançamento"}/>
+            label={
+              edit
+                ? (form.recorrente && form.data_vencimento && recorrMeses > 0
+                  ? `Salvar + Criar ${recorrMeses} meses futuros`
+                  : "Salvar Alterações")
+                : (form.recorrente && form.data_vencimento
+                  ? `Criar ${recorrMeses} lançamentos`
+                  : "Criar Lançamento")
+            }/>
         </Modal>
       )}
     </Fade>
