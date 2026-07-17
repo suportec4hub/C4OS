@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, LineChart, Line } from "recharts";
 import { L } from "../constants/theme";
 import { useTable } from "../hooks/useData";
+import { supabase } from "../lib/supabase";
 import { Fade, Row, Grid, TabPills, PBtn, DataTable, Tag, IBtn, TD, Card, TT } from "../components/ui";
 import Modal, { Field, Input, Select, ModalFooter } from "../components/Modal";
 
@@ -25,6 +26,17 @@ const inCiclo = (l, c) => {
   return c === 1 ? day <= 9 : day >= 13 && day <= 18;
 };
 
+// Gera datas mensais a partir de uma data base para N meses (i=0 é o próprio mês da data base)
+const gerarDatasRecorrentes = (dataBase, qtdMeses) => {
+  const d = new Date(dataBase + "T12:00:00");
+  const dia = d.getDate();
+  return Array.from({ length: qtdMeses }, (_, i) => {
+    const maxDia = new Date(d.getFullYear(), d.getMonth()+i+1, 0).getDate();
+    const dFinal = new Date(d.getFullYear(), d.getMonth()+i, Math.min(dia, maxDia));
+    return dFinal.toISOString().split("T")[0];
+  });
+};
+
 // Gera lista dos últimos N meses no formato { value:"2026-07", label:"Jul/2026" }
 const buildMonthOptions = (n=13) => {
   const opts = [{ value:"todos", label:"Todos os períodos" }];
@@ -46,11 +58,12 @@ export default function PageFinanceiro({ user }) {
   const [periodo,  setPeriodo] = useState("todos");
   const [busca,    setBusca]   = useState("");
   const [chartTab, setChartTab]= useState("fluxo"); // "fluxo" | "lucro"
-  const [modal,    setModal]   = useState(false);
-  const [edit,     setEdit]    = useState(null);
-  const [form,     setForm]    = useState(VAZIO);
-  const [saving,   setSaving]  = useState(false);
-  const [err,      setErr]     = useState("");
+  const [modal,      setModal]     = useState(false);
+  const [edit,       setEdit]      = useState(null);
+  const [form,       setForm]      = useState(VAZIO);
+  const [recorrMeses,setRecorrMeses]= useState(12);
+  const [saving,     setSaving]    = useState(false);
+  const [err,        setErr]       = useState("");
 
   const F = k => v => setForm(p => ({ ...p, [k]: v }));
   const hoje = new Date().toISOString().split("T")[0];
@@ -74,6 +87,35 @@ export default function PageFinanceiro({ user }) {
   const cntRcb    = itens.filter(l=>l.tipo==="receita"&&(l.status==="pendente"||l.status==="atrasado")).length;
   const cntPag    = itens.filter(l=>l.tipo==="despesa"&&(l.status==="pendente"||l.status==="atrasado")).length;
   const cntAtras  = itens.filter(l=>l.status==="atrasado").length;
+
+  // Despesas/Receitas Fixas (recorrentes) — agrupadas por descricao+valor
+  const recorrentesGrupos = useMemo(() => {
+    const rec = itens.filter(l => l.recorrente);
+    const grupos = {};
+    rec.forEach(l => {
+      const key = `${l.descricao.trim()}||${parseFloat(l.valor)}`;
+      if (!grupos[key]) grupos[key] = {
+        descricao: l.descricao, categoria: l.categoria || "—",
+        valor: parseFloat(l.valor), tipo: l.tipo,
+        dia: dayOfMonth(l.data_vencimento), entries: [],
+      };
+      grupos[key].entries.push(l);
+    });
+    // Para cada grupo, montar histórico dos últimos 4 meses
+    const hoje4 = new Date();
+    return Object.values(grupos)
+      .sort((a,b) => a.descricao.localeCompare(b.descricao))
+      .map(g => {
+        const historico = Array.from({ length: 4 }, (_, i) => {
+          const d = new Date(hoje4.getFullYear(), hoje4.getMonth()-3+i, 1);
+          const mk = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+          const label = d.toLocaleString("pt-BR",{month:"short"}).replace(/^\w/,c=>c.toUpperCase());
+          const entry = g.entries.find(e => monthKey(e.data_vencimento) === mk);
+          return { mk, label, status: entry?.status || null };
+        });
+        return { ...g, historico };
+      });
+  }, [itens]);
 
   // Ciclos do mês atual
   const mesAtual = useMemo(() => {
@@ -109,8 +151,9 @@ export default function PageFinanceiro({ user }) {
       if (filtro==="Despesas"  && l.tipo!=="despesa") return false;
       if (filtro==="Pendente"  && l.status!=="pendente") return false;
       if (filtro==="Atrasado"  && l.status!=="atrasado") return false;
-      if (filtro==="Ciclo 1"   && !inCiclo(l, 1)) return false;
-      if (filtro==="Ciclo 2"   && !inCiclo(l, 2)) return false;
+      if (filtro==="Ciclo 1"    && !inCiclo(l, 1)) return false;
+      if (filtro==="Ciclo 2"    && !inCiclo(l, 2)) return false;
+      if (filtro==="Recorrentes"&& !l.recorrente)  return false;
       if (lower && !l.descricao?.toLowerCase().includes(lower) && !l.categoria?.toLowerCase().includes(lower)) return false;
       return true;
     });
@@ -153,10 +196,25 @@ export default function PageFinanceiro({ user }) {
     if (!form.descricao.trim()) { setErr("Descrição é obrigatória."); return; }
     if (!form.valor || parseFloat(form.valor)<=0) { setErr("Valor deve ser maior que zero."); return; }
     setSaving(true); setErr("");
-    const payload = { ...form, valor:parseFloat(form.valor), empresa_id:user?.empresa_id };
-    const {error} = edit ? await update(edit,payload) : await insert(payload);
-    if (error) setErr(error.message||"Erro ao salvar.");
-    else { setModal(false); refetch(); }
+    const base = { ...form, valor:parseFloat(form.valor), empresa_id:user?.empresa_id };
+
+    if (!edit && form.recorrente && form.data_vencimento) {
+      // Gera N entradas mensais, a 1ª com status original, as demais sempre "pendente"
+      const datas = gerarDatasRecorrentes(form.data_vencimento, recorrMeses);
+      const rows = datas.map((dt, i) => ({
+        ...base,
+        data_vencimento: dt,
+        data_pagamento: i === 0 ? (base.data_pagamento || null) : null,
+        status: i === 0 ? base.status : "pendente",
+      }));
+      const { error } = await supabase.from("financeiro_lancamentos").insert(rows);
+      if (error) { setErr(error.message||"Erro ao salvar."); setSaving(false); return; }
+      refetch(); setModal(false);
+    } else {
+      const { error } = edit ? await update(edit, base) : await insert(base);
+      if (error) { setErr(error.message||"Erro ao salvar."); setSaving(false); return; }
+      refetch(); setModal(false);
+    }
     setSaving(false);
   };
 
@@ -219,6 +277,70 @@ export default function PageFinanceiro({ user }) {
           </div>
         ))}
       </div>
+
+      {/* Despesas/Receitas Fixas (recorrentes) */}
+      {recorrentesGrupos.length > 0 && (
+        <div style={{marginBottom:14}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+            <div style={{fontSize:11,fontWeight:700,color:L.t2,textTransform:"uppercase",letterSpacing:"1.2px",fontFamily:"'JetBrains Mono',monospace"}}>
+              🔄 Lançamentos Fixos — {recorrentesGrupos.length} ativo{recorrentesGrupos.length!==1?"s":""}
+            </div>
+            <button onClick={()=>setFiltro("Recorrentes")}
+              style={{fontSize:10,padding:"2px 10px",borderRadius:6,border:`1px solid ${L.line}`,
+                background:L.surface,color:L.t3,cursor:"pointer",fontFamily:"inherit"}}>
+              Ver todos na tabela
+            </button>
+          </div>
+          <div style={{overflowX:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:11.5}}>
+              <thead>
+                <tr style={{borderBottom:`1px solid ${L.line}`}}>
+                  {["Descrição","Categoria","Dia","Valor/mês","Total/ano",...(recorrentesGrupos[0]?.historico||[]).map(h=>h.label),""].map((h,i)=>(
+                    <th key={i} style={{...TD,fontWeight:700,color:L.t4,fontSize:9.5,textTransform:"uppercase",
+                      letterSpacing:"1px",fontFamily:"'JetBrains Mono',monospace",textAlign:i>=5?"center":"left"}}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {recorrentesGrupos.map((g,gi)=>(
+                  <tr key={gi} style={{borderBottom:`1px solid ${L.lineSoft}`}}
+                    onMouseEnter={e=>e.currentTarget.style.background=L.surface}
+                    onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                    <td style={{...TD,fontWeight:600,color:L.t1}}>
+                      🔄 {g.descricao}
+                    </td>
+                    <td style={{...TD,color:L.t3}}>{g.categoria}</td>
+                    <td style={{...TD,color:L.t4,fontFamily:"'JetBrains Mono',monospace"}}>
+                      {g.dia ? `Dia ${g.dia}` : "—"}
+                    </td>
+                    <td style={{...TD,fontWeight:700,color:g.tipo==="receita"?L.green:L.red,fontFamily:"'JetBrains Mono',monospace",whiteSpace:"nowrap"}}>
+                      {fmt(g.valor)}
+                    </td>
+                    <td style={{...TD,color:L.t3,fontFamily:"'JetBrains Mono',monospace",whiteSpace:"nowrap"}}>
+                      {fmt(g.valor*12)}
+                    </td>
+                    {g.historico.map((h,hi)=>{
+                      const sc = {pago:L.green,pendente:L.yellow,atrasado:L.red,cancelado:L.t4};
+                      const sb = {pago:L.greenBg,pendente:L.yellowBg,atrasado:L.redBg,cancelado:L.surface};
+                      return (
+                        <td key={hi} style={{...TD,textAlign:"center"}}>
+                          {h.status ? (
+                            <span style={{
+                              display:"inline-block",padding:"2px 6px",borderRadius:5,fontSize:9.5,fontWeight:700,
+                              color:sc[h.status]||L.t4,background:sb[h.status]||L.surface,
+                            }}>{h.status==="atrasado"?"⚠":h.status==="pago"?"✓":h.status==="pendente"?"…":"—"}</span>
+                          ) : <span style={{color:L.lineSoft}}>—</span>}
+                        </td>
+                      );
+                    })}
+                    <td style={TD}/>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Ciclos de Cobrança do Mês */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
@@ -339,7 +461,7 @@ export default function PageFinanceiro({ user }) {
 
       {/* Barra de filtros */}
       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,flexWrap:"wrap"}}>
-        <TabPills tabs={["Todos","Receitas","Despesas","Pendente","Atrasado","Ciclo 1","Ciclo 2"]} active={filtro} onChange={t=>{setFiltro(t);}}/>
+        <TabPills tabs={["Todos","Receitas","Despesas","Pendente","Atrasado","Recorrentes","Ciclo 1","Ciclo 2"]} active={filtro} onChange={t=>{setFiltro(t);}}/>
 
         <select value={periodo} onChange={e=>setPeriodo(e.target.value)}
           style={{height:32,borderRadius:8,border:`1px solid ${L.line}`,background:L.white,
@@ -383,7 +505,10 @@ export default function PageFinanceiro({ user }) {
               onMouseEnter={e=>e.currentTarget.style.background=L.surface}
               onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
               <td style={{...TD,fontWeight:500,color:L.t1,fontSize:12.5,maxWidth:200}}>
-                <div style={{whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{l.descricao}</div>
+                <div style={{display:"flex",alignItems:"center",gap:4,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                  {l.recorrente&&<span title="Lançamento recorrente" style={{fontSize:11,color:L.teal,flexShrink:0}}>🔄</span>}
+                  <span style={{overflow:"hidden",textOverflow:"ellipsis"}}>{l.descricao}</span>
+                </div>
                 {l.conta&&<div style={{fontSize:9.5,color:L.t5,marginTop:1}}>{l.conta}</div>}
               </td>
               <td style={{...TD,color:L.t3,fontSize:11}}>{l.categoria||"—"}</td>
@@ -465,8 +590,44 @@ export default function PageFinanceiro({ user }) {
               <Input value={form.observacao||""} onChange={F("observacao")} placeholder="Observações adicionais..."/>
             </Field>
           </div>
-          {err&&<div style={{padding:"8px 12px",background:L.redBg,borderRadius:8,fontSize:12,color:L.red,marginTop:4}}>{err}</div>}
-          <ModalFooter onClose={()=>setModal(false)} onSave={save} loading={saving} label={edit?"Salvar Alterações":"Criar Lançamento"}/>
+
+          {/* Recorrente */}
+          <div style={{marginTop:14,paddingTop:14,borderTop:`1px solid ${L.lineSoft}`}}>
+            <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",userSelect:"none"}}>
+              <div onClick={()=>F("recorrente")(!form.recorrente)} style={{
+                width:16,height:16,borderRadius:4,flexShrink:0,cursor:"pointer",transition:"all .12s",
+                border:`2px solid ${form.recorrente?L.teal:L.line}`,
+                background:form.recorrente?L.teal:"transparent",
+                display:"flex",alignItems:"center",justifyContent:"center",
+              }}>
+                {form.recorrente&&<span style={{color:"white",fontSize:10,lineHeight:1,fontWeight:700}}>✓</span>}
+              </div>
+              <span style={{fontSize:12,color:L.t2}}>🔄 Lançamento recorrente — repete todo mês na mesma data</span>
+            </label>
+
+            {form.recorrente && !edit && form.data_vencimento && (
+              <div style={{marginTop:10,padding:"10px 12px",background:L.tealBg,borderRadius:8,border:`1px solid ${L.tealA}`,fontSize:12,color:L.teal}}>
+                <div style={{marginBottom:6,fontWeight:600}}>Gerar automaticamente para quantos meses?</div>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <select value={recorrMeses} onChange={e=>setRecorrMeses(Number(e.target.value))}
+                    style={{height:30,borderRadius:6,border:`1px solid ${L.tealA}`,background:L.white,
+                      color:L.teal,fontSize:12,padding:"0 8px",fontFamily:"inherit",fontWeight:600}}>
+                    {[3,6,12,24].map(n=><option key={n} value={n}>{n} meses</option>)}
+                  </select>
+                  <span style={{fontSize:11,color:L.teal}}>
+                    Dia {new Date(form.data_vencimento+"T12:00:00").getDate()} de cada mês • {recorrMeses} entradas serão criadas
+                  </span>
+                </div>
+              </div>
+            )}
+            {form.recorrente && !edit && !form.data_vencimento && (
+              <div style={{marginTop:8,fontSize:11,color:L.yellow}}>⚠ Defina a data de vencimento para gerar as entradas mensais.</div>
+            )}
+          </div>
+
+          {err&&<div style={{padding:"8px 12px",background:L.redBg,borderRadius:8,fontSize:12,color:L.red,marginTop:8}}>{err}</div>}
+          <ModalFooter onClose={()=>setModal(false)} onSave={save} loading={saving}
+            label={edit?"Salvar Alterações":form.recorrente&&form.data_vencimento?`Criar ${recorrMeses} lançamentos`:"Criar Lançamento"}/>
         </Modal>
       )}
     </Fade>
