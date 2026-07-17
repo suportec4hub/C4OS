@@ -58,12 +58,11 @@ export default function PageFinanceiro({ user }) {
   const [periodo,  setPeriodo] = useState("todos");
   const [busca,    setBusca]   = useState("");
   const [chartTab, setChartTab]= useState("fluxo"); // "fluxo" | "lucro"
-  const [modal,      setModal]     = useState(false);
-  const [edit,       setEdit]      = useState(null);
-  const [form,       setForm]      = useState(VAZIO);
-  const [recorrMeses,setRecorrMeses]= useState(12);
-  const [saving,     setSaving]    = useState(false);
-  const [err,        setErr]       = useState("");
+  const [modal,  setModal]  = useState(false);
+  const [edit,   setEdit]   = useState(null);
+  const [form,   setForm]   = useState(VAZIO);
+  const [saving, setSaving] = useState(false);
+  const [err,    setErr]    = useState("");
 
   const F = k => v => setForm(p => ({ ...p, [k]: v }));
   const hoje = new Date().toISOString().split("T")[0];
@@ -194,8 +193,39 @@ export default function PageFinanceiro({ user }) {
 
   const PIE_COLORS = [L.red, L.teal, L.copper, L.green, L.yellow, L.blue];
 
-  const openNew  = () => { setForm(VAZIO); setEdit(null); setErr(""); setRecorrMeses(12); setModal(true); };
-  const openEdit = (l) => { setForm({...l,valor:String(l.valor)}); setEdit(l.id); setErr(""); setRecorrMeses(12); setModal(true); };
+  const openNew  = () => { setForm(VAZIO); setEdit(null); setErr(""); setModal(true); };
+  const openEdit = (l) => { setForm({...l,valor:String(l.valor)}); setEdit(l.id); setErr(""); setModal(true); };
+
+  // Cria a entrada do PRÓXIMO mês para um lançamento recorrente.
+  // Busca a data mais recente já existente para este recorrente e avança 1 mês.
+  const criarProximoRecorrente = async (entry) => {
+    if (!entry.recorrente || !entry.data_vencimento) return;
+    const empId = entry.empresa_id || user?.empresa_id;
+    const { data: latest } = await supabase
+      .from("financeiro_lancamentos")
+      .select("data_vencimento")
+      .eq("empresa_id", empId)
+      .eq("descricao", entry.descricao)
+      .eq("tipo", entry.tipo)
+      .eq("recorrente", true)
+      .order("data_vencimento", { ascending: false })
+      .limit(1);
+    if (!latest?.[0]) return;
+    const nextDate = gerarDatasRecorrentes(latest[0].data_vencimento, 2)[1];
+    await supabase.from("financeiro_lancamentos").insert({
+      empresa_id: empId,
+      tipo:       entry.tipo,
+      categoria:  entry.categoria  || null,
+      descricao:  entry.descricao,
+      valor:      parseFloat(entry.valor),
+      data_vencimento: nextDate,
+      data_pagamento:  null,
+      status:     "pendente",
+      conta:      entry.conta      || "Conta Principal",
+      recorrente: true,
+      observacao: entry.observacao || null,
+    });
+  };
 
   const save = async () => {
     if (!form.descricao.trim()) { setErr("Descrição é obrigatória."); return; }
@@ -204,28 +234,28 @@ export default function PageFinanceiro({ user }) {
     const base = { ...form, valor:parseFloat(form.valor), empresa_id:user?.empresa_id };
 
     if (edit) {
-      // Atualiza a entrada atual
       const { error: updErr } = await update(edit, base);
       if (updErr) { setErr(updErr.message||"Erro ao salvar."); setSaving(false); return; }
-      // Se recorrente e usuário pediu gerar meses futuros, insere a partir do mês seguinte
-      if (form.recorrente && form.data_vencimento && recorrMeses > 0) {
-        const todasDatas = gerarDatasRecorrentes(form.data_vencimento, recorrMeses + 1);
-        const rows = todasDatas.slice(1).map(dt => ({
-          ...base, data_vencimento: dt, data_pagamento: null, status: "pendente",
-        }));
-        const { error: insErr } = await supabase.from("financeiro_lancamentos").insert(rows);
-        if (insErr) { setErr(insErr.message||"Erro ao criar entradas futuras."); setSaving(false); return; }
+      // Se agora é recorrente, verifica se já existe entrada futura; se não, cria a do próximo mês
+      if (form.recorrente && form.data_vencimento) {
+        const { data: futuras } = await supabase
+          .from("financeiro_lancamentos")
+          .select("id")
+          .eq("empresa_id", base.empresa_id)
+          .eq("descricao", base.descricao)
+          .eq("tipo", base.tipo)
+          .eq("recorrente", true)
+          .gt("data_vencimento", base.data_vencimento)
+          .limit(1);
+        if (!futuras?.length) await criarProximoRecorrente(base);
       }
     } else if (form.recorrente && form.data_vencimento) {
-      // Criação: gera N entradas mensais, 1ª com status/pagamento originais, demais "pendente"
-      const datas = gerarDatasRecorrentes(form.data_vencimento, recorrMeses);
-      const rows = datas.map((dt, i) => ({
-        ...base,
-        data_vencimento: dt,
-        data_pagamento: i === 0 ? (base.data_pagamento || null) : null,
-        status: i === 0 ? base.status : "pendente",
-      }));
-      const { error } = await supabase.from("financeiro_lancamentos").insert(rows);
+      // Criação: insere a entrada atual + a do próximo mês (rolling automático)
+      const [dt0, dt1] = gerarDatasRecorrentes(form.data_vencimento, 2);
+      const { error } = await supabase.from("financeiro_lancamentos").insert([
+        { ...base, data_vencimento: dt0, status: base.status, data_pagamento: base.data_pagamento||null },
+        { ...base, data_vencimento: dt1, status: "pendente",  data_pagamento: null },
+      ]);
       if (error) { setErr(error.message||"Erro ao salvar."); setSaving(false); return; }
     } else {
       const { error } = await insert(base);
@@ -236,8 +266,10 @@ export default function PageFinanceiro({ user }) {
     setSaving(false);
   };
 
+  // Ao marcar pago: se recorrente, avança o ciclo criando o mês seguinte ao último existente
   const marcarPago = async (l) => {
     await update(l.id, { status:"pago", data_pagamento: hoje });
+    if (l.recorrente) await criarProximoRecorrente(l);
     refetch();
   };
 
@@ -627,45 +659,27 @@ export default function PageFinanceiro({ user }) {
               <span style={{fontSize:12,color:L.t2}}>🔄 Lançamento recorrente — repete todo mês na mesma data</span>
             </label>
 
-            {form.recorrente && form.data_vencimento && (
-              <div style={{marginTop:10,padding:"10px 12px",background:L.tealBg,borderRadius:8,border:`1px solid ${L.tealA}`,fontSize:12,color:L.teal}}>
-                <div style={{marginBottom:6,fontWeight:600}}>
-                  {edit ? "Gerar entradas dos próximos meses a partir desta?" : "Gerar automaticamente para quantos meses?"}
+            {form.recorrente && form.data_vencimento && (() => {
+              const d = new Date(form.data_vencimento+"T12:00:00");
+              const dia = d.getDate();
+              const proximo = new Date(d.getFullYear(), d.getMonth()+1, dia);
+              const proximoLabel = proximo.toLocaleDateString("pt-BR");
+              return (
+                <div style={{marginTop:10,padding:"10px 12px",background:L.tealBg,borderRadius:8,
+                  border:`1px solid ${L.tealA}`,fontSize:11.5,color:L.teal,lineHeight:1.6}}>
+                  <b>Ciclo automático:</b> a próxima entrada será dia <b>{proximoLabel}</b> com status <b>pendente</b>.<br/>
+                  Ao marcar como pago, o mês seguinte é criado automaticamente — sempre 1 mês à frente.
                 </div>
-                <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                  <select value={recorrMeses} onChange={e=>setRecorrMeses(Number(e.target.value))}
-                    style={{height:30,borderRadius:6,border:`1px solid ${L.tealA}`,background:L.white,
-                      color:L.teal,fontSize:12,padding:"0 8px",fontFamily:"inherit",fontWeight:600}}>
-                    {edit && <option value={0}>Não gerar — só salvar esta entrada</option>}
-                    {[3,6,12,24].map(n=><option key={n} value={n}>{n} meses</option>)}
-                  </select>
-                  {recorrMeses > 0 && (
-                    <span style={{fontSize:11,color:L.teal}}>
-                      {edit
-                        ? `${recorrMeses} entradas a partir de ${new Date(form.data_vencimento+"T12:00:00").toLocaleString("pt-BR",{month:"short",year:"numeric"}).replace(" de ","/").replace(/^\w/,c=>c.toUpperCase())} + 1 mês`
-                        : `Dia ${new Date(form.data_vencimento+"T12:00:00").getDate()} de cada mês • ${recorrMeses} entradas criadas`
-                      }
-                    </span>
-                  )}
-                </div>
-              </div>
-            )}
+              );
+            })()}
             {form.recorrente && !form.data_vencimento && (
-              <div style={{marginTop:8,fontSize:11,color:L.yellow}}>⚠ Defina a data de vencimento para gerar as entradas mensais.</div>
+              <div style={{marginTop:8,fontSize:11,color:L.yellow}}>⚠ Defina a data de vencimento para ativar o ciclo recorrente.</div>
             )}
           </div>
 
           {err&&<div style={{padding:"8px 12px",background:L.redBg,borderRadius:8,fontSize:12,color:L.red,marginTop:8}}>{err}</div>}
           <ModalFooter onClose={()=>setModal(false)} onSave={save} loading={saving}
-            label={
-              edit
-                ? (form.recorrente && form.data_vencimento && recorrMeses > 0
-                  ? `Salvar + Criar ${recorrMeses} meses futuros`
-                  : "Salvar Alterações")
-                : (form.recorrente && form.data_vencimento
-                  ? `Criar ${recorrMeses} lançamentos`
-                  : "Criar Lançamento")
-            }/>
+            label={edit ? "Salvar Alterações" : "Criar Lançamento"}/>
         </Modal>
       )}
     </Fade>
