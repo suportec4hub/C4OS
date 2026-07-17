@@ -16,6 +16,14 @@ const VAZIO = { tipo:"receita", categoria:"", descricao:"", valor:"", data_venci
 const fmt     = (v) => `R$ ${parseFloat(v||0).toLocaleString("pt-BR",{minimumFractionDigits:2})}`;
 const fmtDate = (d) => d ? new Date(d+"T12:00:00").toLocaleDateString("pt-BR") : "—";
 const monthKey = (d) => d ? d.slice(0,7) : "";
+const dayOfMonth = (d) => d ? new Date(d+"T12:00:00").getDate() : null;
+
+// Dia 1-9 = Ciclo 1 (até ~5º dia útil), dia 13-18 = Ciclo 2 (dia 15)
+const inCiclo = (l, c) => {
+  const day = dayOfMonth(l.data_vencimento);
+  if (!day) return false;
+  return c === 1 ? day <= 9 : day >= 13 && day <= 18;
+};
 
 // Gera lista dos últimos N meses no formato { value:"2026-07", label:"Jul/2026" }
 const buildMonthOptions = (n=13) => {
@@ -67,6 +75,24 @@ export default function PageFinanceiro({ user }) {
   const cntPag    = itens.filter(l=>l.tipo==="despesa"&&(l.status==="pendente"||l.status==="atrasado")).length;
   const cntAtras  = itens.filter(l=>l.status==="atrasado").length;
 
+  // Ciclos do mês atual
+  const mesAtual = useMemo(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+  }, []);
+
+  const cicloData = useMemo(() => {
+    const itensMes = itens.filter(l => monthKey(l.data_vencimento) === mesAtual);
+    return [1, 2].map(c => {
+      const sub = itensMes.filter(l => inCiclo(l, c));
+      const recPrev  = sub.filter(l=>l.tipo==="receita").reduce((s,l)=>s+parseFloat(l.valor||0),0);
+      const recPago  = sub.filter(l=>l.tipo==="receita"&&l.status==="pago").reduce((s,l)=>s+parseFloat(l.valor||0),0);
+      const despPrev = sub.filter(l=>l.tipo==="despesa").reduce((s,l)=>s+parseFloat(l.valor||0),0);
+      const despPago = sub.filter(l=>l.tipo==="despesa"&&l.status==="pago").reduce((s,l)=>s+parseFloat(l.valor||0),0);
+      return { c, recPrev, recPago, despPrev, despPago, total: sub.length };
+    });
+  }, [itens, mesAtual]);
+
   // Filtrar por período e tipo/status
   const periodoFiltered = useMemo(() => {
     if (periodo === "todos") return itens;
@@ -79,10 +105,12 @@ export default function PageFinanceiro({ user }) {
   const filtered = useMemo(() => {
     const lower = busca.trim().toLowerCase();
     return periodoFiltered.filter(l => {
-      if (filtro==="Receitas" && l.tipo!=="receita") return false;
-      if (filtro==="Despesas" && l.tipo!=="despesa") return false;
-      if (filtro==="Pendente" && l.status!=="pendente") return false;
-      if (filtro==="Atrasado" && l.status!=="atrasado") return false;
+      if (filtro==="Receitas"  && l.tipo!=="receita") return false;
+      if (filtro==="Despesas"  && l.tipo!=="despesa") return false;
+      if (filtro==="Pendente"  && l.status!=="pendente") return false;
+      if (filtro==="Atrasado"  && l.status!=="atrasado") return false;
+      if (filtro==="Ciclo 1"   && !inCiclo(l, 1)) return false;
+      if (filtro==="Ciclo 2"   && !inCiclo(l, 2)) return false;
       if (lower && !l.descricao?.toLowerCase().includes(lower) && !l.categoria?.toLowerCase().includes(lower)) return false;
       return true;
     });
@@ -192,6 +220,48 @@ export default function PageFinanceiro({ user }) {
         ))}
       </div>
 
+      {/* Ciclos de Cobrança do Mês */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+        {cicloData.map(cd => {
+          const saldo = cd.recPrev - cd.despPrev;
+          const label = cd.c === 1 ? "Ciclo 1 — Até 5º Dia Útil" : "Ciclo 2 — Dia 15";
+          const accent = cd.c === 1 ? L.copper : L.teal;
+          const accentBg = cd.c === 1 ? L.copperBg : L.tealBg;
+          return (
+            <div key={cd.c} style={{
+              background: L.white, borderRadius: 12, border: `1px solid ${L.line}`,
+              borderLeft: `3px solid ${accent}`, padding: "14px 16px",
+              boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+            }}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+                <div style={{fontSize:10,fontWeight:700,color:accent,textTransform:"uppercase",letterSpacing:"1.2px",fontFamily:"'JetBrains Mono',monospace"}}>{label}</div>
+                <button onClick={()=>{setFiltro(`Ciclo ${cd.c}`);setPeriodo(mesAtual);}}
+                  style={{fontSize:10,padding:"2px 8px",borderRadius:5,border:`1px solid ${accent}`,background:accentBg,color:accent,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>
+                  Ver lançamentos
+                </button>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+                <div>
+                  <div style={{fontSize:9,color:L.t4,textTransform:"uppercase",letterSpacing:"1px",fontFamily:"'JetBrains Mono',monospace",marginBottom:2}}>Receitas</div>
+                  <div style={{fontSize:13,fontWeight:700,color:L.green}}>{fmt(cd.recPrev)}</div>
+                  <div style={{fontSize:9,color:L.t4,marginTop:1}}>pago: {fmt(cd.recPago)}</div>
+                </div>
+                <div>
+                  <div style={{fontSize:9,color:L.t4,textTransform:"uppercase",letterSpacing:"1px",fontFamily:"'JetBrains Mono',monospace",marginBottom:2}}>Despesas</div>
+                  <div style={{fontSize:13,fontWeight:700,color:L.red}}>{fmt(cd.despPrev)}</div>
+                  <div style={{fontSize:9,color:L.t4,marginTop:1}}>pago: {fmt(cd.despPago)}</div>
+                </div>
+                <div>
+                  <div style={{fontSize:9,color:L.t4,textTransform:"uppercase",letterSpacing:"1px",fontFamily:"'JetBrains Mono',monospace",marginBottom:2}}>Saldo</div>
+                  <div style={{fontSize:13,fontWeight:700,color:saldo>=0?L.teal:L.red}}>{fmt(saldo)}</div>
+                  <div style={{fontSize:9,color:L.t4,marginTop:1}}>{cd.total} lançamento{cd.total!==1?"s":""}</div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
       {/* Charts */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 300px",gap:10,marginBottom:14}} className="rg-auto">
 
@@ -269,7 +339,7 @@ export default function PageFinanceiro({ user }) {
 
       {/* Barra de filtros */}
       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,flexWrap:"wrap"}}>
-        <TabPills tabs={["Todos","Receitas","Despesas","Pendente","Atrasado"]} active={filtro} onChange={t=>{setFiltro(t);}}/>
+        <TabPills tabs={["Todos","Receitas","Despesas","Pendente","Atrasado","Ciclo 1","Ciclo 2"]} active={filtro} onChange={t=>{setFiltro(t);}}/>
 
         <select value={periodo} onChange={e=>setPeriodo(e.target.value)}
           style={{height:32,borderRadius:8,border:`1px solid ${L.line}`,background:L.white,

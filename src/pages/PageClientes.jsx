@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { L } from "../constants/theme";
 import { useTable, usePlanos, criarUsuario } from "../hooks/useData";
 import { supabase } from "../lib/supabase";
@@ -89,6 +89,28 @@ export default function PageClientes({ user }) {
   const [cobrancaErr,     setCobrancaErr]     = useState("");
   const [cobrancaLog,     setCobrancaLog]     = useState([]);
   const [cobrancaTab,     setCobrancaTab]     = useState("config"); // "config" | "historico"
+
+  // Billing config map: empresa_id -> { dia_vencimento, ativo }
+  const [cfgMap, setCfgMap] = useState({});
+  useEffect(() => {
+    if (!empresas.length) return;
+    supabase
+      .from("cobranca_config")
+      .select("empresa_id, dia_vencimento, ativo")
+      .in("empresa_id", empresas.map(e => e.id))
+      .then(({ data }) => {
+        if (data) setCfgMap(Object.fromEntries(data.map(r => [r.empresa_id, r])));
+      });
+  }, [empresas]);
+
+  const calcNextDue = useCallback((diaVenc) => {
+    const d = parseInt(diaVenc);
+    if (isNaN(d)) return null;
+    const today = new Date(); today.setHours(0,0,0,0);
+    let due = new Date(today.getFullYear(), today.getMonth(), d);
+    if (due <= today) due = new Date(today.getFullYear(), today.getMonth()+1, d);
+    return due.toLocaleDateString("pt-BR");
+  }, []);
 
   const pc = { Enterprise:{c:L.teal,bg:L.tealBg}, Starter:{c:L.copper,bg:L.copperBg}, "C4HUB":{c:L.green,bg:L.greenBg} };
 
@@ -284,7 +306,7 @@ export default function PageClientes({ user }) {
       {loading ? (
         <div style={{textAlign:"center",padding:40,color:L.t4}}>Carregando clientes...</div>
       ) : (
-        <DataTable heads={["Empresa","Plano","Status","MRR","Vencimento","Saúde","Ações"]}>
+        <DataTable heads={["Empresa","Plano","Status","MRR","Cobrança","Próx. Fatura","Saúde","Ações"]}>
           {empresas.filter(e=>!e.is_c4hub).map(emp => {
             const pn = planoNome(emp.plano_id);
             return (
@@ -298,8 +320,25 @@ export default function PageClientes({ user }) {
                 </td>
                 <td style={TD}><Tag color={pc[pn]?.c||L.t3} bg={pc[pn]?.bg||L.surface}>{pn}</Tag></td>
                 <td style={TD}><Tag color={emp.status==="ativo"?L.green:emp.status==="trial"?L.yellow:L.red} bg={emp.status==="ativo"?L.greenBg:emp.status==="trial"?L.yellowBg:L.redBg}>{emp.status}</Tag></td>
-                <td style={{...TD,fontWeight:600,color:L.green}}>R$ {parseFloat(emp.mrr||0).toLocaleString("pt-BR",{minimumFractionDigits:2})}</td>
-                <td style={{...TD,color:L.t4,fontSize:11,fontFamily:"'JetBrains Mono',monospace"}}>{emp.vencimento||"—"}</td>
+                <td style={{...TD,fontWeight:700,color:L.green,fontFamily:"'JetBrains Mono',monospace"}}>
+                  R$ {parseFloat(emp.mrr||0).toLocaleString("pt-BR",{minimumFractionDigits:2})}
+                  <div style={{fontSize:9,color:L.t4,fontWeight:400,marginTop:1}}>por mês</div>
+                </td>
+                <td style={{...TD,fontSize:11,fontFamily:"'JetBrains Mono',monospace"}}>
+                  {cfgMap[emp.id] ? (
+                    <>
+                      <span style={{color:cfgMap[emp.id].ativo?L.teal:L.t4,fontWeight:600}}>
+                        Dia {cfgMap[emp.id].dia_vencimento}
+                      </span>
+                      {!cfgMap[emp.id].ativo && <span style={{marginLeft:5,fontSize:9,color:L.t4}}>(inativo)</span>}
+                    </>
+                  ) : <span style={{color:L.t5}}>—</span>}
+                </td>
+                <td style={{...TD,fontSize:11,color:L.t3,fontFamily:"'JetBrains Mono',monospace"}}>
+                  {cfgMap[emp.id]?.dia_vencimento
+                    ? calcNextDue(cfgMap[emp.id].dia_vencimento)
+                    : emp.vencimento || "—"}
+                </td>
                 <td style={TD}>
                   <Row gap={6}>
                     <ScBar v={emp.assinatura_ativa?95:40}/>
