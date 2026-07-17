@@ -6,6 +6,18 @@ const _R2_ENDPOINT   = Deno.env.get("R2_ENDPOINT")   || "https://1f59288cdc89e59
 const _R2_BUCKET     = Deno.env.get("R2_BUCKET")     || "c4os";
 const _R2_PUBLIC_URL = Deno.env.get("R2_PUBLIC_URL") || "https://pub-702abeb54c2b46a6888cc69b17b364a7.r2.dev";
 let _awsClient: AwsClient | null = null;
+
+// ─── Cache de instância (token → empresa) — evita 4 queries PostgREST por webhook ─
+// Workers Deno reutilizam o módulo entre invocações: cache reduz 200+ req/s para ~1/s
+const _instanceCache = new Map<string, {
+  empresa_id: string; instanciaId: string | null; instanciaEhPrincipal: boolean; ts: number;
+}>();
+// Cache de credenciais da instância principal (empresa_id → instance_id/token)
+const _empCredCache = new Map<string, {
+  evolution_instance_id: string | null; evolution_instance_token: string | null; ts: number;
+}>();
+const _CACHE_TTL = 90_000; // 90 segundos
+
 function getAwsClient(): AwsClient | null {
   const keyId  = Deno.env.get("R2_KEY_ID");
   const appKey = Deno.env.get("R2_APP_KEY");
@@ -118,33 +130,48 @@ Deno.serve(async (req) => {
     let instanciaId: string | null = null;       // id em empresa_instancias (null = instância principal via empresas)
     let instanciaEhPrincipal = true;             // false = número secundário (escuta apenas, sem bot/round-robin)
 
-    // 1. Tenta empresa_instancias primeiro (números secundários dos vendedores)
-    if (instanceToken) {
-      const { data: inst } = await supabase.from("empresa_instancias")
-        .select("id, empresa_id, eh_principal")
-        .eq("evolution_instance_token", instanceToken).maybeSingle();
-      if (inst) { empresa_id = inst.empresa_id; instanciaId = inst.id; instanciaEhPrincipal = inst.eh_principal; }
-    }
-    if (!empresa_id && instanceName) {
-      const { data: inst } = await supabase.from("empresa_instancias")
-        .select("id, empresa_id, eh_principal")
-        .eq("evolution_instance_id", instanceName).maybeSingle();
-      if (inst) { empresa_id = inst.empresa_id; instanciaId = inst.id; instanciaEhPrincipal = inst.eh_principal; }
+    // Cache lookup — evita 4-5 queries PostgREST por webhook para instâncias já conhecidas
+    const _cacheKey = instanceToken || instanceName || instanceId;
+    const _cached = _cacheKey ? _instanceCache.get(_cacheKey) : null;
+    if (_cached && (Date.now() - _cached.ts) < _CACHE_TTL) {
+      empresa_id = _cached.empresa_id;
+      instanciaId = _cached.instanciaId;
+      instanciaEhPrincipal = _cached.instanciaEhPrincipal;
+    } else {
+      // 1. Tenta empresa_instancias primeiro (números secundários dos vendedores)
+      if (instanceToken) {
+        const { data: inst } = await supabase.from("empresa_instancias")
+          .select("id, empresa_id, eh_principal")
+          .eq("evolution_instance_token", instanceToken).maybeSingle();
+        if (inst) { empresa_id = inst.empresa_id; instanciaId = inst.id; instanciaEhPrincipal = inst.eh_principal; }
+      }
+      if (!empresa_id && instanceName) {
+        const { data: inst } = await supabase.from("empresa_instancias")
+          .select("id, empresa_id, eh_principal")
+          .eq("evolution_instance_id", instanceName).maybeSingle();
+        if (inst) { empresa_id = inst.empresa_id; instanciaId = inst.id; instanciaEhPrincipal = inst.eh_principal; }
+      }
+
+      // 2. Fallback: instância principal via tabela empresas
+      if (!empresa_id && instanceToken) {
+        const { data: emp } = await supabase.from("empresas").select("id").eq("evolution_instance_token", instanceToken).maybeSingle();
+        if (emp) empresa_id = emp.id;
+      }
+      if (!empresa_id && instanceName) {
+        const { data: emp } = await supabase.from("empresas").select("id").eq("evolution_instance_id", instanceName).maybeSingle();
+        if (emp) empresa_id = emp.id;
+      }
+      if (!empresa_id && instanceId) {
+        const { data: emp } = await supabase.from("empresas").select("id").eq("evolution_instance_id", instanceId).maybeSingle();
+        if (emp) empresa_id = emp.id;
+      }
+
+      // Armazena no cache para próximos webhooks desta instância
+      if (empresa_id && _cacheKey) {
+        _instanceCache.set(_cacheKey, { empresa_id, instanciaId, instanciaEhPrincipal, ts: Date.now() });
+      }
     }
 
-    // 2. Fallback: instância principal via tabela empresas
-    if (!empresa_id && instanceToken) {
-      const { data: emp } = await supabase.from("empresas").select("id").eq("evolution_instance_token", instanceToken).maybeSingle();
-      if (emp) empresa_id = emp.id;
-    }
-    if (!empresa_id && instanceName) {
-      const { data: emp } = await supabase.from("empresas").select("id").eq("evolution_instance_id", instanceName).maybeSingle();
-      if (emp) empresa_id = emp.id;
-    }
-    if (!empresa_id && instanceId) {
-      const { data: emp } = await supabase.from("empresas").select("id").eq("evolution_instance_id", instanceId).maybeSingle();
-      if (emp) empresa_id = emp.id;
-    }
     if (!empresa_id) {
       // Retorna 200 para não disparar retry loop na Evolution API
       return new Response("OK", { status: 200 });
@@ -752,7 +779,7 @@ async function processMessages(
   let roundRobinBloqueadoPorFluxo = false;
   if (!isHistory) {
     const [{ data: cfgData }, { data: fluxosAtivos }] = await Promise.all([
-      supabase.from("chatbot_config").select("setor_padrao_id, fluxo_ativo_id").eq("empresa_id", empresa_id).maybeSingle(),
+      supabase.from("chatbot_config").select("*").eq("empresa_id", empresa_id).maybeSingle(),
       supabase.from("chatbot_fluxos").select("nos, conexoes").eq("empresa_id", empresa_id).eq("ativo", true),
     ]);
     cfgEarly = cfgData ?? null;
@@ -1095,11 +1122,16 @@ async function processMessages(
         if (!bytes && wamid) {
           debugStep = "getBase64-start";
           try {
-            const { data: empInfo } = await supabase.from("empresas")
-              .select("evolution_instance_id, evolution_instance_token")
-              .eq("id", empresa_id).maybeSingle();
-            const evoInst  = empInfo?.evolution_instance_id  as string | null;
-            const evoToken = (empInfo?.evolution_instance_token as string | null) || GLOBAL_KEY;
+            let _mediaCred = _empCredCache.get(empresa_id);
+            if (!_mediaCred || (Date.now() - _mediaCred.ts) > _CACHE_TTL) {
+              const { data: empInfo } = await supabase.from("empresas")
+                .select("evolution_instance_id, evolution_instance_token")
+                .eq("id", empresa_id).maybeSingle();
+              _mediaCred = { evolution_instance_id: empInfo?.evolution_instance_id ?? null, evolution_instance_token: empInfo?.evolution_instance_token ?? null, ts: Date.now() };
+              _empCredCache.set(empresa_id, _mediaCred);
+            }
+            const evoInst  = _mediaCred.evolution_instance_id as string | null;
+            const evoToken = (_mediaCred.evolution_instance_token as string | null) || GLOBAL_KEY;
             const evoBase  = GLOBAL_URL.replace(/\/$/, "");
             console.log(`[webhook] getBase64 inst:${evoInst} url:${evoBase} hasToken:${!!evoToken}`);
             if (evoInst && evoToken) {
@@ -1305,7 +1337,8 @@ async function processMessages(
     if (!fromMe && !isHistory && (conv.bot_ativo !== false || !!vendedorFluxoId) &&
         (conv.status !== "em_atendimento" || hasActiveFlowState || vendedorFluxoId)) {
       try {
-        const { data: cfg } = await supabase.from("chatbot_config").select("*").eq("empresa_id", empresa_id).maybeSingle();
+        // Reutiliza cfgEarly (já carregado no início) — elimina 1 query por mensagem
+        const cfg = cfgEarly;
         // Skip if chatbot is disabled AND there is no per-seller flow to run
         if (!cfg?.ativo && !vendedorFluxoId) continue;
 
@@ -1317,11 +1350,16 @@ async function processMessages(
         // automation should not be silenced by a company-wide "don't reply to open chats" rule.
         if (cfg?.nao_responder_aberta && conv.status === "aberta" && !hasActiveFlow && !vendedorFluxoId) continue;
 
-        const { data: empData } = await supabase.from("empresas")
-          .select("evolution_instance_id, evolution_instance_token")
-          .eq("id", empresa_id).single();
-        const instId    = empData?.evolution_instance_id;
-        const instToken = empData?.evolution_instance_token;
+        let _empCred = _empCredCache.get(empresa_id);
+        if (!_empCred || (Date.now() - _empCred.ts) > _CACHE_TTL) {
+          const { data: empData } = await supabase.from("empresas")
+            .select("evolution_instance_id, evolution_instance_token")
+            .eq("id", empresa_id).single();
+          _empCred = { evolution_instance_id: empData?.evolution_instance_id ?? null, evolution_instance_token: empData?.evolution_instance_token ?? null, ts: Date.now() };
+          _empCredCache.set(empresa_id, _empCred);
+        }
+        const instId    = _empCred.evolution_instance_id;
+        const instToken = _empCred.evolution_instance_token;
         const evoUrl    = GLOBAL_URL.replace(/\/$/, "");
 
         const sendBot = async (msgText: string, tipo = "texto", extra?: Record<string, unknown>) => {
