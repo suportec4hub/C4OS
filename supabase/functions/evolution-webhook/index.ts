@@ -1141,6 +1141,12 @@ async function processMessages(
           console.error("[round-robin] re-open erro:", (rrErr as Error).message);
         }
       }
+    } else if (fromMe && !isHistory && conv?.id) {
+      // Mensagem enviada (celular ou sistema) em conversa existente → atualiza última mensagem
+      await supabase.from("conversas").update({
+        ultima_mensagem: texto,
+        ultima_hora: hora,
+      }).eq("id", conv.id);
     }
 
     if (!conv?.id) continue;
