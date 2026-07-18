@@ -179,33 +179,58 @@ Deno.serve(async (req) => {
 
     const now = new Date().toISOString();
 
-    // CONTACTS_UPSERT — mapeia LID → telefone real para corrigir conversas @lid
-    // (movido para após resolução de empresa_id para evitar ReferenceError)
+    // CONTACTS_UPSERT — mapeia LID → telefone real e atualiza nomes da agenda
     if (["contacts.upsert", "CONTACTS_UPSERT"].includes(event)) {
       const contacts = Array.isArray(data) ? data : (data?.contacts ? data.contacts : [data]);
       for (const contact of contacts) {
         try {
-          const lidJid   = (contact?.id || contact?.jid || "") as string;
+          const rawJid   = (contact?.id || contact?.jid || "") as string;
           const phoneJid = (contact?.remoteJid || contact?.phone || contact?.number || "") as string;
-          if (!lidJid.includes("@lid")) continue;
-          const phoneNum = phoneJid.replace(/@s\.whatsapp\.net$/, "").replace(/:.*$/, "");
-          if (!phoneNum || phoneNum.length < 8 || phoneNum.includes("@")) continue;
+          const savedName = (contact?.name || contact?.verifiedName || contact?.notify || contact?.pushName || "") as string;
 
-          const { data: existPhone } = await supabase.from("conversas")
-            .select("id").eq("empresa_id", empresa_id).eq("contato_telefone", phoneNum).maybeSingle();
+          if (rawJid.includes("@lid")) {
+            // ── LID → telefone: só processa se Evolution confirmar o JID real com @s.whatsapp.net
+            if (!phoneJid.includes("@s.whatsapp.net") && !phoneJid.includes("@c.us")) continue;
+            const phoneNum = phoneJid.replace(/@s\.whatsapp\.net$/, "").replace(/@c\.us$/, "").replace(/:.*$/, "");
+            if (!phoneNum || phoneNum.length < 8 || phoneNum.includes("@")) continue;
 
-          if (!existPhone) {
-            await supabase.from("conversas")
-              .update({ contato_telefone: phoneNum })
-              .eq("empresa_id", empresa_id)
-              .eq("contato_telefone", lidJid);
-          } else {
             const { data: lidConv } = await supabase.from("conversas")
-              .select("id").eq("empresa_id", empresa_id).eq("contato_telefone", lidJid).maybeSingle();
-            if (lidConv?.id && lidConv.id !== existPhone.id) {
+              .select("id, contato_nome").eq("empresa_id", empresa_id).eq("contato_telefone", rawJid).maybeSingle();
+            if (!lidConv) continue;
+
+            const { data: existPhone } = await supabase.from("conversas")
+              .select("id, contato_nome").eq("empresa_id", empresa_id).eq("contato_telefone", phoneNum).maybeSingle();
+
+            if (!existPhone) {
+              // Renomeia JID LID → número real na conversa existente
+              const updates: Record<string, string> = { contato_telefone: phoneNum };
+              if (savedName && !lidConv.contato_nome) updates.contato_nome = savedName;
+              await supabase.from("conversas").update(updates).eq("id", lidConv.id);
+            } else if (existPhone.id !== lidConv.id) {
+              // Ambas existem: migra mensagens do LID para a conversa telefone
               await supabase.from("mensagens").update({ conversa_id: existPhone.id }).eq("conversa_id", lidConv.id);
-              await supabase.from("conversas").delete().eq("id", lidConv.id);
+              // Preserva nome do contato salvo
+              const nomeFinal = savedName || lidConv.contato_nome || existPhone.contato_nome;
+              if (nomeFinal) await supabase.from("conversas").update({ contato_nome: nomeFinal }).eq("id", existPhone.id);
+              // Marca a conversa LID como mesclada (sem deletar — evita perda de dados)
+              await supabase.from("conversas").update({ contato_telefone: phoneNum + "_lid_merged", status: "resolvida" }).eq("id", lidConv.id);
+              await logWA(supabase, {
+                empresa_id, tipo: "fluxo", nivel: "info", origem: "evolution-webhook", evento: event,
+                resumo: `Conversa LID ${rawJid} mesclada em ${phoneNum}`,
+                payload: { lidConvId: lidConv.id, phoneConvId: existPhone.id, phoneNum },
+              });
             }
+
+          } else {
+            // ── Contato normal (não LID): atualiza nome da agenda se salvo
+            if (!savedName) continue;
+            const phone = rawJid.replace(/@s\.whatsapp\.net$/, "").replace(/@c\.us$/, "").replace(/:.*$/, "");
+            if (!phone || phone.length < 8 || phone.includes("@")) continue;
+            await supabase.from("conversas")
+              .update({ contato_nome: savedName })
+              .eq("empresa_id", empresa_id)
+              .eq("contato_telefone", phone)
+              .neq("contato_nome", savedName);
           }
         } catch (_) { /* nunca propaga */ }
       }
