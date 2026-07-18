@@ -393,6 +393,19 @@ function EvolutionCard({ user, empData, onRefresh }) {
               style={{ padding: "9px 16px", borderRadius: 9, background: L.tealBg, border: `1px solid ${L.tealA2}`, color: L.teal, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 500 }}>
               ⚙️ Config. Webhook
             </button>
+            <button onClick={() => {
+              setSuccMsg("⏳ Sincronizando histórico...");
+              callEvo("forceSyncHistory", { limit_per_conv: 200 })
+                .then(res => {
+                  const r = res?.data || res;
+                  setSuccMsg(`✓ Histórico sincronizado: ${r?.synced ?? 0} novas msgs, ${r?.skipped ?? 0} já existiam (${r?.conversations ?? 0} conversas)`);
+                  setTimeout(() => setSuccMsg(""), 8000);
+                })
+                .catch(e => setErrMsg(e.message));
+            }}
+              style={{ padding: "9px 16px", borderRadius: 9, background: L.surface, border: `1px solid ${L.line}`, color: L.t2, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 500 }}>
+              📥 Sincronizar histórico
+            </button>
             <button onClick={desconectar}
               style={{ padding: "9px 16px", borderRadius: 9, background: L.redBg, border: `1px solid ${L.redA}`, color: L.red, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 600 }}>
               Desconectar

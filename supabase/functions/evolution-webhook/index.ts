@@ -822,7 +822,12 @@ async function processMessages(
     const info = (m.Info || m.info || {}) as Record<string, unknown>;
     const key  = (m.key  || m.Key  || {}) as Record<string, unknown>;
     const fromMe = Boolean(info.IsFromMe ?? key.fromMe ?? false);
-    if (!isHistory && fromMe) continue;
+    if (!isHistory && fromMe) {
+      // Permite armazenar mensagens enviadas históricas (fullSync via messages.upsert)
+      // Bloqueia apenas mensagens recentes (< 3 min) para evitar echo de bot
+      const msgTime = new Date(hora).getTime();
+      if (!isNaN(msgTime) && (Date.now() - msgTime) < 180_000) continue;
+    }
 
     const remoteJid = ((info.Chat || key.remoteJid || "") as string);
     if (!remoteJid) continue;
@@ -920,23 +925,34 @@ async function processMessages(
     if (!conv) {
       isNew = true;
 
-      const { data: nova } = await supabase.from("conversas").insert({
-        empresa_id, contato_nome: senderName, contato_telefone: senderPhone,
+      const { data: nova, error: insertConvErr } = await supabase.from("conversas").insert({
+        empresa_id, contato_nome: isGroup ? "Grupo" : senderName, contato_telefone: senderPhone,
         ultima_mensagem: texto, ultima_hora: hora,
         nao_lidas: fromMe ? 0 : 1, status: "aberta", bot_ativo: null,
         whatsapp_numero: senderPhone, fluxo_estado: null,
         // setor_padrao só se houver fluxo visual ativo (ele roteará o setor); senão, round-robin assume
         ...(cfgEarly?.setor_padrao_id && cfgEarly?.fluxo_ativo_id ? { setor_id: cfgEarly.setor_padrao_id } : {}),
       }).select("id, nao_lidas, contato_nome, status, bot_ativo, ultima_hora, fluxo_estado, atendente_id").single();
-      conv = nova;
 
-      await logWA(supabase, {
-        empresa_id, conversa_id: nova?.id, tipo: "conversa_criada", nivel: "info",
-        origem: "evolution-webhook", telefone: senderPhone,
-        resumo: `Nova conversa criada: ${senderName} (${senderPhone})`,
-        payload: { nome: senderName, isGroup },
-      });
+      if (insertConvErr?.code === "23505") {
+        // Race condition: another concurrent webhook already created this conversation
+        isNew = false;
+        const { data: existing } = await supabase.from("conversas")
+          .select("id, nao_lidas, contato_nome, status, bot_ativo, ultima_hora, fluxo_estado, atendente_id")
+          .eq("empresa_id", empresa_id).eq("contato_telefone", senderPhone).maybeSingle();
+        conv = existing;
+      } else {
+        conv = nova;
 
+        await logWA(supabase, {
+          empresa_id, conversa_id: nova?.id, tipo: "conversa_criada", nivel: "info",
+          origem: "evolution-webhook", telefone: senderPhone,
+          resumo: `Nova conversa criada: ${senderName} (${senderPhone})`,
+          payload: { nome: senderName, isGroup },
+        });
+      }
+
+      if (isNew) {
       const { data: leadExist } = await supabase.from("leads")
         .select("id").eq("empresa_id", empresa_id).eq("whatsapp", senderPhone).maybeSingle();
       if (!leadExist) {
@@ -1010,12 +1026,13 @@ async function processMessages(
           console.error("[round-robin] erro:", (rrErr as Error).message);
         }
       }
+      } // end if (isNew)
 
     } else if (!fromMe && !isHistory) {
       const reopenFields: Record<string, unknown> = {
         ultima_mensagem: texto, ultima_hora: hora,
         nao_lidas: (conv.nao_lidas || 0) + 1,
-        contato_nome: senderName || conv.contato_nome,
+        contato_nome: isGroup ? conv.contato_nome : (senderName || conv.contato_nome),
       };
       // Reabre conversa resolvida automaticamente quando cliente envia nova mensagem
       const wasResolvida = conv.status === "resolvida";

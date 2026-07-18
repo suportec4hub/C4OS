@@ -1502,6 +1502,150 @@ Deno.serve(async (req) => {
       return json({ success: true });
     }
 
+    // ────────────────────────────────────────────────────────────────────────
+    // FORCE SYNC HISTORY — busca mensagens antigas na Evolution API e salva no banco
+    // Resolve caso onde fullSync enviou mensagens apenas recebidas (fromMe ignorado)
+    // ────────────────────────────────────────────────────────────────────────
+    if (action === "forceSyncHistory") {
+      const { limit_per_conv = 100 } = body;
+      const instName = emp.evolution_instance_id;
+      const instKey  = emp.evolution_instance_token || apiKey;
+      if (!instName || !evoUrl) return json({ error: "Instância não configurada" }, 400);
+
+      // Busca todas as conversas da empresa (não grupos por padrão)
+      const { data: convs } = await supabase
+        .from("conversas")
+        .select("id, contato_telefone, contato_nome")
+        .eq("empresa_id", empresa_id)
+        .not("contato_telefone", "like", "%@g.us")
+        .order("ultima_hora", { ascending: false })
+        .limit(200);
+
+      if (!convs?.length) return json({ success: true, synced: 0, message: "Nenhuma conversa encontrada" });
+
+      let totalInserted = 0;
+      let totalSkipped = 0;
+      const errors: string[] = [];
+
+      const safeTimestamp = (rawTs: unknown, fallback: string): string => {
+        if (!rawTs) return fallback;
+        if (typeof rawTs === "number") {
+          const ms = rawTs < 1e12 ? rawTs * 1000 : rawTs;
+          const d = new Date(ms);
+          return isNaN(d.getTime()) ? fallback : d.toISOString();
+        }
+        if (typeof rawTs === "string") {
+          if (/^\d+$/.test(rawTs)) return safeTimestamp(parseInt(rawTs, 10), fallback);
+          const d = new Date(rawTs);
+          return isNaN(d.getTime()) ? fallback : d.toISOString();
+        }
+        return fallback;
+      };
+
+      for (const conv of convs) {
+        try {
+          const remoteJid = conv.contato_telefone.includes("@")
+            ? conv.contato_telefone
+            : `${conv.contato_telefone}@s.whatsapp.net`;
+
+          // Evolution API v2: GET /chat/findMessages/{instance}
+          const params = new URLSearchParams({
+            "where[key.remoteJid]": remoteJid,
+            "limit": String(limit_per_conv),
+            "page": "1",
+          });
+          const r = await fetch(`${evoUrl}/chat/findMessages/${instName}?${params}`, {
+            headers: { "apikey": instKey },
+            signal: AbortSignal.timeout(15000),
+          });
+
+          if (!r.ok) {
+            errors.push(`${conv.contato_telefone}: HTTP ${r.status}`);
+            continue;
+          }
+
+          const result = await r.json();
+          // Evolution API retorna array direto ou objeto com messages/records
+          const msgs: unknown[] = Array.isArray(result)
+            ? result
+            : (Array.isArray(result?.messages) ? result.messages
+              : Array.isArray(result?.records) ? result.records : []);
+
+          const now = new Date().toISOString();
+          for (const msg of msgs) {
+            if (!msg || typeof msg !== "object") continue;
+            const m = msg as Record<string, unknown>;
+            const key_ = (m.key || {}) as Record<string, unknown>;
+            const fromMe = Boolean(key_.fromMe);
+            const wamid = (key_.id || m.id || "") as string;
+            if (!wamid) continue;
+
+            const msgContent = (m.message || {}) as Record<string, unknown>;
+            const ec  = (msgContent.extendedTextMessage || {}) as Record<string, unknown>;
+            const imgC = (msgContent.imageMessage || {}) as Record<string, unknown>;
+            const vidC = (msgContent.videoMessage || {}) as Record<string, unknown>;
+            const docC = (msgContent.documentMessage || {}) as Record<string, unknown>;
+            const audioC = (msgContent.audioMessage || msgContent.pttMessage || {}) as Record<string, unknown>;
+
+            const texto: string =
+              (msgContent.conversation as string) ||
+              (ec.text as string) || (imgC.caption as string) || (vidC.caption as string) ||
+              (msgContent.audioMessage || msgContent.pttMessage ? "[🎤 Áudio]" : "") ||
+              (msgContent.stickerMessage ? "[Sticker]" : "") ||
+              (msgContent.locationMessage ? "[📍 Localização]" : "") ||
+              (docC.title ? `[📄 ${docC.title}]` : "") ||
+              "[Mensagem]";
+
+            let tipoMsg = "texto";
+            let mediaUrl: string | null = null;
+            if (msgContent.audioMessage || msgContent.pttMessage) {
+              tipoMsg = "audio"; mediaUrl = (audioC.url as string) || null;
+            } else if (msgContent.imageMessage) {
+              tipoMsg = "imagem"; mediaUrl = (imgC.url as string) || null;
+            } else if (msgContent.videoMessage) {
+              tipoMsg = "video"; mediaUrl = (vidC.url as string) || null;
+            } else if (msgContent.documentMessage) {
+              tipoMsg = "documento"; mediaUrl = (docC.url as string) || null;
+            } else if (msgContent.stickerMessage) {
+              tipoMsg = "sticker";
+            }
+
+            const hora = safeTimestamp(m.messageTimestamp || m.messageTimestampMs, now);
+
+            // Upsert via wamid — ignora se já existe (dedup)
+            const { error: insErr } = await supabase.from("mensagens").insert({
+              conversa_id: conv.id,
+              empresa_id,
+              de: fromMe ? "me" : "contato",
+              remetente: fromMe ? "me" : "contato",
+              texto,
+              tipo: tipoMsg,
+              media_url: mediaUrl,
+              wamid,
+              hora,
+              status: fromMe ? "enviado" : "recebido",
+            });
+            if (insErr) {
+              if (insErr.code === "23505") totalSkipped++;
+              else errors.push(`${wamid}: ${insErr.message}`);
+            } else {
+              totalInserted++;
+            }
+          }
+        } catch (convErr) {
+          errors.push(`${conv.contato_telefone}: ${(convErr as Error).message}`);
+        }
+      }
+
+      return json({
+        success: true,
+        synced: totalInserted,
+        skipped: totalSkipped,
+        conversations: convs.length,
+        errors: errors.slice(0, 10),
+      });
+    }
+
     return json({ error: `Ação desconhecida: ${action}` }, 400);
   } catch (e) {
     console.error("evolution-action error:", e);
