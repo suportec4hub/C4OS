@@ -311,7 +311,7 @@ Deno.serve(async (req) => {
           if (Array.isArray(conv?.messages)) allMsgs.push(...conv.messages);
         }
       }
-      if (allMsgs.length > 0) await processMessages(allMsgs, empresa_id, supabase, GLOBAL_URL, GLOBAL_KEY, now, true, instanciaEhPrincipal);
+      if (allMsgs.length > 0) await processMessages(allMsgs, empresa_id, supabase, GLOBAL_URL, GLOBAL_KEY, now, true, instanciaEhPrincipal, instanciaId);
       return new Response("OK");
     }
 
@@ -322,7 +322,7 @@ Deno.serve(async (req) => {
         resumo: `Webhook de mensagem recebido (${event})`,
       });
       const msgs = Array.isArray(data) ? data : [data];
-      await processMessages(msgs, empresa_id, supabase, GLOBAL_URL, GLOBAL_KEY, now, false, instanciaEhPrincipal);
+      await processMessages(msgs, empresa_id, supabase, GLOBAL_URL, GLOBAL_KEY, now, false, instanciaEhPrincipal, instanciaId);
 
       // ── CSAT: verifica se alguma mensagem recebida é resposta de satisfação ──
       for (const msg of msgs) {
@@ -796,7 +796,7 @@ function interpolarVariaveis(texto: string, variaveis: Record<string, string>): 
 async function processMessages(
   msgs: unknown[], empresa_id: string, supabase: ReturnType<typeof createClient>,
   GLOBAL_URL: string, GLOBAL_KEY: string, now: string, isHistory: boolean,
-  instanciaEhPrincipal = true
+  instanciaEhPrincipal = true, instanciaId: string | null = null
 ) {
   // Load chatbot_config once per batch to get setor_padrao_id for auto-assignment
   let cfgEarly: Record<string, unknown> | null = null;
@@ -865,12 +865,6 @@ async function processMessages(
     const hora  = safeTimestamp(rawTs, now);
     const wamid = ((info.ID || info.Id || key.id || key.ID || "") as string);
 
-    // Bloqueia mensagens enviadas recentes (< 3 min) para evitar echo de bot,
-    // mas permite mensagens fromMe históricas (fullSync / forceSyncHistory)
-    if (!isHistory && fromMe) {
-      const msgTime = new Date(hora).getTime();
-      if (!isNaN(msgTime) && (Date.now() - msgTime) < 180_000) continue;
-    }
 
     const audioC = (msgContent.audioMessage || msgContent.AudioMessage ||
                     msgContent.pttMessage   || msgContent.PttMessage   || {}) as Record<string,unknown>;
@@ -1029,6 +1023,25 @@ async function processMessages(
       }
       } // end if (isNew)
 
+      // Instância secundária: atribui conversa ao vendedor dono da instância
+      if (!instanciaEhPrincipal && instanciaId && !fromMe && conv?.id &&
+          !(conv as Record<string, unknown>).atendente_id) {
+        try {
+          const { data: instInfo } = await supabase.from("empresa_instancias")
+            .select("nome").eq("id", instanciaId).maybeSingle();
+          if (instInfo?.nome) {
+            const { data: vendedor } = await supabase.from("usuarios")
+              .select("id").eq("empresa_id", empresa_id)
+              .ilike("nome", `%${instInfo.nome}%`).eq("ativo", true).maybeSingle();
+            if (vendedor?.id) {
+              await supabase.from("conversas").update({ atendente_id: vendedor.id }).eq("id", conv.id);
+              conv = { ...conv, atendente_id: vendedor.id };
+              console.log(`[inst-secundaria] conversa ${conv.id} atribuída ao vendedor ${vendedor.id} (${instInfo.nome})`);
+            }
+          }
+        } catch (_) {}
+      }
+
     } else if (!fromMe && !isHistory) {
       const reopenFields: Record<string, unknown> = {
         ultima_mensagem: texto, ultima_hora: hora,
@@ -1048,6 +1061,23 @@ async function processMessages(
         if (cfgEarly?.setor_padrao_id && cfgEarly?.fluxo_ativo_id) reopenFields.setor_id = cfgEarly.setor_padrao_id;
       }
       await supabase.from("conversas").update(reopenFields).eq("id", conv.id);
+
+      // Instância secundária (celular de vendedor): atribui ao dono da instância se sem atendente
+      if (!instanciaEhPrincipal && instanciaId && !(conv as Record<string, unknown>).atendente_id) {
+        try {
+          const { data: instInfo } = await supabase.from("empresa_instancias")
+            .select("nome").eq("id", instanciaId).maybeSingle();
+          if (instInfo?.nome) {
+            const { data: vendedor } = await supabase.from("usuarios")
+              .select("id").eq("empresa_id", empresa_id)
+              .ilike("nome", `%${instInfo.nome}%`).eq("ativo", true).maybeSingle();
+            if (vendedor?.id) {
+              reopenFields.atendente_id = vendedor.id;
+              conv = { ...conv, atendente_id: vendedor.id };
+            }
+          }
+        } catch (_) {}
+      }
 
       // Round-robin para conversas sem atendente — só bloqueado quando fluxo tem menu → setor
       // Números secundários (instanciaEhPrincipal=false) não acionam round-robin.
@@ -1413,8 +1443,9 @@ async function processMessages(
           let apiOk = false;
           let apiErr = "";
 
+          let apiRespWamid: string | null = null;
+
           if (["imagem","video","audio","documento"].includes(tipo)) {
-            // Evolution API v2 — /message/sendMedia/{instance}
             const mediaType = tipo === "imagem" ? "image" : tipo === "video" ? "video" : tipo === "audio" ? "audio" : "document";
             const r = await fetch(`${evoUrl}/message/sendMedia/${instId}`, {
               method: "POST",
@@ -1427,20 +1458,25 @@ async function processMessages(
                 ...(extra?.fileName ? { fileName: extra.fileName } : {}),
               }),
             });
-            apiOk = r.ok;
-            if (!r.ok) apiErr = await r.text().catch(() => String(r.status));
+            if (r.ok) {
+              const rd = await r.json().catch(() => ({}));
+              apiOk = true;
+              apiRespWamid = rd?.key?.id || rd?.id || null;
+            } else apiErr = await r.text().catch(() => String(r.status));
           } else {
-            // Evolution API v2 — /message/sendText/{instance} (formato simples)
+            // Evolution API v2 — formato simples
             const r = await fetch(`${evoUrl}/message/sendText/${instId}`, {
               method: "POST",
               headers: { "Content-Type": "application/json", "apikey": instToken },
               body: JSON.stringify({ number: senderPhone, text: msgText }),
             });
-            apiOk = r.ok;
-            if (!r.ok) apiErr = await r.text().catch(() => String(r.status));
-
-            // Fallback: formato v2 alternativo com options/textMessage
-            if (!apiOk) {
+            if (r.ok) {
+              const rd = await r.json().catch(() => ({}));
+              apiOk = true;
+              apiRespWamid = rd?.key?.id || rd?.id || null;
+            } else {
+              apiErr = await r.text().catch(() => String(r.status));
+              // Fallback: formato com options/textMessage
               try {
                 const r2 = await fetch(`${evoUrl}/message/sendText/${instId}`, {
                   method: "POST",
@@ -1451,8 +1487,11 @@ async function processMessages(
                     textMessage: { text: msgText },
                   }),
                 });
-                if (r2.ok) { apiOk = true; apiErr = ""; }
-                else apiErr = await r2.text().catch(() => String(r2.status));
+                if (r2.ok) {
+                  const rd2 = await r2.json().catch(() => ({}));
+                  apiOk = true; apiErr = "";
+                  apiRespWamid = rd2?.key?.id || rd2?.id || null;
+                } else apiErr = await r2.text().catch(() => String(r2.status));
               } catch (_) {}
             }
           }
@@ -1475,11 +1514,15 @@ async function processMessages(
             });
           }
 
-          if (conv?.id) {
+          // Salva a mensagem do bot com o wamid retornado pela API (quando disponível).
+          // O wamid garante que o webhook de echo (fromMe=true) seja deduplicado pela
+          // constraint mensagens_wamid_unique, evitando duplicatas na tela do chat.
+          if (conv?.id && apiOk) {
             await supabase.from("mensagens").insert({
               conversa_id: conv.id, empresa_id, de: "me", texto: msgText,
               tipo: tipo, media_url: (extra?.url as string) || null, nome_arquivo: (extra?.fileName as string) || null,
               hora: new Date().toISOString(), status: "enviado", remetente: "bot",
+              ...(apiRespWamid ? { wamid: apiRespWamid } : {}),
             });
             await supabase.from("conversas").update({
               ultima_mensagem: msgText, ultima_hora: new Date().toISOString(),
