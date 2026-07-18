@@ -822,12 +822,6 @@ async function processMessages(
     const info = (m.Info || m.info || {}) as Record<string, unknown>;
     const key  = (m.key  || m.Key  || {}) as Record<string, unknown>;
     const fromMe = Boolean(info.IsFromMe ?? key.fromMe ?? false);
-    if (!isHistory && fromMe) {
-      // Permite armazenar mensagens enviadas históricas (fullSync via messages.upsert)
-      // Bloqueia apenas mensagens recentes (< 3 min) para evitar echo de bot
-      const msgTime = new Date(hora).getTime();
-      if (!isNaN(msgTime) && (Date.now() - msgTime) < 180_000) continue;
-    }
 
     const remoteJid = ((info.Chat || key.remoteJid || "") as string);
     if (!remoteJid) continue;
@@ -870,6 +864,13 @@ async function processMessages(
     const rawTs = info.Timestamp || m.messageTimestamp || m.MessageTimestamp;
     const hora  = safeTimestamp(rawTs, now);
     const wamid = ((info.ID || info.Id || key.id || key.ID || "") as string);
+
+    // Bloqueia mensagens enviadas recentes (< 3 min) para evitar echo de bot,
+    // mas permite mensagens fromMe históricas (fullSync / forceSyncHistory)
+    if (!isHistory && fromMe) {
+      const msgTime = new Date(hora).getTime();
+      if (!isNaN(msgTime) && (Date.now() - msgTime) < 180_000) continue;
+    }
 
     const audioC = (msgContent.audioMessage || msgContent.AudioMessage ||
                     msgContent.pttMessage   || msgContent.PttMessage   || {}) as Record<string,unknown>;
