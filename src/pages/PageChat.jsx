@@ -912,8 +912,8 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
       .eq("empresa_id", user.empresa_id)
       .order("ultima_hora", { ascending: false, nullsFirst: false });
     if (tab !== "todas") q = q.eq("status", tab);
-    // SDR: restringe ao servidor para que nunca carreguem conversas de outros
-    if (isSDR) q = q.eq("atendente_id", user.id);
+    // SDR: vê próprias conversas + todos os grupos (@g.us)
+    if (isSDR) q = q.or(`atendente_id.eq.${user.id},contato_telefone.like.%@g.us`);
 
     const { data, error } = await q;
     if (error) { if (!silent) setLoading(false); return; }
