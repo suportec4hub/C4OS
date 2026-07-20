@@ -61,6 +61,7 @@ function EvolutionCard({ user, empData, onRefresh }) {
   const [manualName,   setManualName]   = useState("");
   const [manualToken,  setManualToken]  = useState("");
   const [savingManual, setSavingManual] = useState(false);
+  const [syncState,    setSyncState]   = useState(null); // null | { running, synced, page, total }
   const pollRef    = useRef(null);
   const timeoutRef = useRef(null);
   const phaseRef   = useRef("idle");
@@ -393,18 +394,37 @@ function EvolutionCard({ user, empData, onRefresh }) {
               style={{ padding: "9px 16px", borderRadius: 9, background: L.tealBg, border: `1px solid ${L.tealA2}`, color: L.teal, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 500 }}>
               ⚙️ Config. Webhook
             </button>
-            <button onClick={() => {
-              setSuccMsg("⏳ Sincronizando histórico...");
-              callEvo("forceSyncHistory", { limit_per_conv: 200 })
-                .then(res => {
-                  const r = res?.data || res;
-                  setSuccMsg(`✓ Histórico sincronizado: ${r?.synced ?? 0} novas msgs, ${r?.skipped ?? 0} já existiam (${r?.conversations ?? 0} conversas)`);
-                  setTimeout(() => setSuccMsg(""), 8000);
-                })
-                .catch(e => setErrMsg(e.message));
-            }}
-              style={{ padding: "9px 16px", borderRadius: 9, background: L.surface, border: `1px solid ${L.line}`, color: L.t2, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 500 }}>
-              📥 Sincronizar histórico
+            <button
+              disabled={syncState?.running}
+              onClick={async () => {
+                setSyncState({ running: true, synced: 0, page: 1, total: 0 });
+                setErrMsg("");
+                let page = 1;
+                let totalSynced = 0;
+                let totalSkipped = 0;
+                let totalPages = 0;
+                try {
+                  while (page) {
+                    const res = await callEvo("forceSyncHistory", { page });
+                    const r = res?.data || res;
+                    totalSynced  += r?.synced  ?? 0;
+                    totalSkipped += r?.skipped ?? 0;
+                    totalPages    = r?.total_pages ?? totalPages;
+                    page = r?.next_page ?? null;
+                    setSyncState({ running: !!page, synced: totalSynced, page: r?.page ?? page, total: totalPages });
+                  }
+                  setSuccMsg(`✓ Histórico completo: ${totalSynced} novas msgs, ${totalSkipped} já existiam`);
+                  setTimeout(() => setSuccMsg(""), 10000);
+                } catch (e) {
+                  setErrMsg(e.message);
+                } finally {
+                  setSyncState(null);
+                }
+              }}
+              style={{ padding: "9px 16px", borderRadius: 9, background: L.surface, border: `1px solid ${L.line}`, color: syncState?.running ? L.t3 : L.t2, cursor: syncState?.running ? "default" : "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 500, opacity: syncState?.running ? 0.8 : 1 }}>
+              {syncState?.running
+                ? `⏳ Sincronizando... ${syncState.synced} msgs${syncState.total > 0 ? ` (pág ${syncState.page}/${syncState.total})` : ""}`
+                : "📥 Sincronizar histórico"}
             </button>
             <button onClick={desconectar}
               style={{ padding: "9px 16px", borderRadius: 9, background: L.redBg, border: `1px solid ${L.redA}`, color: L.red, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 600 }}>
