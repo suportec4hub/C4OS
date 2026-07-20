@@ -1606,17 +1606,24 @@ Deno.serve(async (req) => {
         if (Date.now() - startMs > 50_000) break;
 
         try {
+          // POST com body (formato suportado pela Evolution API v2/GO)
           const r = await fetch(
-            `${evoUrl}/chat/findMessages/${syncInstName}?limit=${PAGE_SIZE}&page=${page}`,
-            { headers: { "apikey": instKey }, signal: AbortSignal.timeout(20000) }
+            `${evoUrl}/chat/findMessages/${syncInstName}`,
+            {
+              method: "POST",
+              headers: { "apikey": instKey, "Content-Type": "application/json" },
+              body: JSON.stringify({ limit: PAGE_SIZE, page }),
+              signal: AbortSignal.timeout(20000),
+            }
           );
 
           if (!r.ok) { errors.push(`p${page}: HTTP ${r.status}`); break; }
 
           const result = await r.json();
           totalPages = result?.messages?.pages || result?.pages || totalPages;
-          const msgs: unknown[] = Array.isArray(result) ? result
-            : (Array.isArray(result?.messages?.records) ? result.messages.records
+          // Evolution API v2 retorna { messages: { records: [], pages: N } }
+          const msgs: unknown[] = Array.isArray(result?.messages?.records) ? result.messages.records
+            : (Array.isArray(result) ? result
             : Array.isArray(result?.messages) ? result.messages
             : Array.isArray(result?.records) ? result.records : []);
 
