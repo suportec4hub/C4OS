@@ -1512,7 +1512,8 @@ Deno.serve(async (req) => {
       const instKey      = emp.evolution_instance_token || apiKey;
       if (!syncInstName || !evoUrl) return json({ error: "Instância não configurada" }, 400);
 
-      const now = new Date().toISOString();
+      const now     = new Date().toISOString();
+      const startMs = Date.now();
       let totalInserted = 0;
       let totalSkipped  = 0;
       let chatsFound    = 0;
@@ -1664,85 +1665,95 @@ Deno.serve(async (req) => {
 
         if (!convId) continue;
 
-        // Busca mensagens desta conversa na Evolution API
-        try {
-          const params = new URLSearchParams({
-            "where[key.remoteJid]": cleanPhone,
-            "limit": String(limit_per_conv),
-            "page": "1",
-          });
-          const r = await fetch(`${evoUrl}/chat/findMessages/${syncInstName}?${params}`, {
-            headers: { "apikey": instKey },
-            signal: AbortSignal.timeout(20000),
-          });
+        // Busca todas as páginas de mensagens desta conversa (até budget de tempo)
+        const PAGE_SIZE = 200;
+        const MAX_PAGES = 20; // até 4.000 mensagens por conversa
+        let lastHora  = "";
+        let lastTexto = "";
 
-          if (!r.ok) {
-            errors.push(`${dbPhone}: HTTP ${r.status}`);
-            continue;
-          }
+        for (let page = 1; page <= MAX_PAGES; page++) {
+          // Para antes do timeout de 55s da edge function
+          if (Date.now() - startMs > 50_000) break;
 
-          const result = await r.json();
-          const msgs: unknown[] = Array.isArray(result) ? result
-            : (Array.isArray(result?.messages) ? result.messages
-            : Array.isArray(result?.records) ? result.records
-            : Array.isArray(result?.messages?.records) ? result.messages.records : []);
-
-          let lastHora = "";
-          let lastTexto = "";
-
-          for (const msg of msgs) {
-            if (!msg || typeof msg !== "object") continue;
-            const m       = msg as Record<string, unknown>;
-            const key_    = (m.key || {}) as Record<string, unknown>;
-            const fromMe  = Boolean(key_.fromMe);
-            const wamid   = (key_.id || m.id || "") as string;
-            if (!wamid) continue;
-
-            const msgContent   = (m.message || {}) as Record<string, unknown>;
-            const texto        = extractMsgText(msgContent);
-            const { tipo, mediaUrl } = extractMsgTipo(msgContent);
-            const hora         = safeTs(m.messageTimestamp || m.messageTimestampMs, now);
-
-            if (hora > lastHora) { lastHora = hora; lastTexto = texto; }
-
-            const { error: insErr } = await supabase.from("mensagens").insert({
-              conversa_id: convId,
-              empresa_id,
-              de:          fromMe ? "me" : "contato",
-              remetente:   fromMe ? "me" : "contato",
-              texto,
-              tipo,
-              media_url:   mediaUrl,
-              wamid,
-              hora,
-              status:      fromMe ? "enviado" : "recebido",
+          try {
+            const params = new URLSearchParams({
+              "where[key.remoteJid]": cleanPhone,
+              "limit": String(PAGE_SIZE),
+              "page":  String(page),
             });
-            if (insErr) {
-              if (insErr.code === "23505") totalSkipped++;
-              else errors.push(`${wamid}: ${insErr.message}`);
-            } else {
-              totalInserted++;
-            }
-          }
+            const r = await fetch(`${evoUrl}/chat/findMessages/${syncInstName}?${params}`, {
+              headers: { "apikey": instKey },
+              signal: AbortSignal.timeout(15000),
+            });
 
-          // Atualiza ultima_mensagem/ultima_hora da conversa com a msg mais recente
-          if (lastHora) {
-            await supabase.from("conversas")
-              .update({ ultima_mensagem: lastTexto, ultima_hora: lastHora })
-              .eq("id", convId);
+            if (!r.ok) {
+              errors.push(`${dbPhone} p${page}: HTTP ${r.status}`);
+              break;
+            }
+
+            const result = await r.json();
+            const msgs: unknown[] = Array.isArray(result) ? result
+              : (Array.isArray(result?.messages) ? result.messages
+              : Array.isArray(result?.records) ? result.records
+              : Array.isArray(result?.messages?.records) ? result.messages.records : []);
+
+            if (!msgs.length) break; // sem mais mensagens
+
+            for (const msg of msgs) {
+              if (!msg || typeof msg !== "object") continue;
+              const m      = msg as Record<string, unknown>;
+              const key_   = (m.key || {}) as Record<string, unknown>;
+              const fromMe = Boolean(key_.fromMe);
+              const wamid  = (key_.id || m.id || "") as string;
+              if (!wamid) continue;
+
+              const msgContent = (m.message || {}) as Record<string, unknown>;
+              const texto      = extractMsgText(msgContent);
+              const { tipo, mediaUrl } = extractMsgTipo(msgContent);
+              const hora       = safeTs(m.messageTimestamp || m.messageTimestampMs, now);
+
+              if (hora > lastHora) { lastHora = hora; lastTexto = texto; }
+
+              const { error: insErr } = await supabase.from("mensagens").insert({
+                conversa_id: convId,
+                empresa_id,
+                de:        fromMe ? "me" : "contato",
+                remetente: fromMe ? "me" : "contato",
+                texto, tipo, media_url: mediaUrl, wamid, hora,
+                status: fromMe ? "enviado" : "recebido",
+              });
+              if (insErr) {
+                if (insErr.code === "23505") totalSkipped++;
+                else errors.push(`${wamid}: ${insErr.message}`);
+              } else {
+                totalInserted++;
+              }
+            }
+
+            // Página parcial = última página
+            if (msgs.length < PAGE_SIZE) break;
+          } catch (fetchErr) {
+            errors.push(`${dbPhone} p${page}: ${(fetchErr as Error).message}`);
+            break;
           }
-        } catch (fetchErr) {
-          errors.push(`${dbPhone}: ${(fetchErr as Error).message}`);
+        }
+
+        // Atualiza ultima_mensagem/ultima_hora com a msg mais recente encontrada
+        if (lastHora) {
+          await supabase.from("conversas")
+            .update({ ultima_mensagem: lastTexto, ultima_hora: lastHora })
+            .eq("id", convId);
         }
       }
 
       return json({
         success: true,
-        chats_found:    chatsFound,
-        chats_created:  chatsCreated,
-        synced:         totalInserted,
-        skipped:        totalSkipped,
-        errors:         errors.slice(0, 20),
+        chats_found:   chatsFound,
+        chats_created: chatsCreated,
+        synced:        totalInserted,
+        skipped:       totalSkipped,
+        elapsed_ms:    Date.now() - startMs,
+        errors:        errors.slice(0, 20),
       });
     }
 
