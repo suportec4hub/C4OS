@@ -1503,127 +1503,219 @@ Deno.serve(async (req) => {
     }
 
     // ────────────────────────────────────────────────────────────────────────
-    // FORCE SYNC HISTORY — busca mensagens antigas na Evolution API e salva no banco
-    // Resolve caso onde fullSync enviou mensagens apenas recebidas (fromMe ignorado)
+    // FORCE SYNC HISTORY — descobre todos os chats da Evolution API,
+    // cria conversas que ainda não existem e importa mensagens de cada uma.
     // ────────────────────────────────────────────────────────────────────────
     if (action === "forceSyncHistory") {
-      const { limit_per_conv = 100 } = body;
-      const instName = emp.evolution_instance_id;
-      const instKey  = emp.evolution_instance_token || apiKey;
-      if (!instName || !evoUrl) return json({ error: "Instância não configurada" }, 400);
+      const { limit_per_conv = 200 } = body;
+      const syncInstName = emp.evolution_instance_id;
+      const instKey      = emp.evolution_instance_token || apiKey;
+      if (!syncInstName || !evoUrl) return json({ error: "Instância não configurada" }, 400);
 
-      // Busca todas as conversas da empresa (não grupos por padrão)
-      const { data: convs } = await supabase
-        .from("conversas")
-        .select("id, contato_telefone, contato_nome")
-        .eq("empresa_id", empresa_id)
-        .not("contato_telefone", "like", "%@g.us")
-        .order("ultima_hora", { ascending: false })
-        .limit(200);
-
-      if (!convs?.length) return json({ success: true, synced: 0, message: "Nenhuma conversa encontrada" });
-
+      const now = new Date().toISOString();
       let totalInserted = 0;
-      let totalSkipped = 0;
+      let totalSkipped  = 0;
+      let chatsFound    = 0;
+      let chatsCreated  = 0;
       const errors: string[] = [];
 
-      const safeTimestamp = (rawTs: unknown, fallback: string): string => {
+      const safeTs = (rawTs: unknown, fallback: string): string => {
         if (!rawTs) return fallback;
         if (typeof rawTs === "number") {
           const ms = rawTs < 1e12 ? rawTs * 1000 : rawTs;
-          const d = new Date(ms);
-          return isNaN(d.getTime()) ? fallback : d.toISOString();
+          const d = new Date(ms); return isNaN(d.getTime()) ? fallback : d.toISOString();
         }
         if (typeof rawTs === "string") {
-          if (/^\d+$/.test(rawTs)) return safeTimestamp(parseInt(rawTs, 10), fallback);
-          const d = new Date(rawTs);
-          return isNaN(d.getTime()) ? fallback : d.toISOString();
+          if (/^\d+$/.test(rawTs)) return safeTs(parseInt(rawTs, 10), fallback);
+          const d = new Date(rawTs); return isNaN(d.getTime()) ? fallback : d.toISOString();
         }
         return fallback;
       };
 
-      for (const conv of convs) {
-        try {
-          const remoteJid = conv.contato_telefone.includes("@")
-            ? conv.contato_telefone
-            : `${conv.contato_telefone}@s.whatsapp.net`;
+      const extractMsgText = (msgContent: Record<string, unknown>): string => {
+        const ec   = (msgContent.extendedTextMessage || {}) as Record<string, unknown>;
+        const imgC = (msgContent.imageMessage        || {}) as Record<string, unknown>;
+        const vidC = (msgContent.videoMessage        || {}) as Record<string, unknown>;
+        const docC = (msgContent.documentMessage     || {}) as Record<string, unknown>;
+        return (
+          (msgContent.conversation as string) ||
+          (ec.text as string) || (imgC.caption as string) || (vidC.caption as string) ||
+          (msgContent.audioMessage || msgContent.pttMessage ? "[🎤 Áudio]" : "") ||
+          (msgContent.stickerMessage   ? "[Sticker]"         : "") ||
+          (msgContent.locationMessage  ? "[📍 Localização]"  : "") ||
+          (docC.title ? `[📄 ${docC.title}]`                : "") ||
+          "[Mensagem]"
+        );
+      };
 
-          // Evolution API v2: GET /chat/findMessages/{instance}
+      const extractMsgTipo = (msgContent: Record<string, unknown>): { tipo: string; mediaUrl: string | null } => {
+        const imgC  = (msgContent.imageMessage  || {}) as Record<string, unknown>;
+        const vidC  = (msgContent.videoMessage  || {}) as Record<string, unknown>;
+        const docC  = (msgContent.documentMessage || {}) as Record<string, unknown>;
+        const audC  = (msgContent.audioMessage  || msgContent.pttMessage || {}) as Record<string, unknown>;
+        if (msgContent.audioMessage || msgContent.pttMessage) return { tipo: "audio",    mediaUrl: (audC.url as string) || null };
+        if (msgContent.imageMessage)    return { tipo: "imagem",   mediaUrl: (imgC.url as string) || null };
+        if (msgContent.videoMessage)    return { tipo: "video",    mediaUrl: (vidC.url as string) || null };
+        if (msgContent.documentMessage) return { tipo: "documento",mediaUrl: (docC.url as string) || null };
+        if (msgContent.stickerMessage)  return { tipo: "sticker",  mediaUrl: null };
+        return { tipo: "texto", mediaUrl: null };
+      };
+
+      // ── Passo 1: descobrir todos os chats da Evolution API ───────────────
+      type ChatEntry = { id?: string; remoteJid?: string; name?: string; pushName?: string; [k: string]: unknown };
+      let chatList: ChatEntry[] = [];
+
+      const tryFetch = async (path: string, method = "GET", body_?: unknown) => {
+        try {
+          const r = await fetch(`${evoUrl}${path}`, {
+            method,
+            headers: { "Content-Type": "application/json", "apikey": instKey },
+            ...(body_ ? { body: JSON.stringify(body_) } : {}),
+            signal: AbortSignal.timeout(20000),
+          });
+          if (r.ok) return await r.json();
+        } catch (_) {}
+        return null;
+      };
+
+      // Endpoint principal: GET /chat/findChats/{instance}
+      const d1 = await tryFetch(`/chat/findChats/${syncInstName}`);
+      if (Array.isArray(d1)) chatList = d1;
+      else if (Array.isArray(d1?.chats)) chatList = d1.chats;
+      else if (Array.isArray(d1?.data)) chatList = d1.data;
+
+      // Fallback: POST /chat/findChats
+      if (!chatList.length) {
+        const d2 = await tryFetch(`/chat/findChats/${syncInstName}`, "POST", {});
+        if (Array.isArray(d2)) chatList = d2;
+        else if (Array.isArray(d2?.chats)) chatList = d2.chats;
+        else if (Array.isArray(d2?.data)) chatList = d2.data;
+      }
+
+      // Fallback: buscar conversas existentes no banco para não perder nenhuma
+      if (!chatList.length) {
+        const { data: dbConvs } = await supabase
+          .from("conversas")
+          .select("contato_telefone, contato_nome")
+          .eq("empresa_id", empresa_id)
+          .order("ultima_hora", { ascending: false })
+          .limit(500);
+        if (dbConvs?.length) chatList = dbConvs.map(c => ({ id: c.contato_telefone, name: c.contato_nome }));
+      }
+
+      chatsFound = chatList.length;
+      console.log(`[forceSyncHistory] chats encontrados: ${chatsFound}`);
+
+      // ── Passo 2: para cada chat, garantir que existe conversa no banco e importar mensagens ──
+      for (const chat of chatList) {
+        const rawJid = (chat.id || chat.remoteJid || "") as string;
+        if (!rawJid) continue;
+
+        const isGroup    = rawJid.endsWith("@g.us");
+        const cleanPhone = rawJid.includes("@") ? rawJid : `${rawJid}@s.whatsapp.net`;
+        const phoneKey   = cleanPhone.replace(/@s\.whatsapp\.net$/, "").replace(/@.*$/, "");
+        const dbPhone    = isGroup ? rawJid : phoneKey;
+        const chatName   = (chat.name || chat.pushName || "") as string;
+
+        // Verifica/cria conversa no banco
+        let convId: string | null = null;
+        try {
+          const { data: existing } = await supabase
+            .from("conversas")
+            .select("id")
+            .eq("empresa_id", empresa_id)
+            .eq("contato_telefone", dbPhone)
+            .maybeSingle();
+
+          if (existing) {
+            convId = existing.id;
+          } else {
+            const { data: novo, error: insConvErr } = await supabase
+              .from("conversas")
+              .insert({
+                empresa_id,
+                contato_nome:     chatName || (isGroup ? "Grupo" : dbPhone),
+                contato_telefone: dbPhone,
+                ultima_mensagem:  "",
+                ultima_hora:      now,
+                nao_lidas:        0,
+                status:           "aberta",
+                bot_ativo:        null,
+                whatsapp_numero:  dbPhone,
+              })
+              .select("id")
+              .single();
+
+            if (insConvErr?.code === "23505") {
+              // Race condition — busca a que acabou de ser criada
+              const { data: race } = await supabase
+                .from("conversas")
+                .select("id")
+                .eq("empresa_id", empresa_id)
+                .eq("contato_telefone", dbPhone)
+                .maybeSingle();
+              convId = race?.id || null;
+            } else if (!insConvErr && novo) {
+              convId = novo.id;
+              chatsCreated++;
+            }
+          }
+        } catch (_) { continue; }
+
+        if (!convId) continue;
+
+        // Busca mensagens desta conversa na Evolution API
+        try {
           const params = new URLSearchParams({
-            "where[key.remoteJid]": remoteJid,
+            "where[key.remoteJid]": cleanPhone,
             "limit": String(limit_per_conv),
             "page": "1",
           });
-          const r = await fetch(`${evoUrl}/chat/findMessages/${instName}?${params}`, {
+          const r = await fetch(`${evoUrl}/chat/findMessages/${syncInstName}?${params}`, {
             headers: { "apikey": instKey },
-            signal: AbortSignal.timeout(15000),
+            signal: AbortSignal.timeout(20000),
           });
 
           if (!r.ok) {
-            errors.push(`${conv.contato_telefone}: HTTP ${r.status}`);
+            errors.push(`${dbPhone}: HTTP ${r.status}`);
             continue;
           }
 
           const result = await r.json();
-          // Evolution API retorna array direto ou objeto com messages/records
-          const msgs: unknown[] = Array.isArray(result)
-            ? result
+          const msgs: unknown[] = Array.isArray(result) ? result
             : (Array.isArray(result?.messages) ? result.messages
-              : Array.isArray(result?.records) ? result.records : []);
+            : Array.isArray(result?.records) ? result.records
+            : Array.isArray(result?.messages?.records) ? result.messages.records : []);
 
-          const now = new Date().toISOString();
+          let lastHora = "";
+          let lastTexto = "";
+
           for (const msg of msgs) {
             if (!msg || typeof msg !== "object") continue;
-            const m = msg as Record<string, unknown>;
-            const key_ = (m.key || {}) as Record<string, unknown>;
-            const fromMe = Boolean(key_.fromMe);
-            const wamid = (key_.id || m.id || "") as string;
+            const m       = msg as Record<string, unknown>;
+            const key_    = (m.key || {}) as Record<string, unknown>;
+            const fromMe  = Boolean(key_.fromMe);
+            const wamid   = (key_.id || m.id || "") as string;
             if (!wamid) continue;
 
-            const msgContent = (m.message || {}) as Record<string, unknown>;
-            const ec  = (msgContent.extendedTextMessage || {}) as Record<string, unknown>;
-            const imgC = (msgContent.imageMessage || {}) as Record<string, unknown>;
-            const vidC = (msgContent.videoMessage || {}) as Record<string, unknown>;
-            const docC = (msgContent.documentMessage || {}) as Record<string, unknown>;
-            const audioC = (msgContent.audioMessage || msgContent.pttMessage || {}) as Record<string, unknown>;
+            const msgContent   = (m.message || {}) as Record<string, unknown>;
+            const texto        = extractMsgText(msgContent);
+            const { tipo, mediaUrl } = extractMsgTipo(msgContent);
+            const hora         = safeTs(m.messageTimestamp || m.messageTimestampMs, now);
 
-            const texto: string =
-              (msgContent.conversation as string) ||
-              (ec.text as string) || (imgC.caption as string) || (vidC.caption as string) ||
-              (msgContent.audioMessage || msgContent.pttMessage ? "[🎤 Áudio]" : "") ||
-              (msgContent.stickerMessage ? "[Sticker]" : "") ||
-              (msgContent.locationMessage ? "[📍 Localização]" : "") ||
-              (docC.title ? `[📄 ${docC.title}]` : "") ||
-              "[Mensagem]";
+            if (hora > lastHora) { lastHora = hora; lastTexto = texto; }
 
-            let tipoMsg = "texto";
-            let mediaUrl: string | null = null;
-            if (msgContent.audioMessage || msgContent.pttMessage) {
-              tipoMsg = "audio"; mediaUrl = (audioC.url as string) || null;
-            } else if (msgContent.imageMessage) {
-              tipoMsg = "imagem"; mediaUrl = (imgC.url as string) || null;
-            } else if (msgContent.videoMessage) {
-              tipoMsg = "video"; mediaUrl = (vidC.url as string) || null;
-            } else if (msgContent.documentMessage) {
-              tipoMsg = "documento"; mediaUrl = (docC.url as string) || null;
-            } else if (msgContent.stickerMessage) {
-              tipoMsg = "sticker";
-            }
-
-            const hora = safeTimestamp(m.messageTimestamp || m.messageTimestampMs, now);
-
-            // Upsert via wamid — ignora se já existe (dedup)
             const { error: insErr } = await supabase.from("mensagens").insert({
-              conversa_id: conv.id,
+              conversa_id: convId,
               empresa_id,
-              de: fromMe ? "me" : "contato",
-              remetente: fromMe ? "me" : "contato",
+              de:          fromMe ? "me" : "contato",
+              remetente:   fromMe ? "me" : "contato",
               texto,
-              tipo: tipoMsg,
-              media_url: mediaUrl,
+              tipo,
+              media_url:   mediaUrl,
               wamid,
               hora,
-              status: fromMe ? "enviado" : "recebido",
+              status:      fromMe ? "enviado" : "recebido",
             });
             if (insErr) {
               if (insErr.code === "23505") totalSkipped++;
@@ -1632,17 +1724,25 @@ Deno.serve(async (req) => {
               totalInserted++;
             }
           }
-        } catch (convErr) {
-          errors.push(`${conv.contato_telefone}: ${(convErr as Error).message}`);
+
+          // Atualiza ultima_mensagem/ultima_hora da conversa com a msg mais recente
+          if (lastHora) {
+            await supabase.from("conversas")
+              .update({ ultima_mensagem: lastTexto, ultima_hora: lastHora })
+              .eq("id", convId);
+          }
+        } catch (fetchErr) {
+          errors.push(`${dbPhone}: ${(fetchErr as Error).message}`);
         }
       }
 
       return json({
         success: true,
-        synced: totalInserted,
-        skipped: totalSkipped,
-        conversations: convs.length,
-        errors: errors.slice(0, 10),
+        chats_found:    chatsFound,
+        chats_created:  chatsCreated,
+        synced:         totalInserted,
+        skipped:        totalSkipped,
+        errors:         errors.slice(0, 20),
       });
     }
 
