@@ -1612,14 +1612,23 @@ Deno.serve(async (req) => {
         const rawJid = (chat.id || chat.remoteJid || "") as string;
         if (!rawJid) continue;
 
+        // Filtra apenas contatos individuais e grupos — ignora newsletters, broadcasts, canais, status
         const isGroup    = rawJid.endsWith("@g.us");
+        const isIndiv    = rawJid.endsWith("@s.whatsapp.net") || /^\d+$/.test(rawJid);
+        if (!isGroup && !isIndiv) continue; // pula @newsletter, @broadcast, IDs alfanuméricos, etc.
+
         const cleanPhone = rawJid.includes("@") ? rawJid : `${rawJid}@s.whatsapp.net`;
         const phoneKey   = cleanPhone.replace(/@s\.whatsapp\.net$/, "").replace(/@.*$/, "");
+
+        // Pula números com menos de 7 ou mais de 15 dígitos (claramente inválidos)
+        if (!isGroup && (phoneKey.length < 7 || phoneKey.length > 15)) continue;
+
         const dbPhone    = isGroup ? rawJid : phoneKey;
         const chatName   = (chat.name || chat.pushName || "") as string;
 
         // Verifica/cria conversa no banco
         let convId: string | null = null;
+        let isNewConv = false;
         try {
           const { data: existing } = await supabase
             .from("conversas")
@@ -1631,6 +1640,7 @@ Deno.serve(async (req) => {
           if (existing) {
             convId = existing.id;
           } else {
+            // Cria sem ultima_hora para não subir para o topo antes de ter mensagens
             const { data: novo, error: insConvErr } = await supabase
               .from("conversas")
               .insert({
@@ -1638,7 +1648,7 @@ Deno.serve(async (req) => {
                 contato_nome:     chatName || (isGroup ? "Grupo" : dbPhone),
                 contato_telefone: dbPhone,
                 ultima_mensagem:  "",
-                ultima_hora:      now,
+                ultima_hora:      null,
                 nao_lidas:        0,
                 status:           "aberta",
                 bot_ativo:        null,
@@ -1658,6 +1668,7 @@ Deno.serve(async (req) => {
               convId = race?.id || null;
             } else if (!insConvErr && novo) {
               convId = novo.id;
+              isNewConv = true;
               chatsCreated++;
             }
           }
@@ -1743,6 +1754,10 @@ Deno.serve(async (req) => {
           await supabase.from("conversas")
             .update({ ultima_mensagem: lastTexto, ultima_hora: lastHora })
             .eq("id", convId);
+        } else if (isNewConv && convId) {
+          // Conversa nova sem nenhuma mensagem na API — remove para não poluir a lista
+          await supabase.from("conversas").delete().eq("id", convId);
+          chatsCreated--;
         }
       }
 
