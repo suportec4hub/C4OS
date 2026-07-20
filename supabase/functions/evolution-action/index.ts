@@ -1620,9 +1620,6 @@ Deno.serve(async (req) => {
         const cleanPhone = rawJid.includes("@") ? rawJid : `${rawJid}@s.whatsapp.net`;
         const phoneKey   = cleanPhone.replace(/@s\.whatsapp\.net$/, "").replace(/@.*$/, "");
 
-        // Pula números com menos de 7 ou mais de 15 dígitos (claramente inválidos)
-        if (!isGroup && (phoneKey.length < 7 || phoneKey.length > 15)) continue;
-
         const dbPhone    = isGroup ? rawJid : phoneKey;
         const chatName   = (chat.name || chat.pushName || "") as string;
 
