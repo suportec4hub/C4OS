@@ -908,6 +908,95 @@ Deno.serve(async (req) => {
     }
 
     // ────────────────────────────────────────────────────────────────────────
+    // SYNC CHATS — importa TODAS as conversas da Evolution API (lista de chats)
+    // Cria entradas no banco para contatos que ainda não existem.
+    // ────────────────────────────────────────────────────────────────────────
+    if (action === "syncChats") {
+      type ChatEntry = {
+        id?: string; remoteJid?: string; name?: string; pushName?: string;
+        subject?: string; unreadCount?: number; timestamp?: number;
+        lastMessage?: { conversation?: string; [k: string]: unknown };
+        [k: string]: unknown;
+      };
+
+      let chatList: ChatEntry[] = [];
+
+      // Endpoint 1: GET /chat/findChats/{instance}
+      try {
+        const r1 = await iFetch(`/chat/findChats/${instName}`);
+        if (r1.ok) {
+          const d1 = await r1.json();
+          const arr: ChatEntry[] = Array.isArray(d1) ? d1
+            : (Array.isArray(d1?.chats) ? d1.chats
+            : Array.isArray(d1?.data) ? d1.data : []);
+          if (arr.length) chatList = arr;
+        }
+      } catch (_) {}
+
+      // Endpoint 2: POST fallback
+      if (!chatList.length) {
+        try {
+          const r2 = await iFetch(`/chat/findChats/${instName}`, {
+            method: "POST", body: JSON.stringify({}),
+          });
+          if (r2.ok) {
+            const d2 = await r2.json();
+            const arr: ChatEntry[] = Array.isArray(d2) ? d2
+              : (Array.isArray(d2?.chats) ? d2.chats
+              : Array.isArray(d2?.data) ? d2.data : []);
+            if (arr.length) chatList = arr;
+          }
+        } catch (_) {}
+      }
+
+      let created = 0;
+      let updated = 0;
+      const errors: string[] = [];
+
+      for (const chat of chatList) {
+        try {
+          const jid = (chat.id || chat.remoteJid || "") as string;
+          if (!jid) continue;
+
+          // Ignora newsletters, broadcasts e JIDs sem sufixo WhatsApp
+          if (jid.endsWith("@broadcast") || jid.endsWith("@newsletter")) continue;
+          const isGroup = jid.endsWith("@g.us");
+          if (!isGroup && !jid.endsWith("@s.whatsapp.net")) continue;
+
+          const phone = isGroup ? jid : jid.replace(/@s\.whatsapp\.net$/, "");
+          const name  = (chat.subject || chat.name || chat.pushName || phone) as string;
+
+          const { data: ex } = await supabase.from("conversas")
+            .select("id, contato_nome").eq("empresa_id", empresa_id).eq("contato_telefone", phone).maybeSingle();
+
+          if (ex) {
+            // Atualiza nome se estava em branco ou era o número
+            if (name && name !== phone && (!ex.contato_nome || ex.contato_nome === phone)) {
+              await supabase.from("conversas").update({ contato_nome: name }).eq("id", ex.id);
+              updated++;
+            }
+          } else {
+            const { error: ie } = await supabase.from("conversas").insert({
+              empresa_id,
+              contato_nome:     name,
+              contato_telefone: phone,
+              ultima_mensagem:  "",
+              ultima_hora:      null,
+              nao_lidas:        0,
+              status:           "aberta",
+              bot_ativo:        null,
+              whatsapp_numero:  phone,
+            });
+            if (!ie || ie.code === "23505") created++;
+            else errors.push(`${phone}: ${ie.message}`);
+          }
+        } catch (e) { errors.push((e as Error).message); }
+      }
+
+      return json({ success: true, total: chatList.length, created, updated, errors: errors.slice(0, 10) });
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
     // FETCH GROUPS — lista grupos do WhatsApp e sincroniza nomes no banco
     // ────────────────────────────────────────────────────────────────────────
     if (action === "fetchGroups") {

@@ -61,7 +61,8 @@ function EvolutionCard({ user, empData, onRefresh }) {
   const [manualName,   setManualName]   = useState("");
   const [manualToken,  setManualToken]  = useState("");
   const [savingManual, setSavingManual] = useState(false);
-  const [syncState,    setSyncState]   = useState(null); // null | { running, synced, page, total }
+  const [syncState,    setSyncState]   = useState(null); // null | { running, phase, synced, skipped, page, total }
+  const syncAbortRef = useRef(false);
   const pollRef    = useRef(null);
   const timeoutRef = useRef(null);
   const phaseRef   = useRef("idle");
@@ -107,19 +108,70 @@ function EvolutionCard({ user, empData, onRefresh }) {
     return data;
   }, [user.empresa_id]);
 
-  // Após conexão detectada: configura webhook automaticamente
+  // Sincronização completa: grupos + todas as mensagens com barra de progresso
+  const runFullSync = useCallback(async () => {
+    syncAbortRef.current = false;
+    setErrMsg("");
+    setSyncState({ running: true, phase: "chats", synced: 0, skipped: 0, page: 0, total: 0 });
+
+    // Fase 1: importa lista de todas as conversas (mesmo sem mensagens recentes)
+    try { await callEvo("syncChats"); } catch (_) {}
+    if (syncAbortRef.current) { setSyncState(null); return; }
+
+    // Fase 2: busca nomes corretos dos grupos
+    setSyncState(s => s ? { ...s, phase: "groups" } : null);
+    try { await callEvo("fetchGroups"); } catch (_) {}
+    if (syncAbortRef.current) { setSyncState(null); return; }
+
+    // Fase 3: importa todas as mensagens (grupos + contatos)
+    let page = 1;
+    let totalSynced = 0;
+    let totalSkipped = 0;
+    let totalPages = 0;
+    setSyncState({ running: true, phase: "messages", synced: 0, skipped: 0, page: 1, total: 0 });
+
+    try {
+      while (page && !syncAbortRef.current) {
+        const res = await callEvo("forceSyncHistory", { page });
+        const r = res?.data || res;
+        if (r?.error) break;
+        totalSynced  += r?.synced  ?? 0;
+        totalSkipped += r?.skipped ?? 0;
+        totalPages    = r?.total_pages ?? totalPages;
+        const nextPage = r?.next_page ?? null;
+        setSyncState({
+          running:  !!nextPage,
+          phase:    nextPage ? "messages" : "done",
+          synced:   totalSynced,
+          skipped:  totalSkipped,
+          page:     r?.page ?? page,
+          total:    totalPages,
+        });
+        page = nextPage;
+      }
+    } catch (e) {
+      setErrMsg(e.message);
+    }
+
+    if (!syncAbortRef.current) {
+      setSyncState(prev => prev ? { ...prev, running: false, phase: "done" } : null);
+      setTimeout(() => setSyncState(null), 8000);
+    }
+  }, [callEvo]);
+
+  // Após conexão detectada: configura webhook e inicia sync automático
   const autoConfigureWebhook = useCallback(async () => {
     try {
       phaseRef.current = "configuring";
       setPhase("configuring");
       await callEvo("resetWebhook");
-      setSuccMsg("✓ Webhook configurado automaticamente!");
-      setTimeout(() => setSuccMsg(""), 5000);
     } catch (_) { /* best effort */ }
     phaseRef.current = "connected";
     setPhase("connected");
     onRefresh?.();
-  }, [callEvo, onRefresh]);
+    // Auto-inicia sincronização completa (igual WhatsApp Web)
+    runFullSync();
+  }, [callEvo, onRefresh, runFullSync]);
 
   const startPolling = useCallback(() => {
     clearInterval(pollRef.current);
@@ -335,6 +387,51 @@ function EvolutionCard({ user, empData, onRefresh }) {
         </div>
       )}
 
+      {/* Barra de progresso de sincronização */}
+      {syncState && (
+        <div style={{ background: L.surface, borderRadius: 10, padding: "14px 16px", marginBottom: 14, border: `1px solid ${syncState.phase === "done" ? L.greenA || "#22c55e44" : L.line}` }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: L.t1 }}>
+              {syncState.phase === "chats"    ? "🔍 Buscando conversas e contatos..." :
+               syncState.phase === "groups"   ? "👥 Sincronizando grupos..." :
+               syncState.phase === "messages" ? "📥 Importando mensagens..." :
+               "✅ Sincronização concluída!"}
+            </span>
+            {syncState.total > 0 && (
+              <span style={{ fontSize: 11, fontWeight: 700, color: syncState.phase === "done" ? L.green : L.teal }}>
+                {Math.min(100, Math.round((syncState.page / syncState.total) * 100))}%
+              </span>
+            )}
+          </div>
+          {/* Track da barra */}
+          <div style={{ height: 6, background: L.lineSoft || "#e5e7eb", borderRadius: 3, overflow: "hidden", marginBottom: 8 }}>
+            <div style={{
+              height: "100%", borderRadius: 3, transition: "width 0.5s ease",
+              background: syncState.phase === "done" ? L.green : L.teal,
+              width: syncState.phase === "chats"  ? "3%" :
+                     syncState.phase === "groups" ? "6%" :
+                     syncState.total > 0
+                       ? `${Math.min(100, Math.round((syncState.page / syncState.total) * 100))}%`
+                       : syncState.running ? "10%" : "100%",
+            }} />
+          </div>
+          <div style={{ fontSize: 11, color: L.t3, display: "flex", gap: 12, flexWrap: "wrap" }}>
+            {syncState.synced > 0 && (
+              <span>📨 {syncState.synced.toLocaleString("pt-BR")} mensagens novas</span>
+            )}
+            {syncState.skipped > 0 && (
+              <span>↩ {syncState.skipped.toLocaleString("pt-BR")} já existiam</span>
+            )}
+            {syncState.total > 0 && (
+              <span>📄 Página {syncState.page} de {syncState.total}</span>
+            )}
+            {syncState.phase !== "done" && syncState.synced === 0 && syncState.total === 0 && (
+              <span>Aguarde, iniciando...</span>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Loading / Configuring */}
       {(phase === "loading" || phase === "configuring") && (
         <div style={{ textAlign: "center", padding: "16px 0", color: L.t3, fontSize: 12, marginBottom: 14 }}>
@@ -394,38 +491,19 @@ function EvolutionCard({ user, empData, onRefresh }) {
               style={{ padding: "9px 16px", borderRadius: 9, background: L.tealBg, border: `1px solid ${L.tealA2}`, color: L.teal, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 500 }}>
               ⚙️ Config. Webhook
             </button>
-            <button
-              disabled={syncState?.running}
-              onClick={async () => {
-                setSyncState({ running: true, synced: 0, page: 1, total: 0 });
-                setErrMsg("");
-                let page = 1;
-                let totalSynced = 0;
-                let totalSkipped = 0;
-                let totalPages = 0;
-                try {
-                  while (page) {
-                    const res = await callEvo("forceSyncHistory", { page });
-                    const r = res?.data || res;
-                    totalSynced  += r?.synced  ?? 0;
-                    totalSkipped += r?.skipped ?? 0;
-                    totalPages    = r?.total_pages ?? totalPages;
-                    page = r?.next_page ?? null;
-                    setSyncState({ running: !!page, synced: totalSynced, page: r?.page ?? page, total: totalPages });
-                  }
-                  setSuccMsg(`✓ Histórico completo: ${totalSynced} novas msgs, ${totalSkipped} já existiam`);
-                  setTimeout(() => setSuccMsg(""), 10000);
-                } catch (e) {
-                  setErrMsg(e.message);
-                } finally {
-                  setSyncState(null);
-                }
-              }}
-              style={{ padding: "9px 16px", borderRadius: 9, background: L.surface, border: `1px solid ${L.line}`, color: syncState?.running ? L.t3 : L.t2, cursor: syncState?.running ? "default" : "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 500, opacity: syncState?.running ? 0.8 : 1 }}>
-              {syncState?.running
-                ? `⏳ Sincronizando... ${syncState.synced} msgs${syncState.total > 0 ? ` (pág ${syncState.page}/${syncState.total})` : ""}`
-                : "📥 Sincronizar histórico"}
-            </button>
+            {syncState?.running ? (
+              <button
+                onClick={() => { syncAbortRef.current = true; setSyncState(null); }}
+                style={{ padding: "9px 16px", borderRadius: 9, background: L.redBg, border: `1px solid ${L.redA}`, color: L.red, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 500 }}>
+                ⏹ Parar sync
+              </button>
+            ) : (
+              <button
+                onClick={runFullSync}
+                style={{ padding: "9px 16px", borderRadius: 9, background: L.surface, border: `1px solid ${L.line}`, color: L.t2, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 500 }}>
+                📥 Sincronizar tudo
+              </button>
+            )}
             <button onClick={desconectar}
               style={{ padding: "9px 16px", borderRadius: 9, background: L.redBg, border: `1px solid ${L.redA}`, color: L.red, cursor: "pointer", fontFamily: "inherit", fontSize: 12.5, fontWeight: 600 }}>
               Desconectar
