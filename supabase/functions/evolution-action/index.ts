@@ -1721,7 +1721,6 @@ Deno.serve(async (req) => {
             : Array.isArray(result?.records) ? result.records : []);
 
           if (!msgs.length) { hasMore = false; break; }
-          if (msgs.length < PAGE_SIZE) hasMore = false;
           if (totalPages > 0 && page >= totalPages) hasMore = false;
           lastPageFetched = page;
 
