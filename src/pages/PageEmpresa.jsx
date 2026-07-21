@@ -108,54 +108,63 @@ function EvolutionCard({ user, empData, onRefresh }) {
     return data;
   }, [user.empresa_id]);
 
-  // Sincronização completa: grupos + todas as mensagens com barra de progresso
+  // Sincronização completa: chats → grupos → todas as mensagens históricas
   const runFullSync = useCallback(async () => {
     syncAbortRef.current = false;
     setErrMsg("");
-    setSyncState({ running: true, phase: "chats", synced: 0, skipped: 0, page: 0, total: 0 });
+    let totalSynced = 0, totalSkipped = 0, totalPages = 0, totalErros = 0;
 
-    // Fase 1: importa lista de todas as conversas (mesmo sem mensagens recentes)
+    setSyncState({ running: true, phase: "chats", synced: 0, skipped: 0, page: 0, total: 0, erros: 0 });
+
+    // Fase 1: importa lista de todas as conversas e contatos da instância
     try { await callEvo("syncChats"); } catch (_) {}
     if (syncAbortRef.current) { setSyncState(null); return; }
 
-    // Fase 2: busca nomes corretos dos grupos
+    // Fase 2: atualiza nomes dos grupos
     setSyncState(s => s ? { ...s, phase: "groups" } : null);
     try { await callEvo("fetchGroups"); } catch (_) {}
     if (syncAbortRef.current) { setSyncState(null); return; }
 
-    // Fase 3: importa todas as mensagens (grupos + contatos)
+    // Fase 3: importa TODAS as mensagens históricas (loop até next_page = null)
     let page = 1;
-    let totalSynced = 0;
-    let totalSkipped = 0;
-    let totalPages = 0;
-    setSyncState({ running: true, phase: "messages", synced: 0, skipped: 0, page: 1, total: 0 });
+    let loopError = null;
+    setSyncState({ running: true, phase: "messages", synced: 0, skipped: 0, page: 1, total: 0, erros: 0 });
 
     try {
       while (page && !syncAbortRef.current) {
         const res = await callEvo("forceSyncHistory", { page });
         const r = res?.data || res;
-        if (r?.error) break;
+
         totalSynced  += r?.synced  ?? 0;
         totalSkipped += r?.skipped ?? 0;
-        totalPages    = r?.total_pages ?? totalPages;
+        totalErros   += (r?.errors ?? []).length;
+        if (r?.total_pages > 0) totalPages = r.total_pages;
+
         const nextPage = r?.next_page ?? null;
+        const curPage  = r?.page ?? page;
         setSyncState({
-          running:  !!nextPage,
-          phase:    nextPage ? "messages" : "done",
-          synced:   totalSynced,
-          skipped:  totalSkipped,
-          page:     r?.page ?? page,
-          total:    totalPages,
+          running: !!nextPage && !syncAbortRef.current,
+          phase:   nextPage ? "messages" : "done",
+          synced:  totalSynced,
+          skipped: totalSkipped,
+          page:    curPage,
+          total:   totalPages,
+          erros:   totalErros,
         });
         page = nextPage;
       }
     } catch (e) {
-      setErrMsg(e.message);
+      loopError = e.message;
+      setErrMsg(`Erro na sincronização (página ${page}): ${e.message}`);
     }
 
     if (!syncAbortRef.current) {
-      setSyncState(prev => prev ? { ...prev, running: false, phase: "done" } : null);
-      setTimeout(() => setSyncState(null), 8000);
+      setSyncState(prev => prev
+        ? { ...prev, running: false, phase: loopError ? "error" : "done" }
+        : null
+      );
+      // Mantém barra visível 10s se ok, 30s se erro
+      setTimeout(() => setSyncState(null), loopError ? 30000 : 10000);
     }
   }, [callEvo]);
 
@@ -388,49 +397,55 @@ function EvolutionCard({ user, empData, onRefresh }) {
       )}
 
       {/* Barra de progresso de sincronização */}
-      {syncState && (
-        <div style={{ background: L.surface, borderRadius: 10, padding: "14px 16px", marginBottom: 14, border: `1px solid ${syncState.phase === "done" ? L.greenA || "#22c55e44" : L.line}` }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: L.t1 }}>
-              {syncState.phase === "chats"    ? "🔍 Buscando conversas e contatos..." :
-               syncState.phase === "groups"   ? "👥 Sincronizando grupos..." :
-               syncState.phase === "messages" ? "📥 Importando mensagens..." :
-               "✅ Sincronização concluída!"}
-            </span>
-            {syncState.total > 0 && (
-              <span style={{ fontSize: 11, fontWeight: 700, color: syncState.phase === "done" ? L.green : L.teal }}>
-                {Math.min(100, Math.round((syncState.page / syncState.total) * 100))}%
+      {syncState && (() => {
+        const isDone  = syncState.phase === "done";
+        const isError = syncState.phase === "error";
+        const pct = syncState.total > 0
+          ? Math.min(100, Math.round((syncState.page / syncState.total) * 100))
+          : null;
+        const barW = syncState.phase === "chats"    ? "4%"
+                   : syncState.phase === "groups"   ? "7%"
+                   : pct != null ? `${pct}%`
+                   : syncState.running ? "15%" : "100%";
+        const barColor = isError ? L.red : isDone ? L.green : L.teal;
+        const borderColor = isError ? L.redA : isDone ? (L.greenA || "#22c55e44") : L.line;
+        return (
+          <div style={{ background: L.surface, borderRadius: 10, padding: "14px 16px", marginBottom: 14, border: `1px solid ${borderColor}` }}>
+            {/* Título + % */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: isError ? L.red : L.t1 }}>
+                {syncState.phase === "chats"    ? "🔍 Buscando conversas e contatos..." :
+                 syncState.phase === "groups"   ? "👥 Sincronizando nomes dos grupos..." :
+                 syncState.phase === "messages" ? "📥 Importando mensagens históricas..." :
+                 isError                        ? "⚠️ Sincronização interrompida" :
+                 "✅ Sincronização concluída!"}
               </span>
-            )}
+              {pct != null && (
+                <span style={{ fontSize: 12, fontWeight: 700, color: barColor }}>{pct}%</span>
+              )}
+            </div>
+            {/* Barra */}
+            <div style={{ height: 7, background: L.lineSoft || "#e5e7eb", borderRadius: 4, overflow: "hidden", marginBottom: 8 }}>
+              <div style={{ height: "100%", borderRadius: 4, transition: "width 0.6s ease", background: barColor, width: barW }} />
+            </div>
+            {/* Detalhes */}
+            <div style={{ fontSize: 11, color: L.t3, display: "flex", gap: 14, flexWrap: "wrap" }}>
+              {(syncState.synced > 0 || syncState.skipped > 0) && (
+                <span>📨 {syncState.synced.toLocaleString("pt-BR")} novas · ↩ {syncState.skipped.toLocaleString("pt-BR")} já existiam</span>
+              )}
+              {syncState.total > 0 && (
+                <span>Página {syncState.page} / {syncState.total}</span>
+              )}
+              {syncState.erros > 0 && (
+                <span style={{ color: L.red }}>⚠ {syncState.erros} erros (msgs puladas)</span>
+              )}
+              {!syncState.synced && !syncState.skipped && syncState.running && (
+                <span>Aguarde, iniciando...</span>
+              )}
+            </div>
           </div>
-          {/* Track da barra */}
-          <div style={{ height: 6, background: L.lineSoft || "#e5e7eb", borderRadius: 3, overflow: "hidden", marginBottom: 8 }}>
-            <div style={{
-              height: "100%", borderRadius: 3, transition: "width 0.5s ease",
-              background: syncState.phase === "done" ? L.green : L.teal,
-              width: syncState.phase === "chats"  ? "3%" :
-                     syncState.phase === "groups" ? "6%" :
-                     syncState.total > 0
-                       ? `${Math.min(100, Math.round((syncState.page / syncState.total) * 100))}%`
-                       : syncState.running ? "10%" : "100%",
-            }} />
-          </div>
-          <div style={{ fontSize: 11, color: L.t3, display: "flex", gap: 12, flexWrap: "wrap" }}>
-            {syncState.synced > 0 && (
-              <span>📨 {syncState.synced.toLocaleString("pt-BR")} mensagens novas</span>
-            )}
-            {syncState.skipped > 0 && (
-              <span>↩ {syncState.skipped.toLocaleString("pt-BR")} já existiam</span>
-            )}
-            {syncState.total > 0 && (
-              <span>📄 Página {syncState.page} de {syncState.total}</span>
-            )}
-            {syncState.phase !== "done" && syncState.synced === 0 && syncState.total === 0 && (
-              <span>Aguarde, iniciando...</span>
-            )}
-          </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Loading / Configuring */}
       {(phase === "loading" || phase === "configuring") && (

@@ -1709,8 +1709,12 @@ Deno.serve(async (req) => {
           if (!r.ok) { errors.push(`p${page}: HTTP ${r.status}`); break; }
 
           const result = await r.json();
-          totalPages = result?.messages?.pages || result?.pages || totalPages;
-          // Evolution API v2 retorna { messages: { records: [], pages: N } }
+          // Parseia total de páginas — tenta todas as variações da API
+          const msgTotal = result?.messages?.total || result?.total || 0;
+          totalPages = result?.messages?.pages || result?.pages ||
+            (msgTotal > 0 ? Math.ceil(msgTotal / PAGE_SIZE) : totalPages);
+
+          // Evolution API v2: { messages: { records: [], pages: N } }
           const msgs: unknown[] = Array.isArray(result?.messages?.records) ? result.messages.records
             : (Array.isArray(result) ? result
             : Array.isArray(result?.messages) ? result.messages
@@ -1718,7 +1722,7 @@ Deno.serve(async (req) => {
 
           if (!msgs.length) { hasMore = false; break; }
           if (msgs.length < PAGE_SIZE) hasMore = false;
-          if (page >= totalPages && totalPages > 0) hasMore = false;
+          if (totalPages > 0 && page >= totalPages) hasMore = false;
           lastPageFetched = page;
 
           for (const msg of msgs) {
@@ -1762,16 +1766,22 @@ Deno.serve(async (req) => {
               totalInserted++;
             }
           }
-        } catch (e) { errors.push(`p${page}: ${(e as Error).message}`); break; }
+        } catch (e) { errors.push(`p${page}: ${(e as Error).message}`); /* continua para próxima página */ }
       }
 
-      // Atualiza ultima_mensagem/ultima_hora de cada conversa com a msg mais recente do batch
-      // Usa or() para também atualizar conversas onde ultima_hora ainda é null
+      // Atualiza ultima_mensagem/ultima_hora de cada conversa:
+      // 1) conversas com ultima_hora null (novas da sincronização)
+      // 2) conversas onde a msg do batch é mais recente que a registrada
+      // Dois updates separados para evitar problemas com .or() e timestamps
       for (const [convId, { hora, texto }] of convLastMsg) {
         await supabase.from("conversas")
           .update({ ultima_mensagem: texto, ultima_hora: hora })
           .eq("id", convId)
-          .or(`ultima_hora.is.null,ultima_hora.lt.${hora}`);
+          .is("ultima_hora", null);
+        await supabase.from("conversas")
+          .update({ ultima_mensagem: texto, ultima_hora: hora })
+          .eq("id", convId)
+          .lt("ultima_hora", hora);
       }
 
       const nextPage = hasMore ? lastPageFetched + 1 : null;
