@@ -93,7 +93,6 @@ Deno.serve(async (req) => {
     const SKIP_EVENTS = [
       "chats.update", "CHATS_UPDATE", "CHATS_UPSERT", "CHATS_SET", "CHATS_DELETE",
       "contacts.update", "CONTACTS_UPDATE", "CONTACTS_SET",
-      "message.ack", "READ_RECEIPT",
       "labels.edit", "LABELS_EDIT", "labels.association", "LABELS_ASSOCIATION",
     ];
     if (SKIP_EVENTS.includes(event)) return new Response("OK");
@@ -117,6 +116,63 @@ Deno.serve(async (req) => {
           }
         }
       } catch (_) {}
+      return new Response("OK");
+    }
+
+    // ── ACK / STATUS UPDATE (leitura no celular, tique azul) ─────────────────
+    // message.ack / READ_RECEIPT = contato leu nossa mensagem (tique azul) OU nós lemos no celular
+    // messages.update / MESSAGES_UPDATE = atualização de status de mensagem existente
+    if (["messages.update", "MESSAGES_UPDATE", "message.ack", "READ_RECEIPT"].includes(event)) {
+      // Precisa resolver empresa antes de usar — faz lookup rápido apenas por token/nome
+      const _tok = tokenFromUrl || body.apikey || body.instance?.apikey || body.instance?.token || "";
+      const _nm  = body.instance?.instanceName || body.instance?.name || body.instanceName || "";
+      let _eid: string | null = null;
+      if (_tok) {
+        const { data: _ec } = await supabase.from("empresas").select("id").eq("evolution_instance_token", _tok).maybeSingle();
+        if (_ec) _eid = _ec.id;
+      }
+      if (!_eid && _nm) {
+        const { data: _ec } = await supabase.from("empresas").select("id").eq("evolution_instance_id", _nm).maybeSingle();
+        if (_ec) _eid = _ec.id;
+      }
+      if (_eid) {
+        const updates = Array.isArray(data) ? data : [data];
+        for (const upd of updates) {
+          try {
+            const key_     = (upd?.key || {}) as Record<string, unknown>;
+            const remoteJid = (key_?.remoteJid || upd?.remoteJid || "") as string;
+            if (!remoteJid || remoteJid.endsWith("@broadcast") || remoteJid.endsWith("@newsletter")) continue;
+            const fromMe   = Boolean(key_?.fromMe ?? upd?.fromMe ?? false);
+            // ack numérico (Baileys): 4=READ, 5=PLAYED
+            const ackNum   = Number(upd?.ack ?? upd?.update?.ack ?? -1);
+            const statusStr = String(upd?.update?.status || upd?.status || "").toUpperCase();
+            const isRead   = statusStr === "READ" || statusStr === "PLAYED" || ackNum >= 4;
+            if (!isRead) continue;
+
+            const phone = remoteJid.endsWith("@g.us")
+              ? remoteJid
+              : remoteJid.replace(/@s\.whatsapp\.net$/, "").replace(/@c\.us$/, "").replace(/:.*$/, "");
+            const wamid = (key_?.id || upd?.id || "") as string;
+
+            if (fromMe) {
+              // Contato leu nossa mensagem → marca como "lido" (tique azul) no banco
+              if (wamid) {
+                await supabase.from("mensagens")
+                  .update({ status: "lido" })
+                  .eq("empresa_id", _eid)
+                  .eq("wamid", wamid);
+              }
+            } else {
+              // Nós lemos a mensagem do contato no celular → zera contador de não lidas no sistema
+              await supabase.from("conversas")
+                .update({ nao_lidas: 0 })
+                .eq("empresa_id", _eid)
+                .eq("contato_telefone", phone)
+                .gt("nao_lidas", 0);
+            }
+          } catch (_) {}
+        }
+      }
       return new Response("OK");
     }
 
