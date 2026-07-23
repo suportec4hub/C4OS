@@ -390,18 +390,16 @@ export default function Shell({user,onLogout,onProfileUpdate,theme,toggleTheme})
             )}
             {/* Online chip — hidden on mobile */}
             {!isMobile && <Chip color={L.green} dot>Online</Chip>}
-            {/* Theme toggle — hidden on mobile (moved to sidebar footer) */}
-            {!isMobile && (
-              <button onClick={toggleTheme} title={theme === "dark" ? "Modo claro" : "Modo escuro"}
-                style={{background:L.surface,border:`1px solid ${L.line}`,borderRadius:9,
-                  padding:"5px 9px",cursor:"pointer",color:L.t3,fontSize:15,lineHeight:1,
-                  transition:"all .15s",flexShrink:0,minWidth:36,minHeight:36,
-                  display:"flex",alignItems:"center",justifyContent:"center"}}
-                onMouseEnter={e=>{e.currentTarget.style.borderColor=L.accent;e.currentTarget.style.color=L.accent;e.currentTarget.style.background=L.tealA;}}
-                onMouseLeave={e=>{e.currentTarget.style.borderColor=L.line;e.currentTarget.style.color=L.t3;e.currentTarget.style.background=L.surface;}}>
-                {theme === "dark" ? "☀" : "☽"}
-              </button>
-            )}
+            {/* Theme toggle — visível em todos os tamanhos */}
+            <button onClick={toggleTheme} title={theme === "dark" ? "Modo claro" : "Modo escuro"}
+              style={{background:L.surface,border:`1px solid ${L.line}`,borderRadius:9,
+                padding:"5px 9px",cursor:"pointer",color:L.t3,fontSize:15,lineHeight:1,
+                transition:"all .15s",flexShrink:0,minWidth:isMobile?40:36,minHeight:isMobile?40:36,
+                display:"flex",alignItems:"center",justifyContent:"center"}}
+              onMouseEnter={e=>{e.currentTarget.style.borderColor=L.accent;e.currentTarget.style.color=L.accent;e.currentTarget.style.background=L.tealA;}}
+              onMouseLeave={e=>{e.currentTarget.style.borderColor=L.line;e.currentTarget.style.color=L.t3;e.currentTarget.style.background=L.surface;}}>
+              {theme === "dark" ? "☀" : "☽"}
+            </button>
             {/* Notification bell — visible for all */}
             <NotificacoesBell user={user} />
             {/* Avatar on mobile */}
