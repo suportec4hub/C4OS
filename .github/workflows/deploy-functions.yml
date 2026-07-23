@@ -32,3 +32,11 @@ jobs:
             --no-verify-jwt
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      - name: Deploy sync-whatsapp-history
+        run: |
+          supabase functions deploy sync-whatsapp-history \
+            --project-ref zexjmlthyxtunioojlga \
+            --no-verify-jwt
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
