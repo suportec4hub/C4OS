@@ -942,7 +942,8 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
     }));
 
     setConversas(enriched);
-    if (enriched.length > 0 && !activeConvRef.current) setActiveConv(enriched[0]);
+    // No mobile não abre conversa automaticamente — usuário escolhe da lista (igual ao WhatsApp)
+    if (enriched.length > 0 && !activeConvRef.current && !isMobile) setActiveConv(enriched[0]);
     if (activeConvRef.current) {
       const updated = enriched.find(c => c.id === activeConvRef.current.id);
       if (updated) setActiveConv(p => ({ ...p, ...updated }));
