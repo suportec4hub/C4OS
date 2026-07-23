@@ -993,6 +993,62 @@ Deno.serve(async (req) => {
         } catch (e) { errors.push((e as Error).message); }
       }
 
+      // ── Instâncias secundárias (empresa_instancias) ──────────────────────
+      const { data: secInsts } = await supabase.from("empresa_instancias")
+        .select("id, evolution_instance_id, evolution_instance_token")
+        .eq("empresa_id", empresa_id)
+        .eq("ativo", true)
+        .not("evolution_instance_id", "is", null);
+
+      for (const secInst of secInsts ?? []) {
+        const secName  = (secInst.evolution_instance_id || "") as string;
+        const secToken = (secInst.evolution_instance_token || apiKey) as string;
+        const iFetchSec = (path: string, opts: RequestInit = {}) =>
+          fetch(`${evoUrl}${path}`, {
+            ...opts,
+            headers: { "Content-Type": "application/json", "apikey": secToken, ...(opts.headers || {}) },
+          });
+
+        let secChats: ChatEntry[] = [];
+        try {
+          const r = await iFetchSec(`/chat/findChats/${secName}`);
+          if (r.ok) { const d = await r.json(); secChats = Array.isArray(d) ? d : (d?.chats ?? d?.data ?? []); }
+        } catch (_) {}
+        if (!secChats.length) {
+          try {
+            const r2 = await iFetchSec(`/chat/findChats/${secName}`, { method: "POST", body: JSON.stringify({}) });
+            if (r2.ok) { const d2 = await r2.json(); secChats = Array.isArray(d2) ? d2 : (d2?.chats ?? d2?.data ?? []); }
+          } catch (_) {}
+        }
+
+        for (const chat of secChats) {
+          try {
+            const jid = (chat.id || chat.remoteJid || "") as string;
+            if (!jid || jid.endsWith("@broadcast") || jid.endsWith("@newsletter")) continue;
+            const isGroup = jid.endsWith("@g.us");
+            if (!isGroup && !jid.endsWith("@s.whatsapp.net")) continue;
+            const phone = isGroup ? jid : jid.replace(/@s\.whatsapp\.net$/, "");
+            const name  = (chat.subject || chat.name || chat.pushName || phone) as string;
+
+            const { data: ex } = await supabase.from("conversas")
+              .select("id, contato_nome").eq("empresa_id", empresa_id).eq("contato_telefone", phone).maybeSingle();
+
+            if (ex) {
+              if (name && name !== phone && (!ex.contato_nome || ex.contato_nome === phone))
+                { await supabase.from("conversas").update({ contato_nome: name }).eq("id", ex.id); updated++; }
+            } else {
+              const { error: ie } = await supabase.from("conversas").insert({
+                empresa_id, contato_nome: name, contato_telefone: phone,
+                ultima_mensagem: "", ultima_hora: null, nao_lidas: 0,
+                status: "aberta", bot_ativo: null, whatsapp_numero: phone, instancia_id: secInst.id,
+              });
+              if (!ie || ie.code === "23505") created++;
+              else errors.push(`sec:${phone}: ${ie.message}`);
+            }
+          } catch (e) { errors.push(`sec: ${(e as Error).message}`); }
+        }
+      }
+
       return json({ success: true, total: chatList.length, created, updated, errors: errors.slice(0, 10) });
     }
 
@@ -1768,10 +1824,74 @@ Deno.serve(async (req) => {
         } catch (e) { errors.push(`p${page}: ${(e as Error).message}`); /* continua para próxima página */ }
       }
 
+      // ── Quando a instância principal termina, processa secundárias ─────────
+      if (!hasMore) {
+        const { data: secInsts } = await supabase.from("empresa_instancias")
+          .select("id, evolution_instance_id, evolution_instance_token")
+          .eq("empresa_id", empresa_id)
+          .eq("ativo", true)
+          .not("evolution_instance_id", "is", null);
+
+        for (const secInst of secInsts ?? []) {
+          if (Date.now() - startMs > 50_000) break;
+          const secName  = (secInst.evolution_instance_id || "") as string;
+          const secToken = (secInst.evolution_instance_token || apiKey) as string;
+          let secP = 1;
+          let secMore = true;
+
+          while (secMore && Date.now() - startMs < 50_000) {
+            try {
+              const r = await fetch(`${evoUrl}/chat/findMessages/${secName}`, {
+                method: "POST",
+                headers: { "apikey": secToken, "Content-Type": "application/json" },
+                body: JSON.stringify({ limit: PAGE_SIZE, page: secP }),
+                signal: AbortSignal.timeout(20000),
+              });
+              if (!r.ok) { secMore = false; break; }
+              const result = await r.json();
+              const secMsgs: unknown[] = Array.isArray(result?.messages?.records) ? result.messages.records
+                : (Array.isArray(result) ? result : Array.isArray(result?.messages) ? result.messages
+                : Array.isArray(result?.records) ? result.records : []);
+              if (!secMsgs.length) { secMore = false; break; }
+              const secTotalPg = result?.messages?.pages || result?.pages || 1;
+              if (secP >= secTotalPg) secMore = false;
+
+              for (const msg of secMsgs) {
+                if (!msg || typeof msg !== "object") continue;
+                const m  = msg as Record<string, unknown>;
+                const k  = (m.key || {}) as Record<string, unknown>;
+                const rj = (k.remoteJid || "") as string;
+                if (!rj || rj.endsWith("@broadcast") || rj.endsWith("@newsletter") ||
+                    (!rj.endsWith("@g.us") && !rj.endsWith("@s.whatsapp.net"))) continue;
+                const fromMe = Boolean(k.fromMe);
+                const wamid  = (k.id || m.id || "") as string;
+                if (!wamid) continue;
+                const mc    = (m.message || {}) as Record<string, unknown>;
+                const texto = extractText(mc);
+                const { tipo, mediaUrl } = extractTipo(mc);
+                const hora  = safeTs(m.messageTimestamp || m.messageTimestampMs, now);
+                const convId = await resolveConv(rj, (m.pushName || "") as string);
+                if (!convId) continue;
+                const cur = convLastMsg.get(convId);
+                if (!cur || hora > cur.hora) convLastMsg.set(convId, { hora, texto });
+                const { error: insErr } = await supabase.from("mensagens").insert({
+                  conversa_id: convId, empresa_id,
+                  de: fromMe ? "me" : "contato", remetente: fromMe ? "me" : "contato",
+                  texto, tipo, media_url: mediaUrl, wamid, hora,
+                  status: fromMe ? "enviado" : "recebido", instancia_id: secInst.id,
+                });
+                if (insErr) { if (insErr.code === "23505") totalSkipped++; else errors.push(`sec:${wamid}: ${insErr.message}`); }
+                else totalInserted++;
+              }
+              secP++;
+            } catch (_) { secMore = false; }
+          }
+        }
+      }
+
       // Atualiza ultima_mensagem/ultima_hora de cada conversa:
       // 1) conversas com ultima_hora null (novas da sincronização)
       // 2) conversas onde a msg do batch é mais recente que a registrada
-      // Dois updates separados para evitar problemas com .or() e timestamps
       for (const [convId, { hora, texto }] of convLastMsg) {
         await supabase.from("conversas")
           .update({ ultima_mensagem: texto, ultima_hora: hora })
