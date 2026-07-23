@@ -953,45 +953,72 @@ Deno.serve(async (req) => {
       let updated = 0;
       const errors: string[] = [];
 
-      for (const chat of chatList) {
-        try {
+      // Função auxiliar: bulk-sync lista de chats para uma empresa/instância
+      type ParsedChat = { phone: string; name: string; instanciaId: string | null };
+      const bulkSyncChats = async (chats: ChatEntry[], instanciaId: string | null) => {
+        const parsed: ParsedChat[] = [];
+        for (const chat of chats) {
           const jid = (chat.id || chat.remoteJid || "") as string;
-          if (!jid) continue;
-
-          // Ignora newsletters, broadcasts e JIDs sem sufixo WhatsApp
-          if (jid.endsWith("@broadcast") || jid.endsWith("@newsletter")) continue;
+          if (!jid || jid.endsWith("@broadcast") || jid.endsWith("@newsletter")) continue;
           const isGroup = jid.endsWith("@g.us");
           if (!isGroup && !jid.endsWith("@s.whatsapp.net")) continue;
-
           const phone = isGroup ? jid : jid.replace(/@s\.whatsapp\.net$/, "");
           const name  = (chat.subject || chat.name || chat.pushName || phone) as string;
+          parsed.push({ phone, name, instanciaId });
+        }
+        if (!parsed.length) return;
 
+        // Batch-check existing (500 por vez)
+        const existingMap = new Map<string, string>();  // phone -> contato_nome
+        const BATCH = 500;
+        for (let i = 0; i < parsed.length; i += BATCH) {
+          const phones = parsed.slice(i, i + BATCH).map(c => c.phone);
           const { data: ex } = await supabase.from("conversas")
-            .select("id, contato_nome").eq("empresa_id", empresa_id).eq("contato_telefone", phone).maybeSingle();
+            .select("id, contato_telefone, contato_nome")
+            .eq("empresa_id", empresa_id)
+            .in("contato_telefone", phones);
+          (ex ?? []).forEach(r => existingMap.set(r.contato_telefone, r.contato_nome ?? ""));
+        }
 
-          if (ex) {
-            // Atualiza nome se estava em branco ou era o número
-            if (name && name !== phone && (!ex.contato_nome || ex.contato_nome === phone)) {
-              await supabase.from("conversas").update({ contato_nome: name }).eq("id", ex.id);
-              updated++;
-            }
-          } else {
-            const { error: ie } = await supabase.from("conversas").insert({
-              empresa_id,
-              contato_nome:     name,
-              contato_telefone: phone,
-              ultima_mensagem:  "",
-              ultima_hora:      null,
-              nao_lidas:        0,
-              status:           "aberta",
-              bot_ativo:        null,
-              whatsapp_numero:  phone,
-            });
-            if (!ie || ie.code === "23505") created++;
-            else errors.push(`${phone}: ${ie.message}`);
-          }
-        } catch (e) { errors.push((e as Error).message); }
-      }
+        // Insere novas conversas em lotes de 200
+        const toInsert = parsed
+          .filter(c => !existingMap.has(c.phone))
+          .map(c => ({
+            empresa_id,
+            contato_nome:     c.name,
+            contato_telefone: c.phone,
+            ultima_mensagem:  "",
+            ultima_hora:      null,
+            nao_lidas:        0,
+            status:           "aberta",
+            bot_ativo:        null,
+            whatsapp_numero:  c.phone,
+            instancia_id:     c.instanciaId,
+          }));
+
+        for (let i = 0; i < toInsert.length; i += 200) {
+          const { error: ie } = await supabase.from("conversas").insert(toInsert.slice(i, i + 200));
+          if (ie && ie.code !== "23505") errors.push(ie.message);
+          else created += Math.min(200, toInsert.length - i);
+        }
+
+        // Atualiza nomes em branco (phone como nome) — apenas os que existiam
+        const toUpdateName = parsed.filter(c => {
+          const existingName = existingMap.get(c.phone);
+          return existingName !== undefined
+            && c.name && c.name !== c.phone
+            && (!existingName || existingName === c.phone);
+        });
+        for (const c of toUpdateName) {
+          await supabase.from("conversas")
+            .update({ contato_nome: c.name })
+            .eq("empresa_id", empresa_id)
+            .eq("contato_telefone", c.phone);
+          updated++;
+        }
+      };
+
+      await bulkSyncChats(chatList, null);
 
       // ── Instâncias secundárias (empresa_instancias) ──────────────────────
       const { data: secInsts } = await supabase.from("empresa_instancias")
@@ -1021,32 +1048,7 @@ Deno.serve(async (req) => {
           } catch (_) {}
         }
 
-        for (const chat of secChats) {
-          try {
-            const jid = (chat.id || chat.remoteJid || "") as string;
-            if (!jid || jid.endsWith("@broadcast") || jid.endsWith("@newsletter")) continue;
-            const isGroup = jid.endsWith("@g.us");
-            if (!isGroup && !jid.endsWith("@s.whatsapp.net")) continue;
-            const phone = isGroup ? jid : jid.replace(/@s\.whatsapp\.net$/, "");
-            const name  = (chat.subject || chat.name || chat.pushName || phone) as string;
-
-            const { data: ex } = await supabase.from("conversas")
-              .select("id, contato_nome").eq("empresa_id", empresa_id).eq("contato_telefone", phone).maybeSingle();
-
-            if (ex) {
-              if (name && name !== phone && (!ex.contato_nome || ex.contato_nome === phone))
-                { await supabase.from("conversas").update({ contato_nome: name }).eq("id", ex.id); updated++; }
-            } else {
-              const { error: ie } = await supabase.from("conversas").insert({
-                empresa_id, contato_nome: name, contato_telefone: phone,
-                ultima_mensagem: "", ultima_hora: null, nao_lidas: 0,
-                status: "aberta", bot_ativo: null, whatsapp_numero: phone, instancia_id: secInst.id,
-              });
-              if (!ie || ie.code === "23505") created++;
-              else errors.push(`sec:${phone}: ${ie.message}`);
-            }
-          } catch (e) { errors.push(`sec: ${(e as Error).message}`); }
-        }
+        await bulkSyncChats(secChats, secInst.id as string);
       }
 
       return json({ success: true, total: chatList.length, created, updated, errors: errors.slice(0, 10) });
