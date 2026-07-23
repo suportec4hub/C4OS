@@ -100,41 +100,47 @@ Deno.serve(async (req) => {
     // ── CHATS_UPDATE: usuário leu conversa no celular → unreadCount cai a 0 ───
     if (["chats.update", "CHATS_UPDATE"].includes(event)) {
       const chats = Array.isArray(data) ? data : [data];
-      // Pula SOMENTE se todos os chats têm unreadCount > 0 (nova mensagem chegando)
-      // Se unreadCount estiver ausente, processa para garantir limpeza
+      // Pula SOMENTE se todos os chats têm unreadCount > 0 (chegada de nova mensagem)
       const allNewMessages = chats.every((c: Record<string, unknown>) => {
         const uc = c?.unreadCount ?? c?.UnreadCount;
         return uc !== undefined && Number(uc) > 0;
       });
       if (allNewMessages) return new Response("OK");
 
+      // Resolve empresa_id usando o mesmo padrão do handler principal:
+      // 1) empresa_instancias por token  2) empresa_instancias por nome
+      // 3) empresas por token            4) empresas por nome
       const _tok = tokenFromUrl || body.apikey || body.instance?.apikey || body.instance?.token || "";
       const _nm  = body.instance?.instanceName || body.instance?.name || body.instanceName || "";
+      const _cacheKeyChats = _tok || _nm;
+      const _cachedChats = _cacheKeyChats ? _instanceCache.get(_cacheKeyChats) : null;
       let _eid: string | null = null;
-      if (_tok) {
-        const { data: _ec } = await supabase.from("empresas").select("id").eq("evolution_instance_token", _tok).maybeSingle();
-        if (_ec) _eid = _ec.id;
-      }
-      if (!_eid && _nm) {
-        const { data: _ec } = await supabase.from("empresas").select("id").eq("evolution_instance_id", _nm).maybeSingle();
-        if (_ec) _eid = _ec.id;
-      }
 
-      // Log diagnóstico para entender o payload real do Evolution API
-      await logWA(supabase, {
-        empresa_id: _eid,
-        tipo: "webhook_recebido",
-        nivel: "info",
-        evento: "chats_update_debug",
-        resumo: `chats:${chats.length} tok:${_tok.slice(0, 8)}... eid:${_eid ? _eid.slice(0, 8) + "..." : "null"}`,
-        payload: { chats: chats.slice(0, 3), event, tokenPrefix: _tok.slice(0, 8) },
-      });
+      if (_cachedChats && (Date.now() - _cachedChats.ts) < _CACHE_TTL) {
+        _eid = _cachedChats.empresa_id;
+      } else {
+        if (_tok) {
+          const { data: i1 } = await supabase.from("empresa_instancias").select("empresa_id").eq("evolution_instance_token", _tok).maybeSingle();
+          if (i1) _eid = i1.empresa_id;
+        }
+        if (!_eid && _nm) {
+          const { data: i2 } = await supabase.from("empresa_instancias").select("empresa_id").eq("evolution_instance_id", _nm).maybeSingle();
+          if (i2) _eid = i2.empresa_id;
+        }
+        if (!_eid && _tok) {
+          const { data: e1 } = await supabase.from("empresas").select("id").eq("evolution_instance_token", _tok).maybeSingle();
+          if (e1) _eid = e1.id;
+        }
+        if (!_eid && _nm) {
+          const { data: e2 } = await supabase.from("empresas").select("id").eq("evolution_instance_id", _nm).maybeSingle();
+          if (e2) _eid = e2.id;
+        }
+      }
 
       if (_eid) {
         for (const chat of chats) {
           try {
             const uc = chat?.unreadCount ?? chat?.UnreadCount;
-            // Pula se sabemos que tem mensagens não lidas (nova mensagem)
             if (uc !== undefined && Number(uc) > 0) continue;
             const jid = (chat?.id || chat?.remoteJid || "") as string;
             if (!jid || jid.endsWith("@broadcast") || jid.endsWith("@newsletter")) continue;
