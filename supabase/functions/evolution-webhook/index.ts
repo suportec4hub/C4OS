@@ -97,9 +97,31 @@ Deno.serve(async (req) => {
     ];
     if (SKIP_EVENTS.includes(event)) return new Response("OK");
 
+    // Log de diagnóstico: registra todos os eventos que chegam (exceto os bloqueados acima)
+    // Ajuda a entender quais eventos a Evolution API envia ao ler mensagem no celular
+    const _DIAG_EVENTS = ["chats.update","CHATS_UPDATE","messages.update","MESSAGES_UPDATE","message.ack","READ_RECEIPT","presence.update","PRESENCE","CHAT_PRESENCE"];
+    if (!_DIAG_EVENTS.includes(event)) {
+      // Evento desconhecido — registra para diagnóstico
+      const _diagTok = (tokenFromUrl || body.apikey || body.instance?.apikey || "").slice(0, 8);
+      const _diagNm  = body.instance?.instanceName || body.instance?.name || "";
+      await logWA(supabase, {
+        tipo: "webhook_recebido", nivel: "warn", origem: "evolution-webhook", evento: event,
+        resumo: `evento desconhecido: ${event} | tok=${_diagTok} nm=${_diagNm}`,
+        payload: { topKeys: Object.keys(body).join(","), dataKeys: data && typeof data === "object" ? Object.keys(data as object).join(",") : "" },
+      });
+    }
+
     // ── CHATS_UPDATE: usuário leu conversa no celular → unreadCount cai a 0 ───
     if (["chats.update", "CHATS_UPDATE"].includes(event)) {
       const chats = Array.isArray(data) ? data : [data];
+
+      // Log diagnóstico para entender o payload exato
+      await logWA(supabase, {
+        tipo: "webhook_recebido", nivel: "info", origem: "evolution-webhook", evento: event,
+        resumo: `chats.update recebido (${chats.length} chats)`,
+        payload: { tok: (tokenFromUrl || body.apikey || body.instance?.apikey || "").slice(0, 8) + "...", nm: body.instance?.instanceName || body.instance?.name || "", chats: chats.slice(0, 3) },
+      });
+
       // Pula SOMENTE se todos os chats têm unreadCount > 0 (chegada de nova mensagem)
       const allNewMessages = chats.every((c: Record<string, unknown>) => {
         const uc = c?.unreadCount ?? c?.UnreadCount;
@@ -135,7 +157,16 @@ Deno.serve(async (req) => {
           const { data: e2 } = await supabase.from("empresas").select("id").eq("evolution_instance_id", _nm).maybeSingle();
           if (e2) _eid = e2.id;
         }
+        // Popula cache para evitar lookups repetidos
+        if (_eid && _cacheKeyChats) {
+          _instanceCache.set(_cacheKeyChats, { empresa_id: _eid, instanciaId: null, instanciaEhPrincipal: true, ts: Date.now() });
+        }
       }
+
+      await logWA(supabase, {
+        empresa_id: _eid, tipo: "webhook_recebido", nivel: "info", origem: "evolution-webhook", evento: event,
+        resumo: `chats.update empresa_id=${_eid ?? "NÃO ENCONTRADO"} tok=${_tok.slice(0,8)} nm=${_nm}`,
+      });
 
       if (_eid) {
         for (const chat of chats) {
@@ -148,12 +179,48 @@ Deno.serve(async (req) => {
               ? jid
               : jid.replace(/@s\.whatsapp\.net$/, "").replace(/@c\.us$/, "").replace(/:.*$/, "");
             if (!phone) continue;
-            await supabase.from("conversas")
+
+            // Tenta atualizar com o phone exato
+            const { count: c1 } = await supabase.from("conversas")
               .update({ nao_lidas: 0 })
               .eq("empresa_id", _eid)
               .eq("contato_telefone", phone)
-              .gt("nao_lidas", 0);
-          } catch (_) {}
+              .gt("nao_lidas", 0)
+              .select("id", { count: "exact", head: true });
+
+            // Se não encontrou, tenta variações do número (com/sem código do país 55)
+            if (!c1 || c1 === 0) {
+              const phoneVariants: string[] = [];
+              // Se começa com 55 e tem 12-13 dígitos → tenta sem o 55
+              if (/^55\d{10,11}$/.test(phone)) phoneVariants.push(phone.slice(2));
+              // Se não começa com 55 e tem 10-11 dígitos → tenta com 55
+              else if (/^\d{10,11}$/.test(phone)) phoneVariants.push("55" + phone);
+              // Número de 9 dígitos com DDD (sem 55) — tenta também sem o 9 extra
+              if (/^\d{11}$/.test(phone) && phone[2] === "9") phoneVariants.push(phone.slice(0, 2) + phone.slice(3));
+              if (/^55\d{11}$/.test(phone) && phone[4] === "9") phoneVariants.push("55" + phone.slice(2, 4) + phone.slice(5));
+
+              for (const variant of phoneVariants) {
+                const { count: cv } = await supabase.from("conversas")
+                  .update({ nao_lidas: 0 })
+                  .eq("empresa_id", _eid)
+                  .eq("contato_telefone", variant)
+                  .gt("nao_lidas", 0)
+                  .select("id", { count: "exact", head: true });
+                if (cv && cv > 0) break;
+              }
+            }
+
+            await logWA(supabase, {
+              empresa_id: _eid, tipo: "webhook_recebido", nivel: "info", origem: "evolution-webhook", evento: event,
+              telefone: phone,
+              resumo: `leitura zerada: phone=${phone} jid=${jid} uc=${uc} rows=${c1 ?? 0}`,
+            });
+          } catch (err) {
+            await logWA(supabase, {
+              empresa_id: _eid, tipo: "webhook_recebido", nivel: "error", origem: "evolution-webhook", evento: event,
+              resumo: `erro ao zerar nao_lidas: ${String(err)}`,
+            });
+          }
         }
       }
       return new Response("OK");
