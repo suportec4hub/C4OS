@@ -91,11 +91,52 @@ Deno.serve(async (req) => {
 
     // Saída rápida para eventos de alta frequência que não precisam consultar o banco
     const SKIP_EVENTS = [
-      "chats.update", "CHATS_UPDATE", "CHATS_UPSERT", "CHATS_SET", "CHATS_DELETE",
+      "CHATS_UPSERT", "CHATS_SET", "CHATS_DELETE",
       "contacts.update", "CONTACTS_UPDATE", "CONTACTS_SET",
       "labels.edit", "LABELS_EDIT", "labels.association", "LABELS_ASSOCIATION",
     ];
     if (SKIP_EVENTS.includes(event)) return new Response("OK");
+
+    // ── CHATS_UPDATE: usuário leu conversa no celular → unreadCount cai a 0 ───
+    if (["chats.update", "CHATS_UPDATE"].includes(event)) {
+      const chats = Array.isArray(data) ? data : [data];
+      // Verificação rápida sem DB: só continua se algum chat tem unreadCount <= 0
+      const readChats = chats.filter((c: Record<string, unknown>) => {
+        const uc = c?.unreadCount ?? c?.UnreadCount;
+        return uc !== undefined && Number(uc) <= 0;
+      });
+      if (readChats.length === 0) return new Response("OK");
+
+      const _tok = tokenFromUrl || body.apikey || body.instance?.apikey || body.instance?.token || "";
+      const _nm  = body.instance?.instanceName || body.instance?.name || body.instanceName || "";
+      let _eid: string | null = null;
+      if (_tok) {
+        const { data: _ec } = await supabase.from("empresas").select("id").eq("evolution_instance_token", _tok).maybeSingle();
+        if (_ec) _eid = _ec.id;
+      }
+      if (!_eid && _nm) {
+        const { data: _ec } = await supabase.from("empresas").select("id").eq("evolution_instance_id", _nm).maybeSingle();
+        if (_ec) _eid = _ec.id;
+      }
+      if (_eid) {
+        for (const chat of readChats) {
+          try {
+            const jid = (chat?.id || chat?.remoteJid || "") as string;
+            if (!jid || jid.endsWith("@broadcast") || jid.endsWith("@newsletter")) continue;
+            const phone = jid.endsWith("@g.us")
+              ? jid
+              : jid.replace(/@s\.whatsapp\.net$/, "").replace(/@c\.us$/, "").replace(/:.*$/, "");
+            if (!phone) continue;
+            await supabase.from("conversas")
+              .update({ nao_lidas: 0 })
+              .eq("empresa_id", _eid)
+              .eq("contato_telefone", phone)
+              .gt("nao_lidas", 0);
+          } catch (_) {}
+        }
+      }
+      return new Response("OK");
+    }
 
     // Presença / "digitando..." — 1 query leve para empresa_id, depois Realtime broadcast
     if (["presence.update", "PRESENCE", "CHAT_PRESENCE"].includes(event)) {
