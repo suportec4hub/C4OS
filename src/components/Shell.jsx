@@ -420,12 +420,14 @@ export default function Shell({user,onLogout,onProfileUpdate,theme,toggleTheme})
         )}
 
         {/* Content */}
-        <div style={{flex:1,overflow:"auto",
-          padding: isMobile ? "12px 12px" : "24px",
-          // On mobile: pad bottom for bottom nav bar (56px) + safe area
-          paddingBottom: isMobile
-            ? "calc(68px + env(safe-area-inset-bottom))"
-            : "24px",
+        <div style={{flex:1,
+          overflow: (isMobile && safe === "whatsapp") ? "hidden" : "auto",
+          padding: (isMobile && safe === "whatsapp") ? 0 : (isMobile ? "12px" : "24px"),
+          paddingBottom: (isMobile && safe === "whatsapp")
+            ? 0
+            : isMobile
+              ? "calc(68px + env(safe-area-inset-bottom))"
+              : "24px",
           WebkitOverflowScrolling: "touch",
         }}>
           <Suspense fallback={

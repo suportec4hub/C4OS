@@ -1687,21 +1687,21 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
   // ─── render ───────────────────────────────────────────────────────────────
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-      {/* Banner status WhatsApp */}
-      {evoConnected === false && (
-        <div style={{ padding: isMobile ? "6px 10px" : "8px 16px", background: L.yellowBg, border: `1px solid ${L.yellowA2}`,
-          borderRadius: 10, marginBottom: 10, fontSize: isMobile ? 11 : 12, color: L.t1 }}>
-          ⚠️ <b>WhatsApp desconectado.</b>{!isMobile && <> Conecte em <b>Minha Empresa → Integrações</b>.</>}
+      {/* Banner status WhatsApp — oculto no mobile quando chat está aberto */}
+      {!isMobile && evoConnected === false && (
+        <div style={{ padding: "8px 16px", background: L.yellowBg, border: `1px solid ${L.yellowA2}`,
+          borderRadius: 10, marginBottom: 10, fontSize: 12, color: L.t1 }}>
+          ⚠️ <b>WhatsApp desconectado.</b> Conecte em <b>Minha Empresa → Integrações</b>.
         </div>
       )}
-      {evoConnected === true && (
-        <div style={{ padding: isMobile ? "5px 10px" : "6px 16px", background: L.greenBg, border: `1px solid ${L.green}33`,
+      {!isMobile && evoConnected === true && (
+        <div style={{ padding: "6px 16px", background: L.greenBg, border: `1px solid ${L.green}33`,
           borderRadius: 10, marginBottom: 10, display: "flex", alignItems: "center", gap: 6, fontSize: 11, flexWrap: "wrap" }}>
           <span style={{ width: 7, height: 7, borderRadius: "50%", background: L.green, display: "inline-block", flexShrink: 0 }} />
           <span style={{ color: L.green, fontWeight: 600 }}>WhatsApp</span>
-          {!isMobile && <span style={{ color: L.t3 }}>· Evolution GO</span>}
+          <span style={{ color: L.t3 }}>· Evolution GO</span>
           <span style={{ marginLeft: "auto", display: "flex", gap: 5, alignItems: "center" }}>
-            {importInfo && !isMobile && (
+            {importInfo && (
               <span style={{ color: importInfo.error ? L.red : L.t3, fontSize: 10 }}>
                 {importing
                   ? `⏳ Sincronizando… ${importInfo.imported || 0}`
@@ -1726,9 +1726,19 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
         </div>
       )}
 
-      <div style={{ display: "flex", height: isMobile ? "calc(100dvh - 130px)" : isTablet ? "calc(100dvh - 150px)" : "calc(100dvh - 162px)",
-        background: L.white, borderRadius: 12, border: `1px solid ${L.line}`,
-        overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.05)" }}>
+      <div style={{
+        display: "flex",
+        height: isMobile
+          ? `calc(100dvh - 52px - 68px - env(safe-area-inset-bottom))`
+          : isTablet
+            ? "calc(100dvh - 150px)"
+            : "calc(100dvh - 162px)",
+        background: L.white,
+        borderRadius: isMobile ? 0 : 12,
+        border: isMobile ? "none" : `1px solid ${L.line}`,
+        overflow: "hidden",
+        boxShadow: isMobile ? "none" : "0 1px 4px rgba(0,0,0,0.05)",
+      }}>
 
         {/* ══════════════════ SIDEBAR ESQUERDA ══════════════════ */}
         {(!isMobile || !activeConv) && (
@@ -1736,8 +1746,8 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
             borderRight: isMobile ? "none" : `1px solid ${L.line}`, display: "flex", flexDirection: "column" }}>
 
             {/* Header */}
-            <div style={{ padding: "12px 14px", borderBottom: `1px solid ${L.lineSoft}` }}>
-              <Row between mb={8}>
+            <div style={{ padding: isMobile ? "10px 12px" : "12px 14px", borderBottom: `1px solid ${L.lineSoft}` }}>
+              <Row between mb={isMobile ? 6 : 8}>
                 <Row gap={8}>
                   <span style={{ fontSize: 13, fontWeight: 700, color: L.t1 }}>Chat</span>
                   {totalNaoLidas > 0 && (
@@ -1745,21 +1755,29 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
                       {totalNaoLidas}
                     </span>
                   )}
+                  {isMobile && evoConnected !== null && (
+                    <span style={{ width: 7, height: 7, borderRadius: "50%", background: evoConnected ? L.green : L.red, display: "inline-block" }} />
+                  )}
                 </Row>
-                <Row gap={5}>
-                  {syncMsg && (
+                <Row gap={4}>
+                  {!isMobile && syncMsg && (
                     <span style={{ fontSize: 10, color: syncMsg.startsWith("Erro") ? L.red : L.green,
                       fontWeight: 600, whiteSpace: "nowrap" }}>{syncMsg}</span>
                   )}
                   <button onClick={forceSincronizar} disabled={syncing} title="Forçar sincronização"
                     style={{ ...btnStyle(syncing ? L.surface : L.blueBg, syncing ? L.t4 : L.blue),
-                      opacity: syncing ? 0.6 : 1, padding: "5px 8px" }}>
+                      opacity: syncing ? 0.6 : 1, padding: "5px 8px", minHeight: 36 }}>
                     {syncing ? "⟳" : "🔄"}
                   </button>
-                  <button onClick={() => loadConversas()} title="Atualizar" style={btnStyle()}>⟳</button>
-                  <button onClick={() => setDistModal(true)} title="Distribuição de atendentes"
-                    style={btnStyle(distCfg?.ativo === false ? L.surface : L.tealBg, distCfg?.ativo === false ? L.t3 : L.teal)}>⇄</button>
-                  <button onClick={() => setNovaModal(true)} style={btnStyle(L.accent, "white")}>+ Nova</button>
+                  <button onClick={() => loadConversas()} title="Atualizar" style={{ ...btnStyle(), minHeight: 36 }}>⟳</button>
+                  {!isMobile && (
+                    <button onClick={() => setDistModal(true)} title="Distribuição de atendentes"
+                      style={btnStyle(distCfg?.ativo === false ? L.surface : L.tealBg, distCfg?.ativo === false ? L.t3 : L.teal)}>⇄</button>
+                  )}
+                  <button onClick={() => setNovaModal(true)}
+                    style={{ ...btnStyle(L.accent, "white"), minHeight: 36, padding: isMobile ? "5px 10px" : "5px 10px" }}>
+                    {isMobile ? "+" : "+ Nova"}
+                  </button>
                 </Row>
               </Row>
 
@@ -1904,14 +1922,15 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
                   "Desconhecido";
                 return (
                   <div key={c.id} onClick={() => selectConv(c)}
-                    style={{ padding: "10px 14px", cursor: "pointer", borderBottom: `1px solid ${L.lineSoft}`,
+                    style={{ padding: isMobile ? "12px 14px" : "10px 14px", cursor: "pointer", borderBottom: `1px solid ${L.lineSoft}`,
                       background: isActive ? L.tealA : "transparent",
-                      borderLeft: `3px solid ${isActive ? L.accent : "transparent"}`, transition: "all .1s" }}
+                      borderLeft: `3px solid ${isActive ? L.accent : "transparent"}`, transition: "all .1s",
+                      minHeight: isMobile ? 64 : 56 }}
                     onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = L.surface; }}
                     onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = "transparent"; }}>
-                    <Row gap={9}>
+                    <Row gap={10}>
                       <div style={{ position: "relative", flexShrink: 0 }}>
-                        <Av name={nomeExibido} color={isGrp ? L.blue : L.t1} size={36} src={profilePhotos[c.contato_telefone]} />
+                        <Av name={nomeExibido} color={isGrp ? L.blue : L.t1} size={isMobile ? 42 : 36} src={profilePhotos[c.contato_telefone]} />
                         {isGrp && (
                           <div style={{ position: "absolute", bottom: -1, right: -1, width: 14, height: 14,
                             borderRadius: "50%", background: L.blue, border: `2px solid ${L.white}`,
@@ -2036,49 +2055,54 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
           <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
 
             {/* Header da conversa */}
-            <div style={{ padding: "9px 14px", borderBottom: `1px solid ${L.line}`, display: "flex",
-              justifyContent: "space-between", alignItems: "center", flexShrink: 0, background: L.waHeaderBg, gap: 8 }}>
-              <Row gap={9} style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ padding: isMobile ? "8px 10px" : "9px 14px", borderBottom: `1px solid ${L.line}`, display: "flex",
+              justifyContent: "space-between", alignItems: "center", flexShrink: 0, background: L.waHeaderBg, gap: 6,
+              minHeight: isMobile ? 56 : "auto" }}>
+              <Row gap={isMobile ? 6 : 9} style={{ minWidth: 0, flex: 1 }}>
                 {isMobile && (
-                  <button onClick={() => setActiveConv(null)} style={btnStyle()}>←</button>
+                  <button onClick={() => setActiveConv(null)}
+                    style={{ ...btnStyle(), minWidth: 40, minHeight: 40, padding: "6px 10px", fontSize: 18, flexShrink: 0 }}>
+                    ←
+                  </button>
                 )}
-                <div style={{ position: "relative" }}>
-                  <Av name={activeConv.contato_nome || "?"} color={L.t1} size={34} src={profilePhotos[activeConv.contato_telefone]} />
+                <div style={{ position: "relative", flexShrink: 0 }}>
+                  <Av name={activeConv.contato_nome || "?"} color={L.t1} size={isMobile ? 38 : 34} src={profilePhotos[activeConv.contato_telefone]} />
                   {evoConnected && (
                     <div style={{ position: "absolute", bottom: 0, right: 0, width: 8, height: 8,
                       borderRadius: "50%", background: L.green, border: `2px solid white` }} />
                   )}
                 </div>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: L.t1,
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontSize: isMobile ? 15 : 13, fontWeight: 600, color: L.t1,
                     overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {activeConv.contato_nome || activeConv.contato_telefone || "Desconhecido"}
                   </div>
-                  <Row gap={8} style={{ flexWrap: "wrap" }}>
-                    <span style={{ fontSize: 10, color: L.t3 }}>
+                  <Row gap={6} style={{ flexWrap: "nowrap", overflow: "hidden" }}>
+                    <span style={{ fontSize: isMobile ? 11 : 10, color: L.t3, whiteSpace: "nowrap",
+                      overflow: "hidden", textOverflow: "ellipsis" }}>
                       {activeConv.contato_telefone || "Sem telefone"}
                     </span>
-                    {activeConv._setor && (
+                    {!isMobile && activeConv._setor && (
                       <span style={{ fontSize: 9, background: activeConv._setor.cor + "22",
                         color: activeConv._setor.cor, padding: "1px 6px", borderRadius: 4,
-                        fontWeight: 600, border: `1px solid ${activeConv._setor.cor}33` }}>
+                        fontWeight: 600, border: `1px solid ${activeConv._setor.cor}33`, flexShrink: 0 }}>
                         {activeConv._setor.nome}
                       </span>
                     )}
-                    {activeConv._atendente_nome && (
-                      <span style={{ fontSize: 10, color: L.t3 }}>👤 {activeConv._atendente_nome}</span>
+                    {!isMobile && activeConv._atendente_nome && (
+                      <span style={{ fontSize: 10, color: L.t3, flexShrink: 0 }}>👤 {activeConv._atendente_nome}</span>
                     )}
                   </Row>
                 </div>
               </Row>
 
-              <Row gap={4} style={{ flexShrink: 0, flexWrap: "wrap", justifyContent: "flex-end" }}>
+              <Row gap={4} style={{ flexShrink: 0, justifyContent: "flex-end" }}>
                 {/* Assumir conversa da fila */}
                 {activeConv.status === "aguardando" && !activeConv.atendente_id && (
                   <button onClick={e => assumirConversa(activeConv.id, e)}
-                    style={{ fontSize: 11, fontWeight: 700, color: "white", background: L.teal,
-                      border: "none", borderRadius: 7, padding: "5px 12px", cursor: "pointer", fontFamily: "inherit" }}>
-                    ⊕ Assumir conversa
+                    style={{ fontSize: isMobile ? 10 : 11, fontWeight: 700, color: "white", background: L.teal,
+                      border: "none", borderRadius: 7, padding: isMobile ? "5px 8px" : "5px 12px", cursor: "pointer", fontFamily: "inherit", minHeight: 36 }}>
+                    {isMobile ? "⊕" : "⊕ Assumir"}
                   </button>
                 )}
                 {/* Status select */}
@@ -2086,12 +2110,13 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
                   style={{ fontSize: 10, border: `1px solid ${L.line}`, borderRadius: 6, padding: "4px 7px",
                     background: STATUS_LABELS[activeConv.status]?.bg || L.greenBg,
                     color: STATUS_LABELS[activeConv.status]?.c || L.green,
-                    cursor: "pointer", fontFamily: "inherit", fontWeight: 600, outline: "none" }}>
+                    cursor: "pointer", fontFamily: "inherit", fontWeight: 600, outline: "none",
+                    maxWidth: isMobile ? 80 : "none", minHeight: 32 }}>
                   {Object.entries(STATUS_LABELS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                 </select>
 
-                {/* Atribuir setor */}
-                {setores.length > 0 && (
+                {/* Atribuir setor — oculto no mobile */}
+                {!isMobile && setores.length > 0 && (
                   <select value={activeConv.setor_id || ""} onChange={e => assignSetor(e.target.value)}
                     style={{ fontSize: 10, border: `1px solid ${L.line}`, borderRadius: 6, padding: "4px 7px",
                       background: L.waHeaderBg, color: L.t2, cursor: "pointer", fontFamily: "inherit", outline: "none", maxWidth: 100 }}>
@@ -2100,29 +2125,31 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
                   </select>
                 )}
 
-                {/* Atribuir atendente */}
-                <select value={activeConv.atendente_id || ""} onChange={e => assignAtendente(e.target.value)}
-                  style={{ fontSize: 10, border: `1px solid ${L.line}`, borderRadius: 6, padding: "4px 7px",
-                    background: L.waHeaderBg, color: L.t2, cursor: "pointer", fontFamily: "inherit", outline: "none", maxWidth: 110 }}>
-                  <option value="">👤 Atribuir</option>
-                  {atendentes.map(a => <option key={a.id} value={a.id}>{a.nome}</option>)}
-                </select>
+                {/* Atribuir atendente — oculto no mobile */}
+                {!isMobile && (
+                  <select value={activeConv.atendente_id || ""} onChange={e => assignAtendente(e.target.value)}
+                    style={{ fontSize: 10, border: `1px solid ${L.line}`, borderRadius: 6, padding: "4px 7px",
+                      background: L.waHeaderBg, color: L.t2, cursor: "pointer", fontFamily: "inherit", outline: "none", maxWidth: 110 }}>
+                    <option value="">👤 Atribuir</option>
+                    {atendentes.map(a => <option key={a.id} value={a.id}>{a.nome}</option>)}
+                  </select>
+                )}
 
                 {/* Transferir */}
                 <button onClick={() => setTransferModal(true)} title="Transferir"
-                  style={btnStyle()}>⇄</button>
+                  style={{ ...btnStyle(), minHeight: 32, padding: "4px 8px" }}>⇄</button>
 
                 {/* Bot toggle */}
                 <button onClick={toggleBot} title={activeConv.bot_ativo ? "Desativar bot" : "Ativar bot"}
-                  style={btnStyle(activeConv.bot_ativo ? L.yellow + "33" : L.surface, activeConv.bot_ativo ? L.yellow : L.t3)}>
+                  style={{ ...btnStyle(activeConv.bot_ativo ? L.yellow + "33" : L.surface, activeConv.bot_ativo ? L.yellow : L.t3), minHeight: 32, padding: "4px 8px" }}>
                   🤖
                 </button>
 
                 {/* Agendar */}
                 <button onClick={() => setAgendarModal(true)} title="Agendar mensagem"
-                  style={btnStyle()}>⏰</button>
+                  style={{ ...btnStyle(), minHeight: 32, padding: "4px 8px" }}>⏰</button>
 
-                {/* Right panel toggle */}
+                {/* Right panel toggle — desktop only */}
                 {!isMobile && (
                   <button onClick={() => setShowRight(p => !p)}
                     title={showRight ? "Ocultar painel de info" : "Mostrar Info / Tags / Agendadas / Log"}
@@ -2146,8 +2173,9 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
             )}
 
             {/* Mensagens */}
-            <div style={{ flex: 1, overflowY: "auto", padding: "16px 14px",
-              background: L.waChatBg, display: "flex", flexDirection: "column", gap: 2 }}>
+            <div style={{ flex: 1, overflowY: "auto", padding: isMobile ? "10px 8px" : "16px 14px",
+              background: L.waChatBg, display: "flex", flexDirection: "column", gap: 2,
+              WebkitOverflowScrolling: "touch" }}>
               {mensagens.length === 0 && (
                 <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center",
                   color: L.t4, fontSize: 12, textAlign: "center" }}>
@@ -2183,13 +2211,14 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
                           style={{ marginRight: 6, marginTop: 2, flexShrink: 0 }} />
                       )}
                       <div style={{
-                        maxWidth: "72%", padding: nota ? "6px 10px" : "7px 9px 6px 9px",
-                        borderRadius: out ? "8px 8px 2px 8px" : "8px 8px 8px 2px",
+                        maxWidth: isMobile ? "85%" : "72%",
+                        padding: nota ? "6px 10px" : "7px 10px 5px 10px",
+                        borderRadius: out ? "16px 16px 4px 16px" : "16px 16px 16px 4px",
                         background: nota ? L.yellowBg : out ? L.waBubbleOut : L.waBubbleIn,
                         color: nota ? L.yellow : out ? L.waBubbleOutText : L.t1,
                         border: nota ? `1px dashed ${L.yellow}` : "none",
                         boxShadow: "0 1px 2px rgba(0,0,0,0.13)",
-                        fontSize: 13, lineHeight: 1.5, wordBreak: "break-word",
+                        fontSize: isMobile ? 14 : 13, lineHeight: 1.5, wordBreak: "break-word",
                         opacity: m.status === "enviando" ? 0.6 : 1,
                         transition: "opacity .2s",
                       }}>
@@ -2216,8 +2245,12 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
             </div>
 
             {/* Input */}
-            <div style={{ padding: "8px 10px", borderTop: `1px solid ${L.line}`,
-              background: L.waInputBg, flexShrink: 0 }}>
+            <div style={{
+              padding: isMobile ? "6px 8px" : "8px 10px",
+              paddingBottom: isMobile ? "max(8px, env(safe-area-inset-bottom))" : "8px",
+              borderTop: `1px solid ${L.line}`,
+              background: L.waInputBg, flexShrink: 0,
+            }}>
 
               {/* Quick replies popup */}
               {showQuick && filteredQuick.length > 0 && (
@@ -2253,20 +2286,21 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
 
               {recording ? (
                 /* Modo de gravação */
-                <Row gap={8} style={{ background: L.redBg, borderRadius: 10, padding: "8px 12px",
+                <Row gap={8} style={{ background: L.redBg, borderRadius: 12, padding: "10px 12px",
                   border: `1px solid ${L.red}33`, alignItems: "center" }}>
-                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: L.red,
+                  <span style={{ width: 10, height: 10, borderRadius: "50%", background: L.red,
                     animation: "pulse 1s infinite", flexShrink: 0 }} />
-                  <span style={{ fontSize: 12, color: L.red, fontWeight: 600, flex: 1 }}>
-                    Gravando... {Math.floor(recSeconds / 60).toString().padStart(2, "0")}:{(recSeconds % 60).toString().padStart(2, "0")}
+                  <span style={{ fontSize: isMobile ? 14 : 12, color: L.red, fontWeight: 700, flex: 1 }}>
+                    🎙 {Math.floor(recSeconds / 60).toString().padStart(2, "0")}:{(recSeconds % 60).toString().padStart(2, "0")}
                   </span>
                   <button onClick={cancelRecording}
-                    style={{ ...btnStyle(L.surface, L.t3), padding: "5px 10px", fontSize: 11 }}>
-                    ✕ Cancelar
+                    style={{ ...btnStyle(L.surface, L.t3), padding: "8px 14px", fontSize: isMobile ? 13 : 11, minHeight: 40 }}>
+                    ✕
                   </button>
                   <button onClick={stopRecording}
-                    style={{ background: L.red, color: "white", border: "none", borderRadius: 8,
-                      padding: "6px 12px", cursor: "pointer", fontSize: 12, fontWeight: 600, fontFamily: "inherit" }}>
+                    style={{ background: L.red, color: "white", border: "none", borderRadius: 22,
+                      padding: "8px 18px", cursor: "pointer", fontSize: isMobile ? 14 : 12, fontWeight: 700,
+                      fontFamily: "inherit", minHeight: 40 }}>
                     ⏹ Enviar
                   </button>
                 </Row>
@@ -2278,14 +2312,14 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
                     else setInput("/nota " + input);
                   }}
                     title="Nota interna (/nota texto)"
-                    style={{ ...btnStyle(input.startsWith("/nota") ? L.yellowBg : L.surface, input.startsWith("/nota") ? L.yellow : L.t3), flexShrink: 0, padding: "7px 10px" }}>
+                    style={{ ...btnStyle(input.startsWith("/nota") ? L.yellowBg : L.surface, input.startsWith("/nota") ? L.yellow : L.t3), flexShrink: 0, padding: "8px 10px", minWidth: 40, minHeight: 40 }}>
                     📝
                   </button>
 
                   {/* Media upload */}
                   <button onClick={() => fileRef.current?.click()} disabled={uploadingMedia}
                     title="Enviar imagem / áudio / arquivo"
-                    style={{ ...btnStyle(L.surface, uploadingMedia ? L.t4 : L.t3), flexShrink: 0, padding: "7px 10px", opacity: uploadingMedia ? 0.5 : 1 }}>
+                    style={{ ...btnStyle(L.surface, uploadingMedia ? L.t4 : L.t3), flexShrink: 0, padding: "8px 10px", minWidth: 40, minHeight: 40, opacity: uploadingMedia ? 0.5 : 1 }}>
                     {uploadingMedia ? "⟳" : "📎"}
                   </button>
 
@@ -2295,13 +2329,14 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
                       value={input}
                       onChange={handleInputChange}
                       onKeyDown={handleKeyDown}
-                      placeholder={input.startsWith("/nota") ? "Nota interna (não enviada ao contato)..." : isMobile ? "Digite uma mensagem…" : "Digite / para respostas rápidas · Enter para enviar · Shift+Enter nova linha"}
+                      placeholder={input.startsWith("/nota") ? "Nota interna..." : "Mensagem…"}
                       rows={1}
                       style={{ width: "100%", border: `1px solid ${input.startsWith("/nota") ? L.yellow : "transparent"}`,
-                        borderRadius: 9, padding: "8px 12px", fontSize: 13, color: L.t1,
+                        borderRadius: 22, padding: "10px 14px", fontSize: isMobile ? 15 : 13, color: L.t1,
                         background: input.startsWith("/nota") ? L.yellowBg : L.white,
                         outline: "none", fontFamily: "inherit", resize: "none",
-                        maxHeight: 100, overflowY: "auto", boxSizing: "border-box", lineHeight: 1.5 }}
+                        maxHeight: 120, overflowY: "auto", boxSizing: "border-box", lineHeight: 1.5,
+                        boxShadow: "inset 0 1px 3px rgba(0,0,0,0.06)" }}
                     />
                   </div>
 
@@ -2309,7 +2344,7 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
                   {!input.trim() && (
                     <button onClick={startRecording} disabled={uploadingMedia}
                       title="Gravar mensagem de voz"
-                      style={{ ...btnStyle(L.surface, L.t3), flexShrink: 0, padding: "7px 10px" }}>
+                      style={{ ...btnStyle(L.surface, L.t3), flexShrink: 0, padding: "8px 10px", minWidth: 40, minHeight: 40 }}>
                       🎙
                     </button>
                   )}
@@ -2323,18 +2358,21 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
                     }
                   }} disabled={!input.trim() || sending}
                     style={{ background: L.accent, color: "white", border: "none",
-                      borderRadius: "50%", width: 40, height: 40, flexShrink: 0, cursor: "pointer",
+                      borderRadius: "50%", width: isMobile ? 44 : 40, height: isMobile ? 44 : 40,
+                      flexShrink: 0, cursor: "pointer",
                       display: "flex", alignItems: "center", justifyContent: "center",
-                      fontSize: 16, transition: "all .15s",
+                      fontSize: 18, transition: "all .15s",
                       opacity: (!input.trim() || sending) ? .4 : 1,
-                      boxShadow: "0 2px 6px rgba(0,0,0,0.2)" }}>
+                      boxShadow: "0 2px 8px rgba(0,0,0,0.25)" }}>
                     {sending ? "⟳" : "➤"}
                   </button>
                 </Row>
               )}
-              <div style={{ fontSize: 10, color: L.t4, marginTop: 4, paddingLeft: 2 }}>
-                Digite <b>/</b> para respostas rápidas · <b>/nota texto</b> para nota interna
-              </div>
+              {!isMobile && (
+                <div style={{ fontSize: 10, color: L.t4, marginTop: 4, paddingLeft: 2 }}>
+                  Digite <b>/</b> para respostas rápidas · <b>/nota texto</b> para nota interna
+                </div>
+              )}
             </div>
           </div>
         ) : (
