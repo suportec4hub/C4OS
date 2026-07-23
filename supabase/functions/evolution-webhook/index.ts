@@ -100,12 +100,13 @@ Deno.serve(async (req) => {
     // ── CHATS_UPDATE: usuário leu conversa no celular → unreadCount cai a 0 ───
     if (["chats.update", "CHATS_UPDATE"].includes(event)) {
       const chats = Array.isArray(data) ? data : [data];
-      // Verificação rápida sem DB: só continua se algum chat tem unreadCount <= 0
-      const readChats = chats.filter((c: Record<string, unknown>) => {
+      // Pula SOMENTE se todos os chats têm unreadCount > 0 (nova mensagem chegando)
+      // Se unreadCount estiver ausente, processa para garantir limpeza
+      const allNewMessages = chats.every((c: Record<string, unknown>) => {
         const uc = c?.unreadCount ?? c?.UnreadCount;
-        return uc !== undefined && Number(uc) <= 0;
+        return uc !== undefined && Number(uc) > 0;
       });
-      if (readChats.length === 0) return new Response("OK");
+      if (allNewMessages) return new Response("OK");
 
       const _tok = tokenFromUrl || body.apikey || body.instance?.apikey || body.instance?.token || "";
       const _nm  = body.instance?.instanceName || body.instance?.name || body.instanceName || "";
@@ -118,9 +119,23 @@ Deno.serve(async (req) => {
         const { data: _ec } = await supabase.from("empresas").select("id").eq("evolution_instance_id", _nm).maybeSingle();
         if (_ec) _eid = _ec.id;
       }
+
+      // Log diagnóstico para entender o payload real do Evolution API
+      await logWA(supabase, {
+        empresa_id: _eid,
+        tipo: "webhook_recebido",
+        nivel: "info",
+        evento: "chats_update_debug",
+        resumo: `chats:${chats.length} tok:${_tok.slice(0, 8)}... eid:${_eid ? _eid.slice(0, 8) + "..." : "null"}`,
+        payload: { chats: chats.slice(0, 3), event, tokenPrefix: _tok.slice(0, 8) },
+      });
+
       if (_eid) {
-        for (const chat of readChats) {
+        for (const chat of chats) {
           try {
+            const uc = chat?.unreadCount ?? chat?.UnreadCount;
+            // Pula se sabemos que tem mensagens não lidas (nova mensagem)
+            if (uc !== undefined && Number(uc) > 0) continue;
             const jid = (chat?.id || chat?.remoteJid || "") as string;
             if (!jid || jid.endsWith("@broadcast") || jid.endsWith("@newsletter")) continue;
             const phone = jid.endsWith("@g.us")
