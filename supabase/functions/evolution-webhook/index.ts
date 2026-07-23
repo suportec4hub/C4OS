@@ -180,7 +180,7 @@ Deno.serve(async (req) => {
               : jid.replace(/@s\.whatsapp\.net$/, "").replace(/@c\.us$/, "").replace(/:.*$/, "");
             if (!phone) continue;
 
-            // Tenta atualizar com o phone exato
+            // 1ª tentativa: phone exato (para conversas armazenadas com @lid ou com telefone real)
             const { count: c1 } = await supabase.from("conversas")
               .update({ nao_lidas: 0 })
               .eq("empresa_id", _eid)
@@ -188,14 +188,24 @@ Deno.serve(async (req) => {
               .gt("nao_lidas", 0)
               .select("id", { count: "exact", head: true });
 
-            // Se não encontrou, tenta variações do número (com/sem código do país 55)
-            if (!c1 || c1 === 0) {
+            let totalCleared = c1 ?? 0;
+
+            // 2ª tentativa: busca por contato_lid (para conversas migradas de @lid → telefone real)
+            if (totalCleared === 0 && jid.endsWith("@lid")) {
+              const { count: c2 } = await supabase.from("conversas")
+                .update({ nao_lidas: 0 })
+                .eq("empresa_id", _eid)
+                .eq("contato_lid", jid)
+                .gt("nao_lidas", 0)
+                .select("id", { count: "exact", head: true });
+              if (c2 && c2 > 0) totalCleared += c2;
+            }
+
+            // 3ª tentativa: variações do número (com/sem código do país 55, com/sem 9º dígito)
+            if (totalCleared === 0 && !jid.endsWith("@lid") && !jid.endsWith("@g.us")) {
               const phoneVariants: string[] = [];
-              // Se começa com 55 e tem 12-13 dígitos → tenta sem o 55
               if (/^55\d{10,11}$/.test(phone)) phoneVariants.push(phone.slice(2));
-              // Se não começa com 55 e tem 10-11 dígitos → tenta com 55
               else if (/^\d{10,11}$/.test(phone)) phoneVariants.push("55" + phone);
-              // Número de 9 dígitos com DDD (sem 55) — tenta também sem o 9 extra
               if (/^\d{11}$/.test(phone) && phone[2] === "9") phoneVariants.push(phone.slice(0, 2) + phone.slice(3));
               if (/^55\d{11}$/.test(phone) && phone[4] === "9") phoneVariants.push("55" + phone.slice(2, 4) + phone.slice(5));
 
@@ -206,14 +216,14 @@ Deno.serve(async (req) => {
                   .eq("contato_telefone", variant)
                   .gt("nao_lidas", 0)
                   .select("id", { count: "exact", head: true });
-                if (cv && cv > 0) break;
+                if (cv && cv > 0) { totalCleared += cv; break; }
               }
             }
 
             await logWA(supabase, {
               empresa_id: _eid, tipo: "webhook_recebido", nivel: "info", origem: "evolution-webhook", evento: event,
               telefone: phone,
-              resumo: `leitura zerada: phone=${phone} jid=${jid} uc=${uc} rows=${c1 ?? 0}`,
+              resumo: `leitura zerada: phone=${phone} jid=${jid} uc=${uc} rows=${totalCleared}`,
             });
           } catch (err) {
             await logWA(supabase, {
@@ -252,17 +262,34 @@ Deno.serve(async (req) => {
     // message.ack / READ_RECEIPT = contato leu nossa mensagem (tique azul) OU nós lemos no celular
     // messages.update / MESSAGES_UPDATE = atualização de status de mensagem existente
     if (["messages.update", "MESSAGES_UPDATE", "message.ack", "READ_RECEIPT"].includes(event)) {
-      // Precisa resolver empresa antes de usar — faz lookup rápido apenas por token/nome
+      // Resolve empresa via 4 passos (igual ao handler principal — inclui empresa_instancias)
       const _tok = tokenFromUrl || body.apikey || body.instance?.apikey || body.instance?.token || "";
       const _nm  = body.instance?.instanceName || body.instance?.name || body.instanceName || "";
+      const _ackCacheKey = _tok || _nm;
+      const _ackCached = _ackCacheKey ? _instanceCache.get(_ackCacheKey) : null;
       let _eid: string | null = null;
-      if (_tok) {
-        const { data: _ec } = await supabase.from("empresas").select("id").eq("evolution_instance_token", _tok).maybeSingle();
-        if (_ec) _eid = _ec.id;
-      }
-      if (!_eid && _nm) {
-        const { data: _ec } = await supabase.from("empresas").select("id").eq("evolution_instance_id", _nm).maybeSingle();
-        if (_ec) _eid = _ec.id;
+      if (_ackCached && (Date.now() - _ackCached.ts) < _CACHE_TTL) {
+        _eid = _ackCached.empresa_id;
+      } else {
+        if (_tok) {
+          const { data: _i1 } = await supabase.from("empresa_instancias").select("empresa_id").eq("evolution_instance_token", _tok).maybeSingle();
+          if (_i1) _eid = _i1.empresa_id;
+        }
+        if (!_eid && _nm) {
+          const { data: _i2 } = await supabase.from("empresa_instancias").select("empresa_id").eq("evolution_instance_id", _nm).maybeSingle();
+          if (_i2) _eid = _i2.empresa_id;
+        }
+        if (!_eid && _tok) {
+          const { data: _ec } = await supabase.from("empresas").select("id").eq("evolution_instance_token", _tok).maybeSingle();
+          if (_ec) _eid = _ec.id;
+        }
+        if (!_eid && _nm) {
+          const { data: _ec } = await supabase.from("empresas").select("id").eq("evolution_instance_id", _nm).maybeSingle();
+          if (_ec) _eid = _ec.id;
+        }
+        if (_eid && _ackCacheKey) {
+          _instanceCache.set(_ackCacheKey, { empresa_id: _eid, instanciaId: null, instanciaEhPrincipal: true, ts: Date.now() });
+        }
       }
       if (_eid) {
         const updates = Array.isArray(data) ? data : [data];
@@ -293,11 +320,20 @@ Deno.serve(async (req) => {
               }
             } else {
               // Nós lemos a mensagem do contato no celular → zera contador de não lidas no sistema
-              await supabase.from("conversas")
+              const { count: ackC1 } = await supabase.from("conversas")
                 .update({ nao_lidas: 0 })
                 .eq("empresa_id", _eid)
                 .eq("contato_telefone", phone)
-                .gt("nao_lidas", 0);
+                .gt("nao_lidas", 0)
+                .select("id", { count: "exact", head: true });
+              // Fallback por contato_lid (conversas migradas LID → telefone)
+              if ((!ackC1 || ackC1 === 0) && remoteJid.endsWith("@lid")) {
+                await supabase.from("conversas")
+                  .update({ nao_lidas: 0 })
+                  .eq("empresa_id", _eid)
+                  .eq("contato_lid", remoteJid)
+                  .gt("nao_lidas", 0);
+              }
             }
           } catch (_) {}
         }
@@ -388,15 +424,18 @@ Deno.serve(async (req) => {
 
             if (!existPhone) {
               // Renomeia JID LID → número real na conversa existente
-              const updates: Record<string, string> = { contato_telefone: phoneNum };
+              // e guarda o LID em contato_lid para futuras leituras via chats.update
+              const updates: Record<string, string> = { contato_telefone: phoneNum, contato_lid: rawJid };
               if (savedName && !lidConv.contato_nome) updates.contato_nome = savedName;
               await supabase.from("conversas").update(updates).eq("id", lidConv.id);
             } else if (existPhone.id !== lidConv.id) {
               // Ambas existem: migra mensagens do LID para a conversa telefone
               await supabase.from("mensagens").update({ conversa_id: existPhone.id }).eq("conversa_id", lidConv.id);
-              // Preserva nome do contato salvo
+              // Preserva nome do contato salvo e registra LID na conversa destino
               const nomeFinal = savedName || lidConv.contato_nome || existPhone.contato_nome;
-              if (nomeFinal) await supabase.from("conversas").update({ contato_nome: nomeFinal }).eq("id", existPhone.id);
+              const phoneConvUpdates: Record<string, string> = { contato_lid: rawJid };
+              if (nomeFinal) phoneConvUpdates.contato_nome = nomeFinal;
+              await supabase.from("conversas").update(phoneConvUpdates).eq("id", existPhone.id);
               // Marca a conversa LID como mesclada (sem deletar — evita perda de dados)
               await supabase.from("conversas").update({ contato_telefone: phoneNum + "_lid_merged", status: "resolvida" }).eq("id", lidConv.id);
               await logWA(supabase, {
@@ -404,6 +443,10 @@ Deno.serve(async (req) => {
                 resumo: `Conversa LID ${rawJid} mesclada em ${phoneNum}`,
                 payload: { lidConvId: lidConv.id, phoneConvId: existPhone.id, phoneNum },
               });
+            } else {
+              // Mesma conversa: só atualiza o LID se ainda não estiver registrado
+              await supabase.from("conversas").update({ contato_lid: rawJid }).eq("id", existPhone.id)
+                .is("contato_lid", null);
             }
 
           } else {
