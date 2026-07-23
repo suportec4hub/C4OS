@@ -97,41 +97,21 @@ Deno.serve(async (req) => {
     ];
     if (SKIP_EVENTS.includes(event)) return new Response("OK");
 
-    // Log de diagnóstico: registra todos os eventos que chegam (exceto os bloqueados acima)
-    // Ajuda a entender quais eventos a Evolution API envia ao ler mensagem no celular
-    const _DIAG_EVENTS = ["chats.update","CHATS_UPDATE","messages.update","MESSAGES_UPDATE","message.ack","READ_RECEIPT","presence.update","PRESENCE","CHAT_PRESENCE"];
-    if (!_DIAG_EVENTS.includes(event)) {
-      // Evento desconhecido — registra para diagnóstico
-      const _diagTok = (tokenFromUrl || body.apikey || body.instance?.apikey || "").slice(0, 8);
-      const _diagNm  = body.instance?.instanceName || body.instance?.name || "";
-      await logWA(supabase, {
-        tipo: "webhook_recebido", nivel: "warn", origem: "evolution-webhook", evento: event,
-        resumo: `evento desconhecido: ${event} | tok=${_diagTok} nm=${_diagNm}`,
-        payload: { topKeys: Object.keys(body).join(","), dataKeys: data && typeof data === "object" ? Object.keys(data as object).join(",") : "" },
-      });
-    }
-
     // ── CHATS_UPDATE: usuário leu conversa no celular → unreadCount cai a 0 ───
+    // REGRA: só zera nao_lidas quando unreadCount é EXPLICITAMENTE 0 ou negativo.
+    // Eventos sem unreadCount (undefined) são atualizações de metadados / nova mensagem — IGNORAR.
     if (["chats.update", "CHATS_UPDATE"].includes(event)) {
       const chats = Array.isArray(data) ? data : [data];
 
-      // Log diagnóstico para entender o payload exato
-      await logWA(supabase, {
-        tipo: "webhook_recebido", nivel: "info", origem: "evolution-webhook", evento: event,
-        resumo: `chats.update recebido (${chats.length} chats)`,
-        payload: { tok: (tokenFromUrl || body.apikey || body.instance?.apikey || "").slice(0, 8) + "...", nm: body.instance?.instanceName || body.instance?.name || "", chats: chats.slice(0, 3) },
-      });
-
-      // Pula SOMENTE se todos os chats têm unreadCount > 0 (chegada de nova mensagem)
-      const allNewMessages = chats.every((c: Record<string, unknown>) => {
+      // Filtra apenas os chats onde o usuário efetivamente leu (unreadCount = 0 ou negativo)
+      // Se nenhum chat tem unreadCount explícito ≤ 0, não há nada a fazer
+      const readChats = chats.filter((c: Record<string, unknown>) => {
         const uc = c?.unreadCount ?? c?.UnreadCount;
-        return uc !== undefined && Number(uc) > 0;
+        return uc !== undefined && Number(uc) <= 0;
       });
-      if (allNewMessages) return new Response("OK");
+      if (readChats.length === 0) return new Response("OK");
 
-      // Resolve empresa_id usando o mesmo padrão do handler principal:
-      // 1) empresa_instancias por token  2) empresa_instancias por nome
-      // 3) empresas por token            4) empresas por nome
+      // Resolve empresa_id (4 passos: empresa_instancias → empresas, por token e por nome)
       const _tok = tokenFromUrl || body.apikey || body.instance?.apikey || body.instance?.token || "";
       const _nm  = body.instance?.instanceName || body.instance?.name || body.instanceName || "";
       const _cacheKeyChats = _tok || _nm;
@@ -157,22 +137,14 @@ Deno.serve(async (req) => {
           const { data: e2 } = await supabase.from("empresas").select("id").eq("evolution_instance_id", _nm).maybeSingle();
           if (e2) _eid = e2.id;
         }
-        // Popula cache para evitar lookups repetidos
         if (_eid && _cacheKeyChats) {
           _instanceCache.set(_cacheKeyChats, { empresa_id: _eid, instanciaId: null, instanciaEhPrincipal: true, ts: Date.now() });
         }
       }
 
-      await logWA(supabase, {
-        empresa_id: _eid, tipo: "webhook_recebido", nivel: "info", origem: "evolution-webhook", evento: event,
-        resumo: `chats.update empresa_id=${_eid ?? "NÃO ENCONTRADO"} tok=${_tok.slice(0,8)} nm=${_nm}`,
-      });
-
       if (_eid) {
-        for (const chat of chats) {
+        for (const chat of readChats) {
           try {
-            const uc = chat?.unreadCount ?? chat?.UnreadCount;
-            if (uc !== undefined && Number(uc) > 0) continue;
             const jid = (chat?.id || chat?.remoteJid || "") as string;
             if (!jid || jid.endsWith("@broadcast") || jid.endsWith("@newsletter")) continue;
             const phone = jid.endsWith("@g.us")
@@ -180,7 +152,7 @@ Deno.serve(async (req) => {
               : jid.replace(/@s\.whatsapp\.net$/, "").replace(/@c\.us$/, "").replace(/:.*$/, "");
             if (!phone) continue;
 
-            // 1ª tentativa: phone exato (para conversas armazenadas com @lid ou com telefone real)
+            // 1ª tentativa: match direto por contato_telefone (funciona para @lid e telefone real)
             const { count: c1 } = await supabase.from("conversas")
               .update({ nao_lidas: 0 })
               .eq("empresa_id", _eid)
@@ -188,49 +160,33 @@ Deno.serve(async (req) => {
               .gt("nao_lidas", 0)
               .select("id", { count: "exact", head: true });
 
-            let totalCleared = c1 ?? 0;
-
-            // 2ª tentativa: busca por contato_lid (para conversas migradas de @lid → telefone real)
-            if (totalCleared === 0 && jid.endsWith("@lid")) {
-              const { count: c2 } = await supabase.from("conversas")
+            // 2ª tentativa: contato_lid (conversa migrada de @lid → telefone real)
+            if ((!c1 || c1 === 0) && jid.endsWith("@lid")) {
+              await supabase.from("conversas")
                 .update({ nao_lidas: 0 })
                 .eq("empresa_id", _eid)
                 .eq("contato_lid", jid)
-                .gt("nao_lidas", 0)
-                .select("id", { count: "exact", head: true });
-              if (c2 && c2 > 0) totalCleared += c2;
+                .gt("nao_lidas", 0);
             }
 
-            // 3ª tentativa: variações do número (com/sem código do país 55, com/sem 9º dígito)
-            if (totalCleared === 0 && !jid.endsWith("@lid") && !jid.endsWith("@g.us")) {
-              const phoneVariants: string[] = [];
-              if (/^55\d{10,11}$/.test(phone)) phoneVariants.push(phone.slice(2));
-              else if (/^\d{10,11}$/.test(phone)) phoneVariants.push("55" + phone);
-              if (/^\d{11}$/.test(phone) && phone[2] === "9") phoneVariants.push(phone.slice(0, 2) + phone.slice(3));
-              if (/^55\d{11}$/.test(phone) && phone[4] === "9") phoneVariants.push("55" + phone.slice(2, 4) + phone.slice(5));
-
-              for (const variant of phoneVariants) {
+            // 3ª tentativa: variações de prefixo (com/sem 55, com/sem 9º dígito)
+            if ((!c1 || c1 === 0) && !jid.endsWith("@lid") && !jid.endsWith("@g.us")) {
+              const variants: string[] = [];
+              if (/^55\d{10,11}$/.test(phone)) variants.push(phone.slice(2));
+              else if (/^\d{10,11}$/.test(phone)) variants.push("55" + phone);
+              if (/^\d{11}$/.test(phone) && phone[2] === "9") variants.push(phone.slice(0, 2) + phone.slice(3));
+              if (/^55\d{11}$/.test(phone) && phone[4] === "9") variants.push("55" + phone.slice(2, 4) + phone.slice(5));
+              for (const v of variants) {
                 const { count: cv } = await supabase.from("conversas")
                   .update({ nao_lidas: 0 })
                   .eq("empresa_id", _eid)
-                  .eq("contato_telefone", variant)
+                  .eq("contato_telefone", v)
                   .gt("nao_lidas", 0)
                   .select("id", { count: "exact", head: true });
-                if (cv && cv > 0) { totalCleared += cv; break; }
+                if (cv && cv > 0) break;
               }
             }
-
-            await logWA(supabase, {
-              empresa_id: _eid, tipo: "webhook_recebido", nivel: "info", origem: "evolution-webhook", evento: event,
-              telefone: phone,
-              resumo: `leitura zerada: phone=${phone} jid=${jid} uc=${uc} rows=${totalCleared}`,
-            });
-          } catch (err) {
-            await logWA(supabase, {
-              empresa_id: _eid, tipo: "webhook_recebido", nivel: "error", origem: "evolution-webhook", evento: event,
-              resumo: `erro ao zerar nao_lidas: ${String(err)}`,
-            });
-          }
+          } catch (_) {}
         }
       }
       return new Response("OK");
