@@ -1729,7 +1729,7 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
       <div style={{
         display: "flex",
         height: isMobile
-          ? `calc(100dvh - 52px - 68px - env(safe-area-inset-bottom))`
+          ? `calc(100dvh - 52px - env(safe-area-inset-top) - 68px - env(safe-area-inset-bottom))`
           : isTablet
             ? "calc(100dvh - 150px)"
             : "calc(100dvh - 162px)",

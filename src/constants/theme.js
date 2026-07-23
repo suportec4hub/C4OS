@@ -190,15 +190,32 @@ export const globalCSS = `
     .rg-auto{grid-template-columns:1fr!important}
     .hide-mobile{display:none!important}
     .show-mobile{display:flex!important}
-    .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;scroll-snap-type:x mandatory}
+    .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
     .table-scroll table{min-width:480px}
     .stack-mobile{flex-direction:column!important;align-items:stretch!important;gap:8px!important}
     .wrap-mobile{flex-wrap:wrap!important}
-    .modal-box{width:calc(100vw - 32px)!important;max-width:100%!important;margin:16px!important;max-height:90dvh;overflow-y:auto}
+    .modal-box{
+      position:fixed!important;inset:0!important;width:100%!important;max-width:100%!important;
+      margin:0!important;border-radius:0!important;
+      max-height:100dvh!important;overflow-y:auto!important;
+      padding-bottom:max(24px,env(safe-area-inset-bottom))!important;
+    }
+    .modal-sheet{
+      position:fixed!important;bottom:0!important;left:0!important;right:0!important;
+      width:100%!important;max-width:100%!important;margin:0!important;
+      border-radius:20px 20px 0 0!important;
+      max-height:90dvh!important;overflow-y:auto!important;
+      padding-bottom:max(24px,env(safe-area-inset-bottom))!important;
+    }
     .kanban-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:12px}
     .action-row{flex-wrap:wrap!important;gap:6px!important}
-    /* Padding respects safe-area on iPhone */
     .safe-pad{padding-left:max(12px,env(safe-area-inset-left));padding-right:max(12px,env(safe-area-inset-right))}
+    /* Previne zoom automático do iOS em inputs (< 16px dispara o zoom) */
+    input,select,textarea{font-size:max(16px,1em)!important}
+    /* Evita scroll horizontal acidental */
+    body{overflow-x:hidden}
+    /* Mínimo tap target para acessibilidade em mobile */
+    button,a,[role="button"]{min-height:36px}
   }
   /* Tablet 640–1023px */
   @media(min-width:640px) and (max-width:1023px){
@@ -206,7 +223,8 @@ export const globalCSS = `
     .hide-tablet{display:none!important}
     .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
     .table-scroll table{min-width:580px}
-    .modal-box{width:min(520px,calc(100vw - 48px))!important}
+    .modal-box{width:min(520px,calc(100vw - 48px))!important;max-height:90dvh!important;overflow-y:auto!important}
+    input,select,textarea{font-size:max(16px,1em)!important}
   }
   /* TV ≥ 1920px */
   @media(min-width:1920px){

@@ -352,13 +352,15 @@ export default function Shell({user,onLogout,onProfileUpdate,theme,toggleTheme})
       <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",minWidth:0}}>
         {/* Header */}
         <header style={{
-          height: isMobile ? 52 : 58, minHeight: isMobile ? 52 : 58,
+          height: isMobile ? "calc(52px + env(safe-area-inset-top))" : 58,
+          minHeight: isMobile ? "calc(52px + env(safe-area-inset-top))" : 58,
           flexShrink:0,background:L.white,borderBottom:`1px solid ${L.line}`,
-          display:"flex",alignItems:"center",justifyContent:"space-between",
-          padding: isMobile ? "0 12px" : "0 24px",
+          display:"flex",alignItems:"flex-end",justifyContent:"space-between",
+          padding: isMobile ? "0 12px 0 12px" : "0 24px",
+          paddingTop: isMobile ? "env(safe-area-inset-top)" : undefined,
           gap: isMobile ? 8 : 12,
           boxShadow:"0 2px 8px rgba(0,0,0,0.05)",
-          paddingTop: isMobile ? "env(safe-area-inset-top)" : undefined,
+          paddingBottom: isMobile ? "8px" : undefined,
         }}>
           <div style={{display:"flex",alignItems:"center",gap:isMobile?8:10}}>
             {/* Hamburger — mobile only */}

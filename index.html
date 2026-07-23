@@ -21,9 +21,9 @@
 
     <title>C4 OS — by C4HUB</title>
     <style>
-      html, body { background: #ffffff; color: #111827; margin: 0; padding: 0; }
-      /* Safe area insets for iPhone notch / Dynamic Island */
-      #root { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+      html, body { background: #ffffff; color: #111827; margin: 0; padding: 0; height: 100%; }
+      /* Safe area é gerenciada por cada componente via env(safe-area-inset-*) */
+      #root { height: 100%; }
     </style>
   </head>
   <body>
