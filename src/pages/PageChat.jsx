@@ -751,6 +751,10 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
   const statusTabRef   = useRef("todas");
   const inputRef       = useRef(null);
   const fileRef        = useRef(null);
+  const cameraRef      = useRef(null);   // input câmera (mobile)
+  const cameraVideoRef = useRef(null);   // <video> do modal webcam
+  const cameraStreamRef = useRef(null);  // MediaStream ativo
+  const [showCameraModal, setShowCameraModal] = useState(false);
   const { isMobile, isTablet } = useBreakpoint();
 
   useEffect(() => { activeConvRef.current = activeConv; }, [activeConv]);
@@ -1453,6 +1457,62 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
     loadMensagens(activeConv.id);
     setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 200);
   };
+
+  // ── câmera ───────────────────────────────────────────────────────────────
+  const stopWebcam = () => {
+    if (cameraStreamRef.current) {
+      cameraStreamRef.current.getTracks().forEach(t => t.stop());
+      cameraStreamRef.current = null;
+    }
+  };
+
+  const openCamera = () => {
+    if (isMobile || isTablet) {
+      // Mobile/tablet: abre câmera nativa via input com capture
+      cameraRef.current?.click();
+    } else {
+      // Desktop: abre modal com webcam ao vivo
+      setShowCameraModal(true);
+    }
+  };
+
+  const startWebcam = async (videoEl) => {
+    if (!videoEl || cameraStreamRef.current) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+      cameraStreamRef.current = stream;
+      videoEl.srcObject = stream;
+    } catch (_) {
+      // Tenta câmera frontal se traseira não disponível
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        cameraStreamRef.current = stream;
+        videoEl.srcObject = stream;
+      } catch (err) {
+        setSendErr("Câmera não disponível: " + err.message);
+        setShowCameraModal(false);
+      }
+    }
+  };
+
+  const capturePhoto = () => {
+    const video = cameraVideoRef.current;
+    if (!video || !video.videoWidth) return;
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext("2d").drawImage(video, 0, 0);
+    canvas.toBlob(blob => {
+      if (!blob) return;
+      const file = new File([blob], `foto_${Date.now()}.jpg`, { type: "image/jpeg" });
+      stopWebcam();
+      setShowCameraModal(false);
+      sendMedia(file);
+    }, "image/jpeg", 0.92);
+  };
+
+  // Para o stream quando fechar o modal
+  useEffect(() => { if (!showCameraModal) stopWebcam(); }, [showCameraModal]);
 
   // ── gravar áudio ─────────────────────────────────────────────────────────
   const startRecording = async () => {
@@ -2284,6 +2344,9 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
               {/* Hidden file input */}
               <input ref={fileRef} type="file" accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.zip"
                 style={{ display:"none" }} onChange={e => { if (e.target.files?.[0]) sendMedia(e.target.files[0]); e.target.value = ""; }}/>
+              {/* Hidden camera input (mobile/tablet — abre câmera nativa) */}
+              <input ref={cameraRef} type="file" accept="image/*" capture="environment"
+                style={{ display:"none" }} onChange={e => { if (e.target.files?.[0]) sendMedia(e.target.files[0]); e.target.value = ""; }}/>
 
               {recording ? (
                 /* Modo de gravação */
@@ -2322,6 +2385,13 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
                     title="Enviar imagem / áudio / arquivo"
                     style={{ ...btnStyle(L.surface, uploadingMedia ? L.t4 : L.t3), flexShrink: 0, padding: "8px 10px", minWidth: 40, minHeight: 40, opacity: uploadingMedia ? 0.5 : 1 }}>
                     {uploadingMedia ? "⟳" : "📎"}
+                  </button>
+
+                  {/* Câmera — abre câmera nativa no mobile/tablet, modal webcam no desktop */}
+                  <button onClick={openCamera} disabled={uploadingMedia}
+                    title="Tirar foto com câmera"
+                    style={{ ...btnStyle(L.surface, uploadingMedia ? L.t4 : L.t3), flexShrink: 0, padding: "8px 10px", minWidth: 40, minHeight: 40, opacity: uploadingMedia ? 0.5 : 1 }}>
+                    📷
                   </button>
 
                   <div style={{ flex: 1, position: "relative" }}>
@@ -3110,6 +3180,39 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
       )}
 
       {/* ── Lightbox de imagem ──────────────────────────────────────────── */}
+      {/* Modal câmera (desktop / webcam) */}
+      {showCameraModal && (
+        <div onClick={() => setShowCameraModal(false)}
+          style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.85)", zIndex:9999,
+            display:"flex", alignItems:"center", justifyContent:"center" }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background:L.surface, borderRadius:18, padding:20, display:"flex",
+              flexDirection:"column", gap:14, alignItems:"center",
+              width:"min(480px,94vw)", boxShadow:"0 12px 48px rgba(0,0,0,.5)" }}>
+            <div style={{ fontSize:15, fontWeight:700, color:L.t1, alignSelf:"flex-start" }}>📷 Tirar Foto</div>
+            <video
+              ref={el => { cameraVideoRef.current = el; if (el) startWebcam(el); }}
+              autoPlay playsInline muted
+              style={{ width:"100%", borderRadius:10, background:"#000", minHeight:200, maxHeight:"55vh", objectFit:"cover" }}
+            />
+            <div style={{ display:"flex", gap:10, width:"100%" }}>
+              <button onClick={() => setShowCameraModal(false)}
+                style={{ flex:1, padding:"11px 0", borderRadius:10, border:`1px solid ${L.line}`,
+                  background:L.hover, color:L.t2, cursor:"pointer", fontFamily:"inherit",
+                  fontSize:13, fontWeight:600 }}>
+                Cancelar
+              </button>
+              <button onClick={capturePhoto}
+                style={{ flex:2, padding:"11px 0", borderRadius:10, border:"none",
+                  background:L.accent, color:"white", cursor:"pointer", fontFamily:"inherit",
+                  fontSize:14, fontWeight:700 }}>
+                📸 Capturar e Enviar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {lightboxImg && (
         <div onClick={() => setLightboxImg(null)}
           style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.92)", zIndex:9999,
