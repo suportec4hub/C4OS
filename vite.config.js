@@ -16,9 +16,8 @@ export default defineConfig({
         background_color: '#ffffff',
         display: 'standalone',
         orientation: 'portrait-primary',
-        // 1. URL inicial e escopo ajustados para a raiz
-        start_url: '/',
-        scope: '/',
+        start_url: '/C4OS/',
+        scope: '/C4OS/',
         lang: 'pt-BR',
         icons: [
           // 2. Caminhos dos ícones ajustados para a raiz
