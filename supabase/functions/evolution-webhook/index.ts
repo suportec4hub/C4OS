@@ -103,12 +103,20 @@ Deno.serve(async (req) => {
     if (["chats.update", "CHATS_UPDATE"].includes(event)) {
       const chats = Array.isArray(data) ? data : [data];
 
+      // Log para diagnóstico: mostra todos os chats recebidos (inclui grupos)
+      console.log(`[chats.update] total chats recebidos: ${chats.length}`, JSON.stringify(chats.map((c: Record<string,unknown>) => ({
+        id: c?.id, remoteJid: c?.remoteJid, unreadCount: c?.unreadCount, UnreadCount: c?.UnreadCount,
+        isGroup: String(c?.id || c?.remoteJid || "").endsWith("@g.us"),
+        keys: Object.keys(c || {}).join(","),
+      }))));
+
       // Filtra apenas os chats onde o usuário efetivamente leu (unreadCount = 0 ou negativo)
       // Se nenhum chat tem unreadCount explícito ≤ 0, não há nada a fazer
       const readChats = chats.filter((c: Record<string, unknown>) => {
         const uc = c?.unreadCount ?? c?.UnreadCount;
         return uc !== undefined && Number(uc) <= 0;
       });
+      console.log(`[chats.update] readChats após filtro: ${readChats.length}`);
       if (readChats.length === 0) return new Response("OK");
 
       // Resolve empresa_id (4 passos: empresa_instancias → empresas, por token e por nome)
@@ -153,12 +161,14 @@ Deno.serve(async (req) => {
             if (!phone) continue;
 
             // 1ª tentativa: match direto por contato_telefone (funciona para @lid e telefone real)
-            const { count: c1 } = await supabase.from("conversas")
+            console.log(`[chats.update] tentativa 1: jid=${jid} phone=${phone} empresa=${_eid}`);
+            const { count: c1, error: e1 } = await supabase.from("conversas")
               .update({ nao_lidas: 0 })
               .eq("empresa_id", _eid)
               .eq("contato_telefone", phone)
               .gt("nao_lidas", 0)
               .select("id", { count: "exact", head: true });
+            console.log(`[chats.update] tentativa 1 resultado: count=${c1} err=${e1?.message}`);
 
             // 2ª tentativa: contato_lid (conversa migrada de @lid → telefone real)
             if ((!c1 || c1 === 0) && jid.endsWith("@lid")) {
