@@ -103,32 +103,23 @@ Deno.serve(async (req) => {
     if (["chats.update", "CHATS_UPDATE"].includes(event)) {
       const chats = Array.isArray(data) ? data : [data];
 
-      // Log diagnóstico no banco para grupos (só quando há @g.us no payload)
-      const _groupChats = chats.filter((c: Record<string,unknown>) =>
-        String(c?.id || c?.remoteJid || "").endsWith("@g.us")
-      );
-      if (_groupChats.length > 0) {
-        await logWA(supabase, {
-          tipo: "webhook_recebido", nivel: "info", origem: "evolution-webhook", evento: "chats.update-grupos",
-          resumo: `chats.update com ${_groupChats.length} grupos`,
-          payload: {
-            total: chats.length,
-            grupos: _groupChats.map((c: Record<string,unknown>) => ({
-              id: c?.id, remoteJid: c?.remoteJid,
-              unreadCount: c?.unreadCount, UnreadCount: c?.UnreadCount,
-              keys: Object.keys(c || {}),
-            })),
-          },
-        });
-      }
-
-      // Filtra apenas os chats onde o usuário efetivamente leu (unreadCount = 0 ou negativo)
-      // Se nenhum chat tem unreadCount explícito ≤ 0, não há nada a fazer
-      const readChats = chats.filter((c: Record<string, unknown>) => {
+      // Chats com unreadCount explícito ≤ 0 (contatos individuais)
+      const explicitReadChats = chats.filter((c: Record<string, unknown>) => {
         const uc = c?.unreadCount ?? c?.UnreadCount;
         return uc !== undefined && Number(uc) <= 0;
       });
-      if (readChats.length === 0) return new Response("OK");
+
+      // Grupos sem unreadCount: Evolution API não envia esse campo para grupos,
+      // então precisamos verificar via REST se o grupo realmente tem 0 não lidas.
+      const groupsNoUnread = chats.filter((c: Record<string, unknown>) => {
+        const jid = String(c?.id || c?.remoteJid || "");
+        const uc  = c?.unreadCount ?? c?.UnreadCount;
+        return jid.endsWith("@g.us") && uc === undefined;
+      });
+
+      if (explicitReadChats.length === 0 && groupsNoUnread.length === 0) {
+        return new Response("OK");
+      }
 
       // Resolve empresa_id (4 passos: empresa_instancias → empresas, por token e por nome)
       const _tok = tokenFromUrl || body.apikey || body.instance?.apikey || body.instance?.token || "";
@@ -162,7 +153,8 @@ Deno.serve(async (req) => {
       }
 
       if (_eid) {
-        for (const chat of readChats) {
+        // ── Contatos individuais: unreadCount explícito ≤ 0 ──────────────────
+        for (const chat of explicitReadChats) {
           try {
             const jid = (chat?.id || chat?.remoteJid || "") as string;
             if (!jid || jid.endsWith("@broadcast") || jid.endsWith("@newsletter")) continue;
@@ -171,7 +163,7 @@ Deno.serve(async (req) => {
               : jid.replace(/@s\.whatsapp\.net$/, "").replace(/@c\.us$/, "").replace(/:.*$/, "");
             if (!phone) continue;
 
-            // 1ª tentativa: match direto por contato_telefone (funciona para @lid e telefone real)
+            // 1ª tentativa: match direto por contato_telefone
             const { count: c1 } = await supabase.from("conversas")
               .update({ nao_lidas: 0 })
               .eq("empresa_id", _eid)
@@ -206,6 +198,40 @@ Deno.serve(async (req) => {
               }
             }
           } catch (_) {}
+        }
+
+        // ── Grupos sem unreadCount: consulta a Evolution API para verificar ──
+        // A Evolution API não inclui unreadCount no chats.update de grupos,
+        // então chamamos o endpoint REST para obter o valor real.
+        if (groupsNoUnread.length > 0) {
+          const evoBase  = GLOBAL_URL.replace(/\/$/, "");
+          const evoToken = _tok || GLOBAL_KEY;
+          const evoInst  = _nm;
+
+          for (const chat of groupsNoUnread) {
+            const gJid = (chat?.id || chat?.remoteJid || "") as string;
+            if (!gJid) continue;
+            try {
+              // Consulta o unreadCount real do grupo via Evolution API
+              const r = await fetch(`${evoBase}/chat/findChats/${evoInst}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json", "apikey": evoToken },
+                body: JSON.stringify({ where: { id: gJid } }),
+                signal: AbortSignal.timeout(5000),
+              });
+              if (!r.ok) continue;
+              const found = await r.json();
+              const chatData = Array.isArray(found) ? found[0] : found;
+              const realUnread = chatData?.unreadCount ?? chatData?.unread ?? chatData?.UnreadCount;
+              if (realUnread !== undefined && realUnread !== null && Number(realUnread) <= 0) {
+                await supabase.from("conversas")
+                  .update({ nao_lidas: 0 })
+                  .eq("empresa_id", _eid)
+                  .eq("contato_telefone", gJid)
+                  .gt("nao_lidas", 0);
+              }
+            } catch (_) {}
+          }
         }
       }
       return new Response("OK");
