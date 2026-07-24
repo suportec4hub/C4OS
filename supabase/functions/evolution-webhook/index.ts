@@ -103,12 +103,24 @@ Deno.serve(async (req) => {
     if (["chats.update", "CHATS_UPDATE"].includes(event)) {
       const chats = Array.isArray(data) ? data : [data];
 
-      // Log para diagnóstico: mostra todos os chats recebidos (inclui grupos)
-      console.log(`[chats.update] total chats recebidos: ${chats.length}`, JSON.stringify(chats.map((c: Record<string,unknown>) => ({
-        id: c?.id, remoteJid: c?.remoteJid, unreadCount: c?.unreadCount, UnreadCount: c?.UnreadCount,
-        isGroup: String(c?.id || c?.remoteJid || "").endsWith("@g.us"),
-        keys: Object.keys(c || {}).join(","),
-      }))));
+      // Log diagnóstico no banco para grupos (só quando há @g.us no payload)
+      const _groupChats = chats.filter((c: Record<string,unknown>) =>
+        String(c?.id || c?.remoteJid || "").endsWith("@g.us")
+      );
+      if (_groupChats.length > 0) {
+        await logWA(supabase, {
+          tipo: "webhook_recebido", nivel: "info", origem: "evolution-webhook", evento: "chats.update-grupos",
+          resumo: `chats.update com ${_groupChats.length} grupos`,
+          payload: {
+            total: chats.length,
+            grupos: _groupChats.map((c: Record<string,unknown>) => ({
+              id: c?.id, remoteJid: c?.remoteJid,
+              unreadCount: c?.unreadCount, UnreadCount: c?.UnreadCount,
+              keys: Object.keys(c || {}),
+            })),
+          },
+        });
+      }
 
       // Filtra apenas os chats onde o usuário efetivamente leu (unreadCount = 0 ou negativo)
       // Se nenhum chat tem unreadCount explícito ≤ 0, não há nada a fazer
@@ -116,7 +128,6 @@ Deno.serve(async (req) => {
         const uc = c?.unreadCount ?? c?.UnreadCount;
         return uc !== undefined && Number(uc) <= 0;
       });
-      console.log(`[chats.update] readChats após filtro: ${readChats.length}`);
       if (readChats.length === 0) return new Response("OK");
 
       // Resolve empresa_id (4 passos: empresa_instancias → empresas, por token e por nome)
@@ -161,14 +172,12 @@ Deno.serve(async (req) => {
             if (!phone) continue;
 
             // 1ª tentativa: match direto por contato_telefone (funciona para @lid e telefone real)
-            console.log(`[chats.update] tentativa 1: jid=${jid} phone=${phone} empresa=${_eid}`);
-            const { count: c1, error: e1 } = await supabase.from("conversas")
+            const { count: c1 } = await supabase.from("conversas")
               .update({ nao_lidas: 0 })
               .eq("empresa_id", _eid)
               .eq("contato_telefone", phone)
               .gt("nao_lidas", 0)
               .select("id", { count: "exact", head: true });
-            console.log(`[chats.update] tentativa 1 resultado: count=${c1} err=${e1?.message}`);
 
             // 2ª tentativa: contato_lid (conversa migrada de @lid → telefone real)
             if ((!c1 || c1 === 0) && jid.endsWith("@lid")) {
