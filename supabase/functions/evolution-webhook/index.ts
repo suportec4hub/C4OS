@@ -100,6 +100,7 @@ Deno.serve(async (req) => {
     // ── CHATS_UPDATE: usuário leu conversa no celular → unreadCount cai a 0 ───
     if (["chats.update", "CHATS_UPDATE"].includes(event)) {
       const chats = Array.isArray(data) ? data : [data];
+      console.log("[chats.update] payload keys:", Object.keys(body).join(","), "| data sample:", JSON.stringify(chats[0]).slice(0, 300));
 
       // Contatos individuais: unreadCount explícito ≤ 0
       const explicitReadChats = chats.filter((c: Record<string, unknown>) => {
