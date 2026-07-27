@@ -49,28 +49,21 @@ const WEBHOOK_EVENTS = [
   "NEW_JWT_TOKEN",
 ];
 
-// Evolution API v2 (NestJS) só aceita estes valores exatos no PUT /webhook/set
+// Evolution API v2 (NestJS) — apenas eventos testados e aceitos pelo servidor
 const WEBHOOK_EVENTS_V2 = [
   "QRCODE_UPDATED",
   "MESSAGES_UPSERT",
   "MESSAGES_UPDATE",
   "MESSAGES_DELETE",
   "SEND_MESSAGE",
-  "CONTACTS_SET",
   "CONTACTS_UPSERT",
   "CONTACTS_UPDATE",
-  "CHATS_SET",
   "CHATS_UPSERT",
   "CHATS_UPDATE",
   "CHATS_DELETE",
   "GROUPS_UPSERT",
-  "GROUP_UPDATE",
   "GROUP_PARTICIPANTS_UPDATE",
   "CONNECTION_UPDATE",
-  "LABELS_EDIT",
-  "LABELS_ASSOCIATION",
-  "HISTORY_SYNC",
-  "CALL",
   "NEW_JWT_TOKEN",
 ];
 
