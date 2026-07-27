@@ -64,7 +64,6 @@ const WEBHOOK_EVENTS_V2 = [
   "GROUPS_UPSERT",
   "GROUP_PARTICIPANTS_UPDATE",
   "CONNECTION_UPDATE",
-  "NEW_JWT_TOKEN",
 ];
 
 Deno.serve(async (req) => {
