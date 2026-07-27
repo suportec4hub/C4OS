@@ -98,26 +98,25 @@ Deno.serve(async (req) => {
     if (SKIP_EVENTS.includes(event)) return new Response("OK");
 
     // ── CHATS_UPDATE: usuário leu conversa no celular → unreadCount cai a 0 ───
-    // REGRA: só zera nao_lidas quando unreadCount é EXPLICITAMENTE 0 ou negativo.
-    // Eventos sem unreadCount (undefined) são atualizações de metadados / nova mensagem — IGNORAR.
     if (["chats.update", "CHATS_UPDATE"].includes(event)) {
       const chats = Array.isArray(data) ? data : [data];
 
-      // Chats com unreadCount explícito ≤ 0 (contatos individuais)
+      // Contatos individuais: unreadCount explícito ≤ 0
       const explicitReadChats = chats.filter((c: Record<string, unknown>) => {
-        const uc = c?.unreadCount ?? c?.UnreadCount;
-        return uc !== undefined && Number(uc) <= 0;
-      });
-
-      // Grupos sem unreadCount: Evolution API não envia esse campo para grupos,
-      // então precisamos verificar via REST se o grupo realmente tem 0 não lidas.
-      const groupsNoUnread = chats.filter((c: Record<string, unknown>) => {
         const jid = String(c?.id || c?.remoteJid || "");
-        const uc  = c?.unreadCount ?? c?.UnreadCount;
-        return jid.endsWith("@g.us") && uc === undefined;
+        const uc = c?.unreadCount ?? c?.UnreadCount;
+        return !jid.endsWith("@g.us") && uc !== undefined && uc !== null && Number(uc) <= 0;
       });
 
-      if (explicitReadChats.length === 0 && groupsNoUnread.length === 0) {
+      // Grupos: SEMPRE verifica via API (Evolution não inclui unreadCount=0 de forma confiável).
+      // Deduplifica JIDs para evitar múltiplas chamadas para o mesmo grupo.
+      const groupJids = [...new Set(
+        chats
+          .map((c: Record<string, unknown>) => String(c?.id || c?.remoteJid || ""))
+          .filter(jid => jid.endsWith("@g.us"))
+      )];
+
+      if (explicitReadChats.length === 0 && groupJids.length === 0) {
         return new Response("OK");
       }
 
@@ -158,9 +157,7 @@ Deno.serve(async (req) => {
           try {
             const jid = (chat?.id || chat?.remoteJid || "") as string;
             if (!jid || jid.endsWith("@broadcast") || jid.endsWith("@newsletter")) continue;
-            const phone = jid.endsWith("@g.us")
-              ? jid
-              : jid.replace(/@s\.whatsapp\.net$/, "").replace(/@c\.us$/, "").replace(/:.*$/, "");
+            const phone = jid.replace(/@s\.whatsapp\.net$/, "").replace(/@c\.us$/, "").replace(/:.*$/, "");
             if (!phone) continue;
 
             // 1ª tentativa: match direto por contato_telefone
@@ -181,7 +178,7 @@ Deno.serve(async (req) => {
             }
 
             // 3ª tentativa: variações de prefixo (com/sem 55, com/sem 9º dígito)
-            if ((!c1 || c1 === 0) && !jid.endsWith("@lid") && !jid.endsWith("@g.us")) {
+            if ((!c1 || c1 === 0) && !jid.endsWith("@lid")) {
               const variants: string[] = [];
               if (/^55\d{10,11}$/.test(phone)) variants.push(phone.slice(2));
               else if (/^\d{10,11}$/.test(phone)) variants.push("55" + phone);
@@ -200,19 +197,25 @@ Deno.serve(async (req) => {
           } catch (_) {}
         }
 
-        // ── Grupos sem unreadCount: consulta a Evolution API para verificar ──
-        // A Evolution API não inclui unreadCount no chats.update de grupos,
-        // então chamamos o endpoint REST para obter o valor real.
-        if (groupsNoUnread.length > 0) {
+        // ── Grupos: consulta Evolution API para verificar unread real ─────────
+        // Evolution API v2 não inclui unreadCount=0 de forma consistente para grupos,
+        // então chamamos findChats para obter o valor real. Busca o grupo específico
+        // no array de resposta em vez de assumir que found[0] é o correto.
+        if (groupJids.length > 0) {
           const evoBase  = GLOBAL_URL.replace(/\/$/, "");
           const evoToken = _tok || GLOBAL_KEY;
-          const evoInst  = _nm;
-
-          for (const chat of groupsNoUnread) {
-            const gJid = (chat?.id || chat?.remoteJid || "") as string;
-            if (!gJid) continue;
+          // Se _nm estiver vazio, busca o instance_id da empresa no banco
+          let evoInst = _nm;
+          if (!evoInst && _eid) {
             try {
-              // Consulta o unreadCount real do grupo via Evolution API
+              const { data: empInst } = await supabase.from("empresas")
+                .select("evolution_instance_id").eq("id", _eid).maybeSingle();
+              if (empInst?.evolution_instance_id) evoInst = empInst.evolution_instance_id;
+            } catch (_) {}
+          }
+
+          for (const gJid of groupJids) {
+            try {
               const r = await fetch(`${evoBase}/chat/findChats/${evoInst}`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json", "apikey": evoToken },
@@ -221,9 +224,18 @@ Deno.serve(async (req) => {
               });
               if (!r.ok) continue;
               const found = await r.json();
-              const chatData = Array.isArray(found) ? found[0] : found;
-              const realUnread = chatData?.unreadCount ?? chatData?.unread ?? chatData?.UnreadCount;
-              if (realUnread !== undefined && realUnread !== null && Number(realUnread) <= 0) {
+              // Busca o grupo específico no array (API pode retornar todos os chats)
+              const chatData = Array.isArray(found)
+                ? (found.find((c: unknown) => {
+                    const cf = c as Record<string, unknown>;
+                    return String(cf?.id || cf?.remoteJid || "") === gJid;
+                  }) ?? found[0])
+                : found;
+              if (!chatData) continue;
+              const realUnread = chatData?.unreadCount ?? chatData?.unread ?? chatData?.UnreadCount ?? chatData?.unreadMessages;
+              // Zera badge se: unread ≤ 0, OU se o campo não existe (API não filtrou: aplica otimisticamente)
+              const shouldClear = realUnread === undefined || realUnread === null || Number(realUnread) <= 0;
+              if (shouldClear) {
                 await supabase.from("conversas")
                   .update({ nao_lidas: 0 })
                   .eq("empresa_id", _eid)
