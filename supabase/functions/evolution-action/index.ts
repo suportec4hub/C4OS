@@ -72,40 +72,33 @@ Deno.serve(async (req) => {
       const evoUrl  = GLOBAL_URL.replace(/\/$/, "");
       const apiKey  = GLOBAL_KEY;
       if (!evoUrl) return json({ error: "EVOLUTION_GLOBAL_URL não configurado" }, 500);
-      const results: { instance: string; ok: boolean; err?: string }[] = [];
-      const { data: allEmps } = await supabase.from("empresas")
-        .select("evolution_instance_id, evolution_instance_token")
-        .not("evolution_instance_id", "is", null);
-      for (const e of allEmps || []) {
-        const iName  = e.evolution_instance_id as string;
-        const iToken = (e.evolution_instance_token as string) || apiKey;
-        const wUrl   = `${SUPA_URL}/functions/v1/evolution-webhook?token=${iToken}`;
+
+      const [{ data: allEmps }, { data: allInsts }] = await Promise.all([
+        supabase.from("empresas").select("evolution_instance_id, evolution_instance_token").not("evolution_instance_id", "is", null),
+        supabase.from("empresa_instancias").select("evolution_instance_id, evolution_instance_token").not("evolution_instance_id", "is", null),
+      ]);
+
+      const allRows = [...(allEmps || []), ...(allInsts || [])];
+
+      const setWebhook = async (iName: string, iToken: string) => {
+        const wUrl  = `${SUPA_URL}/functions/v1/evolution-webhook?token=${iToken}`;
+        const wBody = JSON.stringify({ url: wUrl, events: WEBHOOK_EVENTS, enabled: true, webhookByEvents: false, base64: true });
+        const wHdr  = { "Content-Type": "application/json", "apikey": iToken };
         try {
-          const wBody = JSON.stringify({ url: wUrl, events: WEBHOOK_EVENTS, enabled: true, webhookByEvents: false, base64: true });
-          const wHdr  = { "Content-Type": "application/json", "apikey": iToken };
-          let r = await fetch(`${evoUrl}/webhook/set/${iName}`, { method: "PUT",  headers: wHdr, body: wBody, signal: AbortSignal.timeout(8000) });
-          if (!r.ok) r = await fetch(`${evoUrl}/webhook/set/${iName}`, { method: "POST", headers: wHdr, body: wBody, signal: AbortSignal.timeout(8000) });
-          const body2 = await r.text().catch(() => "");
-          results.push({ instance: iName, ok: r.ok, err: r.ok ? undefined : `${r.status}: ${body2.slice(0,100)}` });
-        } catch (ex) { results.push({ instance: iName, ok: false, err: (ex as Error).message }); }
-      }
-      const { data: allInsts } = await supabase.from("empresa_instancias")
-        .select("evolution_instance_id, evolution_instance_token")
-        .not("evolution_instance_id", "is", null);
-      for (const ei of allInsts || []) {
-        const iName  = ei.evolution_instance_id as string;
-        const iToken = (ei.evolution_instance_token as string) || apiKey;
-        const wUrl   = `${SUPA_URL}/functions/v1/evolution-webhook?token=${iToken}`;
-        try {
-          const wBody = JSON.stringify({ url: wUrl, events: WEBHOOK_EVENTS, enabled: true, webhookByEvents: false, base64: true });
-          const wHdr  = { "Content-Type": "application/json", "apikey": iToken };
-          let r = await fetch(`${evoUrl}/webhook/set/${iName}`, { method: "PUT",  headers: wHdr, body: wBody, signal: AbortSignal.timeout(8000) });
-          if (!r.ok) r = await fetch(`${evoUrl}/webhook/set/${iName}`, { method: "POST", headers: wHdr, body: wBody, signal: AbortSignal.timeout(8000) });
-          const body2 = await r.text().catch(() => "");
-          results.push({ instance: iName, ok: r.ok, err: r.ok ? undefined : `${r.status}: ${body2.slice(0,100)}` });
-        } catch (ex) { results.push({ instance: iName, ok: false, err: (ex as Error).message }); }
-      }
-      const ok = results.filter(r => r.ok).length;
+          let r = await fetch(`${evoUrl}/webhook/set/${iName}`, { method: "PUT",  headers: wHdr, body: wBody, signal: AbortSignal.timeout(5000) });
+          if (!r.ok) r = await fetch(`${evoUrl}/webhook/set/${iName}`, { method: "POST", headers: wHdr, body: wBody, signal: AbortSignal.timeout(5000) });
+          const txt = await r.text().catch(() => "");
+          return { instance: iName, ok: r.ok, err: r.ok ? undefined : `${r.status}: ${txt.slice(0, 100)}` };
+        } catch (ex) {
+          return { instance: iName, ok: false, err: (ex as Error).message };
+        }
+      };
+
+      const results = await Promise.all(
+        allRows.map(row => setWebhook(row.evolution_instance_id as string, (row.evolution_instance_token as string) || apiKey))
+      );
+
+      const ok   = results.filter(r => r.ok).length;
       const fail = results.filter(r => !r.ok);
       return json({ success: true, total: results.length, ok, failed: fail.length, failures: fail });
     }
