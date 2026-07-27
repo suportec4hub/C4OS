@@ -67,6 +67,51 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const { action, empresa_id } = body;
 
+    // resetAllWebhooks não precisa de empresa_id específica
+    if (action === "resetAllWebhooks") {
+      const evoUrl  = GLOBAL_URL.replace(/\/$/, "");
+      const apiKey  = GLOBAL_KEY;
+      if (!evoUrl) return json({ error: "EVOLUTION_GLOBAL_URL não configurado" }, 500);
+      const results: { instance: string; ok: boolean; err?: string }[] = [];
+      const { data: allEmps } = await supabase.from("empresas")
+        .select("evolution_instance_id, evolution_instance_token")
+        .not("evolution_instance_id", "is", null);
+      for (const e of allEmps || []) {
+        const iName  = e.evolution_instance_id as string;
+        const iToken = (e.evolution_instance_token as string) || apiKey;
+        const wUrl   = `${SUPA_URL}/functions/v1/evolution-webhook?token=${iToken}`;
+        try {
+          const r = await fetch(`${evoUrl}/webhook/set`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "apikey": iToken },
+            body: JSON.stringify({ instanceName: iName, url: wUrl, events: WEBHOOK_EVENTS, enabled: true, webhookByEvents: false, base64: true }),
+            signal: AbortSignal.timeout(8000),
+          });
+          results.push({ instance: iName, ok: r.ok });
+        } catch (ex) { results.push({ instance: iName, ok: false, err: (ex as Error).message }); }
+      }
+      const { data: allInsts } = await supabase.from("empresa_instancias")
+        .select("evolution_instance_id, evolution_instance_token")
+        .not("evolution_instance_id", "is", null);
+      for (const ei of allInsts || []) {
+        const iName  = ei.evolution_instance_id as string;
+        const iToken = (ei.evolution_instance_token as string) || apiKey;
+        const wUrl   = `${SUPA_URL}/functions/v1/evolution-webhook?token=${iToken}`;
+        try {
+          const r = await fetch(`${evoUrl}/webhook/set`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "apikey": iToken },
+            body: JSON.stringify({ instanceName: iName, url: wUrl, events: WEBHOOK_EVENTS, enabled: true, webhookByEvents: false, base64: true }),
+            signal: AbortSignal.timeout(8000),
+          });
+          results.push({ instance: iName, ok: r.ok });
+        } catch (ex) { results.push({ instance: iName, ok: false, err: (ex as Error).message }); }
+      }
+      const ok = results.filter(r => r.ok).length;
+      const fail = results.filter(r => !r.ok);
+      return json({ success: true, total: results.length, ok, failed: fail.length, failures: fail });
+    }
+
     if (!empresa_id) return json({ error: "empresa_id obrigatório" }, 400);
 
     const { data: emp, error: empErr } = await supabase
@@ -1975,68 +2020,6 @@ Deno.serve(async (req) => {
       } catch (_) {}
 
       return json({ ok: true });
-    }
-
-    // ── resetAllWebhooks: reconfigura webhook de TODAS as instâncias ──────────
-    // Garante que todos os clientes recebam eventos de leitura corretamente.
-    if (action === "resetAllWebhooks") {
-      const results: { instance: string; ok: boolean; err?: string }[] = [];
-      const webhookEvts = WEBHOOK_EVENTS;
-      const evoBase = evoUrl;
-
-      // Busca todas as empresas com instância configurada
-      const { data: allEmps } = await supabase.from("empresas")
-        .select("id, nome, evolution_instance_id, evolution_instance_token")
-        .not("evolution_instance_id", "is", null);
-
-      for (const e of allEmps || []) {
-        const iName  = e.evolution_instance_id as string;
-        const iToken = (e.evolution_instance_token as string) || apiKey;
-        const wUrl   = `${SUPA_URL}/functions/v1/evolution-webhook?token=${iToken}`;
-        try {
-          const r = await fetch(`${evoBase}/webhook/set`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "apikey": iToken },
-            body: JSON.stringify({
-              instanceName: iName, url: wUrl, events: webhookEvts,
-              enabled: true, webhookByEvents: false, base64: true,
-            }),
-            signal: AbortSignal.timeout(8000),
-          });
-          results.push({ instance: iName, ok: r.ok });
-        } catch (ex) {
-          results.push({ instance: iName, ok: false, err: (ex as Error).message });
-        }
-      }
-
-      // Busca todas as instâncias secundárias (vendedores)
-      const { data: allInsts } = await supabase.from("empresa_instancias")
-        .select("evolution_instance_id, evolution_instance_token")
-        .not("evolution_instance_id", "is", null);
-
-      for (const ei of allInsts || []) {
-        const iName  = ei.evolution_instance_id as string;
-        const iToken = (ei.evolution_instance_token as string) || apiKey;
-        const wUrl   = `${SUPA_URL}/functions/v1/evolution-webhook?token=${iToken}`;
-        try {
-          const r = await fetch(`${evoBase}/webhook/set`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "apikey": iToken },
-            body: JSON.stringify({
-              instanceName: iName, url: wUrl, events: webhookEvts,
-              enabled: true, webhookByEvents: false, base64: true,
-            }),
-            signal: AbortSignal.timeout(8000),
-          });
-          results.push({ instance: iName, ok: r.ok });
-        } catch (ex) {
-          results.push({ instance: iName, ok: false, err: (ex as Error).message });
-        }
-      }
-
-      const ok    = results.filter(r => r.ok).length;
-      const fail  = results.filter(r => !r.ok);
-      return json({ success: true, total: results.length, ok, failed: fail.length, failures: fail });
     }
 
     return json({ error: `Ação desconhecida: ${action}` }, 400);
