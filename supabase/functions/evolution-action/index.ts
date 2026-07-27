@@ -81,12 +81,10 @@ Deno.serve(async (req) => {
         const iToken = (e.evolution_instance_token as string) || apiKey;
         const wUrl   = `${SUPA_URL}/functions/v1/evolution-webhook?token=${iToken}`;
         try {
-          const r = await fetch(`${evoUrl}/webhook/set`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "apikey": iToken },
-            body: JSON.stringify({ instanceName: iName, url: wUrl, events: WEBHOOK_EVENTS, enabled: true, webhookByEvents: false, base64: true }),
-            signal: AbortSignal.timeout(8000),
-          });
+          const wBody = JSON.stringify({ url: wUrl, events: WEBHOOK_EVENTS, enabled: true, webhookByEvents: false, base64: true });
+          const wHdr  = { "Content-Type": "application/json", "apikey": iToken };
+          let r = await fetch(`${evoUrl}/webhook/set/${iName}`, { method: "PUT",  headers: wHdr, body: wBody, signal: AbortSignal.timeout(8000) });
+          if (!r.ok) r = await fetch(`${evoUrl}/webhook/set/${iName}`, { method: "POST", headers: wHdr, body: wBody, signal: AbortSignal.timeout(8000) });
           const body2 = await r.text().catch(() => "");
           results.push({ instance: iName, ok: r.ok, err: r.ok ? undefined : `${r.status}: ${body2.slice(0,100)}` });
         } catch (ex) { results.push({ instance: iName, ok: false, err: (ex as Error).message }); }
@@ -99,12 +97,10 @@ Deno.serve(async (req) => {
         const iToken = (ei.evolution_instance_token as string) || apiKey;
         const wUrl   = `${SUPA_URL}/functions/v1/evolution-webhook?token=${iToken}`;
         try {
-          const r = await fetch(`${evoUrl}/webhook/set`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "apikey": iToken },
-            body: JSON.stringify({ instanceName: iName, url: wUrl, events: WEBHOOK_EVENTS, enabled: true, webhookByEvents: false, base64: true }),
-            signal: AbortSignal.timeout(8000),
-          });
+          const wBody = JSON.stringify({ url: wUrl, events: WEBHOOK_EVENTS, enabled: true, webhookByEvents: false, base64: true });
+          const wHdr  = { "Content-Type": "application/json", "apikey": iToken };
+          let r = await fetch(`${evoUrl}/webhook/set/${iName}`, { method: "PUT",  headers: wHdr, body: wBody, signal: AbortSignal.timeout(8000) });
+          if (!r.ok) r = await fetch(`${evoUrl}/webhook/set/${iName}`, { method: "POST", headers: wHdr, body: wBody, signal: AbortSignal.timeout(8000) });
           const body2 = await r.text().catch(() => "");
           results.push({ instance: iName, ok: r.ok, err: r.ok ? undefined : `${r.status}: ${body2.slice(0,100)}` });
         } catch (ex) { results.push({ instance: iName, ok: false, err: (ex as Error).message }); }
@@ -213,17 +209,15 @@ Deno.serve(async (req) => {
 
       // Configura webhook explicitamente com webhookByEvents=false
       try {
-        await fetch(`${evoUrl}/webhook/set`, {
+        const wRes = await fetch(`${evoUrl}/webhook/set/${savedName}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json", "apikey": savedToken },
+          body: JSON.stringify({ url: finalWebhookUrl, events: WEBHOOK_EVENTS, enabled: true, webhookByEvents: false, base64: true }),
+        });
+        if (!wRes.ok) await fetch(`${evoUrl}/webhook/set/${savedName}`, {
           method: "POST",
           headers: { "Content-Type": "application/json", "apikey": savedToken },
-          body: JSON.stringify({
-            instanceName:    savedName,
-            url:             finalWebhookUrl,
-            events:          WEBHOOK_EVENTS,
-            enabled:         true,
-            webhookByEvents: false,
-            base64:          true,
-          }),
+          body: JSON.stringify({ url: finalWebhookUrl, events: WEBHOOK_EVENTS, enabled: true, webhookByEvents: false, base64: true }),
         });
       } catch (_) { /* best-effort */ }
 
@@ -342,18 +336,11 @@ Deno.serve(async (req) => {
         }).eq("id", empresa_id);
 
         // Configura webhook explicitamente com webhookByEvents=false
-        fetch(`${evoUrl}/webhook/set`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "apikey": tok },
-          body: JSON.stringify({
-            instanceName:    nm,
-            url:             `${SUPA_URL}/functions/v1/evolution-webhook?token=${tok}`,
-            events:          WEBHOOK_EVENTS,
-            enabled:         true,
-            webhookByEvents: false,
-            base64:          true,
-          }),
-        }).catch(() => {});
+        const _wUrl = `${SUPA_URL}/functions/v1/evolution-webhook?token=${tok}`;
+        const _wBody = JSON.stringify({ url: _wUrl, events: WEBHOOK_EVENTS, enabled: true, webhookByEvents: false, base64: true });
+        fetch(`${evoUrl}/webhook/set/${nm}`, { method: "PUT",  headers: { "Content-Type": "application/json", "apikey": tok }, body: _wBody })
+          .then(r => r.ok ? r : fetch(`${evoUrl}/webhook/set/${nm}`, { method: "POST", headers: { "Content-Type": "application/json", "apikey": tok }, body: _wBody }))
+          .catch(() => {});
 
         return { tok, nm, qr };
       };
@@ -380,18 +367,10 @@ Deno.serve(async (req) => {
         });
 
       // Atualiza webhook para garantir webhookByEvents=false (best-effort)
-      fetch(`${evoUrl}/webhook/set`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "apikey": effectiveToken },
-        body: JSON.stringify({
-          instanceName:    effectiveName,
-          url:             webhookUrl,
-          events:          WEBHOOK_EVENTS,
-          enabled:         true,
-          webhookByEvents: false,
-          base64:          true,
-        }),
-      }).catch(() => {});
+      const _wBody2 = JSON.stringify({ url: webhookUrl, events: WEBHOOK_EVENTS, enabled: true, webhookByEvents: false, base64: true });
+      fetch(`${evoUrl}/webhook/set/${effectiveName}`, { method: "PUT",  headers: { "Content-Type": "application/json", "apikey": effectiveToken }, body: _wBody2 })
+        .then(r => r.ok ? r : fetch(`${evoUrl}/webhook/set/${effectiveName}`, { method: "POST", headers: { "Content-Type": "application/json", "apikey": effectiveToken }, body: _wBody2 }))
+        .catch(() => {});
 
       let qrBase64 = "";
       const tried: string[] = [];
@@ -592,21 +571,12 @@ Deno.serve(async (req) => {
     // RESET WEBHOOK — reconfigura URL do webhook na instância
     // ────────────────────────────────────────────────────────────────────────
     if (action === "resetWebhook") {
-      const webhookUrl = `${SUPA_URL}/functions/v1/evolution-webhook?token=${instToken}`;
-      const webhookBody = {
-        instanceName:    instName,
-        url:             webhookUrl,
-        events:          WEBHOOK_EVENTS,
-        enabled:         true,
-        webhookByEvents: false,   // evita sufixo /event-name na URL
-        base64:          true,    // imagens e áudios em base64
-      };
+      const webhookUrl  = `${SUPA_URL}/functions/v1/evolution-webhook?token=${instToken}`;
+      const webhookBody = JSON.stringify({ url: webhookUrl, events: WEBHOOK_EVENTS, enabled: true, webhookByEvents: false, base64: true });
+      const webhookHdr  = { "Content-Type": "application/json", "apikey": instToken };
       try {
-        const r1 = await fetch(`${evoUrl}/webhook/set`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "apikey": instToken },
-          body: JSON.stringify(webhookBody),
-        });
+        let r1 = await fetch(`${evoUrl}/webhook/set/${instName}`, { method: "PUT",  headers: webhookHdr, body: webhookBody });
+        if (!r1.ok) r1 = await fetch(`${evoUrl}/webhook/set/${instName}`, { method: "POST", headers: webhookHdr, body: webhookBody });
         if (!r1.ok) {
           await iFetch("/instance/connect", {
             method: "POST",
@@ -1569,18 +1539,11 @@ Deno.serve(async (req) => {
         }).eq("id", newInst.id);
 
         // Configura webhook explicitamente
-        fetch(`${evoUrl}/webhook/set`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "apikey": tok },
-          body: JSON.stringify({
-            instanceName:    nm,
-            url:             `${SUPA_URL}/functions/v1/evolution-webhook?token=${tok}`,
-            events:          WEBHOOK_EVENTS,
-            enabled:         true,
-            webhookByEvents: false,
-            base64:          true,
-          }),
-        }).catch(() => {});
+        const _wUrl3 = `${SUPA_URL}/functions/v1/evolution-webhook?token=${tok}`;
+        const _wBody3 = JSON.stringify({ url: _wUrl3, events: WEBHOOK_EVENTS, enabled: true, webhookByEvents: false, base64: true });
+        fetch(`${evoUrl}/webhook/set/${nm}`, { method: "PUT",  headers: { "Content-Type": "application/json", "apikey": tok }, body: _wBody3 })
+          .then(r => r.ok ? r : fetch(`${evoUrl}/webhook/set/${nm}`, { method: "POST", headers: { "Content-Type": "application/json", "apikey": tok }, body: _wBody3 }))
+          .catch(() => {});
 
         return json({ success: true, instancia_id: newInst.id, instanceName: nm, token: tok, qrBase64: qr });
       } catch (e) {
