@@ -87,7 +87,8 @@ Deno.serve(async (req) => {
             body: JSON.stringify({ instanceName: iName, url: wUrl, events: WEBHOOK_EVENTS, enabled: true, webhookByEvents: false, base64: true }),
             signal: AbortSignal.timeout(8000),
           });
-          results.push({ instance: iName, ok: r.ok });
+          const body2 = await r.text().catch(() => "");
+          results.push({ instance: iName, ok: r.ok, err: r.ok ? undefined : `${r.status}: ${body2.slice(0,100)}` });
         } catch (ex) { results.push({ instance: iName, ok: false, err: (ex as Error).message }); }
       }
       const { data: allInsts } = await supabase.from("empresa_instancias")
@@ -104,7 +105,8 @@ Deno.serve(async (req) => {
             body: JSON.stringify({ instanceName: iName, url: wUrl, events: WEBHOOK_EVENTS, enabled: true, webhookByEvents: false, base64: true }),
             signal: AbortSignal.timeout(8000),
           });
-          results.push({ instance: iName, ok: r.ok });
+          const body2 = await r.text().catch(() => "");
+          results.push({ instance: iName, ok: r.ok, err: r.ok ? undefined : `${r.status}: ${body2.slice(0,100)}` });
         } catch (ex) { results.push({ instance: iName, ok: false, err: (ex as Error).message }); }
       }
       const ok = results.filter(r => r.ok).length;
