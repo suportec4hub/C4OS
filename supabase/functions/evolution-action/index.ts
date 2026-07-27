@@ -1938,7 +1938,10 @@ Deno.serve(async (req) => {
     // Chamada fire-and-forget do frontend quando o usuário abre uma conversa.
     if (action === "readMessages") {
       const { conversa_id } = body;
-      if (!conversa_id || !instName) return json({ ok: true });
+      if (!conversa_id || !instName) {
+        console.log("[readMessages] early exit: conversa_id:", conversa_id, "instName:", instName);
+        return json({ ok: true });
+      }
 
       // Pega wamids das últimas mensagens recebidas do contato (não lidas)
       const { data: msgs } = await supabase.from("mensagens")
@@ -1948,6 +1951,8 @@ Deno.serve(async (req) => {
         .not("wamid", "is", null)
         .order("hora", { ascending: false })
         .limit(20);
+
+      console.log("[readMessages] conversa_id:", conversa_id, "instName:", instName, "msgs com wamid:", msgs?.length ?? 0);
 
       if (!msgs || msgs.length === 0) return json({ ok: true });
 
@@ -1969,6 +1974,8 @@ Deno.serve(async (req) => {
           key: { remoteJid, fromMe: false, id: m.wamid },
         }));
 
+      console.log("[readMessages] remoteJid:", remoteJid, "msgs a marcar:", readMessages.length, "wamids:", readMessages.slice(0,3).map((m: Record<string, unknown>) => (m.key as Record<string,unknown>)?.id));
+
       if (readMessages.length === 0) return json({ ok: true });
 
       // Tenta endpoint v2 Baileys: /chat/readMessage
@@ -1977,8 +1984,12 @@ Deno.serve(async (req) => {
           method: "POST",
           body: JSON.stringify({ readMessages }),
         });
+        const txt = await r.text().catch(() => "");
+        console.log("[readMessages] /chat/readMessage status:", r.status, "body:", txt.slice(0, 200));
         if (r.ok) return json({ ok: true });
-      } catch (_) {}
+      } catch (ex) {
+        console.log("[readMessages] /chat/readMessage erro:", (ex as Error).message);
+      }
 
       // Fallback: /message/readMessage
       try {
@@ -1986,8 +1997,12 @@ Deno.serve(async (req) => {
           method: "POST",
           body: JSON.stringify({ readMessages }),
         });
+        const txt2 = await r2.text().catch(() => "");
+        console.log("[readMessages] /message/readMessage status:", r2.status, "body:", txt2.slice(0, 200));
         return json({ ok: r2.ok });
-      } catch (_) {}
+      } catch (ex2) {
+        console.log("[readMessages] /message/readMessage erro:", (ex2 as Error).message);
+      }
 
       return json({ ok: true });
     }
