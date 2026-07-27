@@ -1021,7 +1021,13 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
     setMensagens(msgs);
     await supabase.from("conversas").update({ nao_lidas: 0 }).eq("id", convId);
     setConversas(p => p.map(c => c.id === convId ? { ...c, nao_lidas: 0 } : c));
-  }, []);
+    // Envia read receipt ao WhatsApp para que o celular marque como lido (fire-and-forget)
+    if (user?.empresa_id) {
+      supabase.functions.invoke("evolution-action", {
+        body: { action: "readMessages", empresa_id: user.empresa_id, conversa_id: convId },
+      }).catch(() => {});
+    }
+  }, [user?.empresa_id]);
 
   // ── realtime messages ─────────────────────────────────────────────────────
   useEffect(() => {

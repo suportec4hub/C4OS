@@ -1919,6 +1919,64 @@ Deno.serve(async (req) => {
       });
     }
 
+    // ── readMessages: marca mensagens como lidas no WhatsApp ao abrir no C4OS ──
+    // Chamada fire-and-forget do frontend quando o usuário abre uma conversa.
+    if (action === "readMessages") {
+      const { conversa_id } = body;
+      if (!conversa_id || !instName) return json({ ok: true });
+
+      // Pega wamids das últimas mensagens recebidas do contato (não lidas)
+      const { data: msgs } = await supabase.from("mensagens")
+        .select("wamid")
+        .eq("conversa_id", conversa_id)
+        .eq("de", "contato")
+        .not("wamid", "is", null)
+        .order("hora", { ascending: false })
+        .limit(20);
+
+      if (!msgs || msgs.length === 0) return json({ ok: true });
+
+      // Pega o JID da conversa para montar a key correta
+      const { data: conv } = await supabase.from("conversas")
+        .select("contato_telefone")
+        .eq("id", conversa_id)
+        .single();
+      if (!conv) return json({ ok: true });
+
+      const phone = conv.contato_telefone as string;
+      const remoteJid = phone.endsWith("@g.us")
+        ? phone
+        : phone.includes("@") ? phone : `${phone}@s.whatsapp.net`;
+
+      const readMessages = msgs
+        .filter((m: Record<string, string>) => m.wamid)
+        .map((m: Record<string, string>) => ({
+          key: { remoteJid, fromMe: false, id: m.wamid },
+        }));
+
+      if (readMessages.length === 0) return json({ ok: true });
+
+      // Tenta endpoint v2 Baileys: /chat/readMessage
+      try {
+        const r = await iFetch(`/chat/readMessage/${instName}`, {
+          method: "POST",
+          body: JSON.stringify({ readMessages }),
+        });
+        if (r.ok) return json({ ok: true });
+      } catch (_) {}
+
+      // Fallback: /message/readMessage
+      try {
+        const r2 = await iFetch(`/message/readMessage/${instName}`, {
+          method: "POST",
+          body: JSON.stringify({ readMessages }),
+        });
+        return json({ ok: r2.ok });
+      } catch (_) {}
+
+      return json({ ok: true });
+    }
+
     return json({ error: `Ação desconhecida: ${action}` }, 400);
   } catch (e) {
     console.error("evolution-action error:", e);
