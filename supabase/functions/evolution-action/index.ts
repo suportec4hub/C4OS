@@ -1939,11 +1939,10 @@ Deno.serve(async (req) => {
     if (action === "readMessages") {
       const { conversa_id } = body;
       if (!conversa_id || !instName) {
-        console.log("[readMessages] early exit: conversa_id:", conversa_id, "instName:", instName);
         return json({ ok: true });
       }
 
-      // Pega wamids das últimas mensagens recebidas do contato (não lidas)
+      // Pega wamids das últimas mensagens recebidas do contato
       const { data: msgs } = await supabase.from("mensagens")
         .select("wamid")
         .eq("conversa_id", conversa_id)
@@ -1951,8 +1950,6 @@ Deno.serve(async (req) => {
         .not("wamid", "is", null)
         .order("hora", { ascending: false })
         .limit(20);
-
-      console.log("[readMessages] conversa_id:", conversa_id, "instName:", instName, "msgs com wamid:", msgs?.length ?? 0);
 
       if (!msgs || msgs.length === 0) return json({ ok: true });
 
@@ -1968,42 +1965,67 @@ Deno.serve(async (req) => {
         ? phone
         : phone.includes("@") ? phone : `${phone}@s.whatsapp.net`;
 
-      const readMessages = msgs
+      const readMsgs = msgs
         .filter((m: Record<string, string>) => m.wamid)
         .map((m: Record<string, string>) => ({
           key: { remoteJid, fromMe: false, id: m.wamid },
         }));
 
-      console.log("[readMessages] remoteJid:", remoteJid, "msgs a marcar:", readMessages.length, "wamids:", readMessages.slice(0,3).map((m: Record<string, unknown>) => (m.key as Record<string,unknown>)?.id));
+      if (readMsgs.length === 0) return json({ ok: true });
 
-      if (readMessages.length === 0) return json({ ok: true });
+      const logPayload: Record<string, unknown> = {
+        instName, remoteJid, msgCount: readMsgs.length,
+        wamids: readMsgs.slice(0, 3).map((m: Record<string, unknown>) => (m.key as Record<string,unknown>)?.id),
+      };
 
       // Tenta endpoint v2 Baileys: /chat/readMessage
       try {
         const r = await iFetch(`/chat/readMessage/${instName}`, {
           method: "POST",
-          body: JSON.stringify({ readMessages }),
+          body: JSON.stringify({ readMessages: readMsgs }),
         });
         const txt = await r.text().catch(() => "");
-        console.log("[readMessages] /chat/readMessage status:", r.status, "body:", txt.slice(0, 200));
-        if (r.ok) return json({ ok: true });
+        logPayload.status1 = r.status;
+        logPayload.body1 = txt.slice(0, 300);
+        if (r.ok) {
+          await supabase.from("logs_whatsapp").insert({
+            empresa_id: emp.id, conversa_id, tipo: "fluxo", nivel: "info",
+            origem: "evolution-action", evento: "readMessages-ok",
+            resumo: `readMessage ok ${r.status} msgs:${readMsgs.length}`,
+            payload: logPayload,
+          }).catch(() => {});
+          return json({ ok: true });
+        }
       } catch (ex) {
-        console.log("[readMessages] /chat/readMessage erro:", (ex as Error).message);
+        logPayload.err1 = (ex as Error).message;
       }
 
       // Fallback: /message/readMessage
       try {
         const r2 = await iFetch(`/message/readMessage/${instName}`, {
           method: "POST",
-          body: JSON.stringify({ readMessages }),
+          body: JSON.stringify({ readMessages: readMsgs }),
         });
         const txt2 = await r2.text().catch(() => "");
-        console.log("[readMessages] /message/readMessage status:", r2.status, "body:", txt2.slice(0, 200));
+        logPayload.status2 = r2.status;
+        logPayload.body2 = txt2.slice(0, 300);
+        await supabase.from("logs_whatsapp").insert({
+          empresa_id: emp.id, conversa_id, tipo: "fluxo", nivel: r2.ok ? "info" : "error",
+          origem: "evolution-action", evento: r2.ok ? "readMessages-fallback-ok" : "readMessages-failed",
+          resumo: `readMessage fallback ${r2.status} msgs:${readMsgs.length}`,
+          payload: logPayload,
+        }).catch(() => {});
         return json({ ok: r2.ok });
       } catch (ex2) {
-        console.log("[readMessages] /message/readMessage erro:", (ex2 as Error).message);
+        logPayload.err2 = (ex2 as Error).message;
       }
 
+      await supabase.from("logs_whatsapp").insert({
+        empresa_id: emp.id, conversa_id, tipo: "erro_api", nivel: "error",
+        origem: "evolution-action", evento: "readMessages-exception",
+        resumo: `readMessage exception`,
+        payload: logPayload,
+      }).catch(() => {});
       return json({ ok: true });
     }
 
