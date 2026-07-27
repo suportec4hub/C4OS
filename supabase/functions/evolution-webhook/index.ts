@@ -223,8 +223,10 @@ Deno.serve(async (req) => {
                 body: JSON.stringify({ where: { id: gJid } }),
                 signal: AbortSignal.timeout(5000),
               });
-              if (!r.ok) continue;
-              const found = await r.json();
+              const foundRaw = r.ok ? await r.json() : null;
+              console.log(`[group-read] gJid:${gJid} evoInst:${evoInst} ok:${r.ok} found:${JSON.stringify(foundRaw).slice(0, 300)}`);
+              if (!r.ok || !foundRaw) continue;
+              const found = foundRaw;
               // Busca o grupo específico no array (API pode retornar todos os chats)
               const chatData = Array.isArray(found)
                 ? (found.find((c: unknown) => {
@@ -236,14 +238,19 @@ Deno.serve(async (req) => {
               const realUnread = chatData?.unreadCount ?? chatData?.unread ?? chatData?.UnreadCount ?? chatData?.unreadMessages;
               // Zera badge se: unread ≤ 0, OU se o campo não existe (API não filtrou: aplica otimisticamente)
               const shouldClear = realUnread === undefined || realUnread === null || Number(realUnread) <= 0;
+              console.log(`[group-read] chatData keys:${Object.keys(chatData||{}).join(",")} realUnread:${realUnread} shouldClear:${shouldClear}`);
               if (shouldClear) {
-                await supabase.from("conversas")
+                const { count: upd } = await supabase.from("conversas")
                   .update({ nao_lidas: 0 })
                   .eq("empresa_id", _eid)
                   .eq("contato_telefone", gJid)
-                  .gt("nao_lidas", 0);
+                  .gt("nao_lidas", 0)
+                  .select("id", { count: "exact", head: true });
+                console.log(`[group-read] DB update rows:${upd} gJid:${gJid} eid:${_eid}`);
               }
-            } catch (_) {}
+            } catch (ex) {
+              console.log(`[group-read] erro:`, (ex as Error).message);
+            }
           }
         }
       }
