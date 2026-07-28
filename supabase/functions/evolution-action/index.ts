@@ -233,10 +233,13 @@ Deno.serve(async (req) => {
     // Resolve o mapeamento @lid ↔ telefone para que leituras no celular limpem o badge.
     if (action === "syncContactLids") {
       try {
-        const r = await iFetch(`/contact/findContacts/${instName}`, {
-          method: "POST",
-          body: JSON.stringify({ where: {} }),
+        // Evolution API v2: tenta GET /contact/findContacts e fallbacks
+        let r = await iFetch(`/contact/findContacts/${instName}`, { method: "GET" });
+        if (!r.ok) r = await iFetch(`/contact/fetchContacts/${instName}`, { method: "GET" });
+        if (!r.ok) r = await iFetch(`/contact/findContacts/${instName}`, {
+          method: "POST", body: JSON.stringify({ where: {} }),
         });
+        if (!r.ok) r = await iFetch(`/contact/${instName}`, { method: "GET" });
         if (!r.ok) return json({ ok: false, error: `findContacts status ${r.status}` });
 
         const contacts = await r.json();
