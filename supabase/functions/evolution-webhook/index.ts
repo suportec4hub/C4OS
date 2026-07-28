@@ -443,38 +443,66 @@ Deno.serve(async (req) => {
             } else {
               // Nós lemos a mensagem do contato no celular → zera badge no sistema
               const isGroup = remoteJid.endsWith("@g.us");
-              const { data: ackUpd, error: ackErr } = await supabase.from("conversas")
-                .update({ nao_lidas: 0 })
-                .eq("empresa_id", _eid)
-                .eq("contato_telefone", phone)
-                .gt("nao_lidas", 0)
-                .select("id");
-              const ackC1 = ackUpd?.length ?? 0;
-              await logWA(supabase, {
-                empresa_id: _eid, tipo: "webhook_recebido",
-                nivel: ackC1 ? "info" : "warn",
-                origem: "evolution-webhook", evento: "messages.update-lido",
-                resumo: ackC1 ? `Zerou badge via messages.update para ${phone}` : `messages.update sem match para ${phone}`,
-                payload: { phone, isGroup, fromMe, ackNum, statusStr, wamid, count: ackC1, err: ackErr?.message },
-              });
-              // Fallback por contato_lid e por contato_telefone com @lid direto
-              if ((!ackC1 || ackC1 === 0) && remoteJid.endsWith("@lid")) {
-                // Tenta por contato_lid (conversas migradas LID → telefone real)
+              let matched = false;
+
+              // Tentativa 1: match por wamid na tabela mensagens (independe de JID/@lid/telefone)
+              // É a forma mais confiável: o ID da mensagem é universal para todos os tipos de contato.
+              if (wamid) {
+                const { data: msgRow } = await supabase.from("mensagens")
+                  .select("conversa_id")
+                  .eq("empresa_id", _eid)
+                  .eq("wamid", wamid)
+                  .maybeSingle();
+                if (msgRow?.conversa_id) {
+                  const { data: wUpd } = await supabase.from("conversas")
+                    .update({ nao_lidas: 0 })
+                    .eq("id", msgRow.conversa_id)
+                    .gt("nao_lidas", 0)
+                    .select("id");
+                  matched = (wUpd?.length ?? 0) > 0;
+                }
+              }
+
+              // Tentativa 2: match por contato_telefone (contato com número real)
+              if (!matched) {
+                const { data: ackUpd } = await supabase.from("conversas")
+                  .update({ nao_lidas: 0 })
+                  .eq("empresa_id", _eid)
+                  .eq("contato_telefone", phone)
+                  .gt("nao_lidas", 0)
+                  .select("id");
+                matched = (ackUpd?.length ?? 0) > 0;
+              }
+
+              // Tentativa 3: match por contato_lid (para @lid onde temos o mapeamento)
+              if (!matched && remoteJid.endsWith("@lid")) {
                 const { data: lidUpd } = await supabase.from("conversas")
                   .update({ nao_lidas: 0 })
                   .eq("empresa_id", _eid)
                   .eq("contato_lid", remoteJid)
                   .gt("nao_lidas", 0)
                   .select("id");
-                // Tenta por contato_telefone = JID @lid direto (conversas criadas com @lid como telefone)
-                if (!lidUpd?.length) {
-                  await supabase.from("conversas")
-                    .update({ nao_lidas: 0 })
-                    .eq("empresa_id", _eid)
-                    .eq("contato_telefone", remoteJid)
-                    .gt("nao_lidas", 0);
-                }
+                matched = (lidUpd?.length ?? 0) > 0;
               }
+
+              // Tentativa 4: contato_telefone = JID @lid direto (conversas antigas criadas com @lid como telefone)
+              if (!matched && remoteJid.endsWith("@lid")) {
+                const { data: t4Upd } = await supabase.from("conversas")
+                  .update({ nao_lidas: 0 })
+                  .eq("empresa_id", _eid)
+                  .eq("contato_telefone", remoteJid)
+                  .gt("nao_lidas", 0)
+                  .select("id");
+                matched = (t4Upd?.length ?? 0) > 0;
+              }
+
+              await logWA(supabase, {
+                empresa_id: _eid, tipo: "webhook_recebido",
+                nivel: matched ? "info" : "warn",
+                origem: "evolution-webhook", evento: "messages.update-lido",
+                resumo: matched ? `Zerou badge via messages.update para ${phone}` : `messages.update sem match para ${phone}`,
+                payload: { phone, isGroup, fromMe, ackNum, statusStr, wamid, matched },
+              });
             }
           } catch (_) {}
         }
