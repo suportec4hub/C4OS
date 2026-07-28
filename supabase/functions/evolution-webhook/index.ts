@@ -1461,6 +1461,17 @@ async function processMessages(
       }).eq("id", conv.id);
     }
 
+    // Popula contato_lid automaticamente quando o remoteJid é @lid mas resolvemos o telefone real
+    // via key.participant. Isso permite que chats.update / messages.update futuros com @lid
+    // encontrem a conversa (que está salva com o telefone, não com o @lid).
+    if (!isGroup && remoteJid.endsWith("@lid") && senderPhone !== rawPhone && conv?.id) {
+      supabase.from("conversas")
+        .update({ contato_lid: remoteJid })
+        .eq("id", conv.id)
+        .is("contato_lid", null)
+        .then(() => {}).catch(() => {});
+    }
+
     if (!conv?.id) continue;
 
     // ── Re-hospedar mídia recebida no Cloudflare R2 ─────────────────────────
