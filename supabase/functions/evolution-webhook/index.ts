@@ -189,7 +189,9 @@ Deno.serve(async (req) => {
         const ucPresent = uc !== undefined && uc !== null;
         if (ucPresent && Number(uc) > 0) return false;          // positivo → nova msg → ignora
         const isGroup = jid.endsWith("@g.us");
-        if (!isGroup && !ucPresent) return false;               // individual sem campo → ignora
+        const isLid   = jid.endsWith("@lid");
+        // @lid: sem unreadCount = evento de leitura (igual a grupos, tratar otimisticamente)
+        if (!isGroup && !isLid && !ucPresent) return false;     // individual sem campo → ignora
         return true;
       });
 
@@ -398,13 +400,23 @@ Deno.serve(async (req) => {
                 resumo: ackC1 ? `Zerou badge via messages.update para ${phone}` : `messages.update sem match para ${phone}`,
                 payload: { phone, isGroup, fromMe, ackNum, statusStr, wamid, count: ackC1, err: ackErr?.message },
               });
-              // Fallback por contato_lid (conversas migradas LID → telefone)
+              // Fallback por contato_lid e por contato_telefone com @lid direto
               if ((!ackC1 || ackC1 === 0) && remoteJid.endsWith("@lid")) {
-                await supabase.from("conversas")
+                // Tenta por contato_lid (conversas migradas LID → telefone real)
+                const { data: lidUpd } = await supabase.from("conversas")
                   .update({ nao_lidas: 0 })
                   .eq("empresa_id", _eid)
                   .eq("contato_lid", remoteJid)
-                  .gt("nao_lidas", 0);
+                  .gt("nao_lidas", 0)
+                  .select("id");
+                // Tenta por contato_telefone = JID @lid direto (conversas criadas com @lid como telefone)
+                if (!lidUpd?.length) {
+                  await supabase.from("conversas")
+                    .update({ nao_lidas: 0 })
+                    .eq("empresa_id", _eid)
+                    .eq("contato_telefone", remoteJid)
+                    .gt("nao_lidas", 0);
+                }
               }
             }
           } catch (_) {}

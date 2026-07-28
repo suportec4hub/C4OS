@@ -121,6 +121,11 @@ Deno.serve(async (_req) => {
           } else {
             shouldZero = true;
           }
+        } else if (jid.endsWith("@lid")) {
+          // Conversa cujo contato_telefone já é um @lid (criada antes do mapeamento)
+          if (!(jid in chatMapLid)) continue;
+          if (chatMapLid[jid] !== 0) continue;
+          shouldZero = true;
         } else {
           // Contato individual sem @lid: match por telefone
           const phone = jid.replace(/@s\.whatsapp\.net$/, "").replace(/@c\.us$/, "").replace(/:.*$/, "");
