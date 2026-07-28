@@ -187,10 +187,10 @@ Deno.serve(async (req) => {
         if (!jid || jid.endsWith("@broadcast") || jid.endsWith("@newsletter")) return false;
         const uc = c?.unreadCount ?? c?.UnreadCount;
         const ucPresent = uc !== undefined && uc !== null;
-        if (ucPresent && Number(uc) > 0) return false;          // positivo → nova msg → ignora
-        const isGroup = jid.endsWith("@g.us");
-        // Individuais (inclui @lid): só processa quando unreadCount está presente no evento
-        if (!isGroup && !ucPresent) return false;
+        // Só zera quando unreadCount está explicitamente 0 no evento.
+        // Quando ausente, não é possível distinguir leitura de nova mensagem
+        // → ignora aqui e deixa o sync-badges (cron) confirmar via findChats.
+        if (!ucPresent || Number(uc) !== 0) return false;
         return true;
       });
 
