@@ -100,26 +100,24 @@ Deno.serve(async (req) => {
     // ── CHATS_UPDATE: usuário leu conversa no celular → unreadCount cai a 0 ───
     if (["chats.update", "CHATS_UPDATE"].includes(event)) {
       const chats = Array.isArray(data) ? data : [data];
-      console.log("[chats.update] payload keys:", Object.keys(body).join(","), "| data sample:", JSON.stringify(chats[0]).slice(0, 300));
 
-      // Contatos individuais: unreadCount explícito ≤ 0
-      const explicitReadChats = chats.filter((c: Record<string, unknown>) => {
+      // Filtra chats que devem ter o badge zerado:
+      // - Descarta se unreadCount for explicitamente > 0 (nova mensagem ainda não lida)
+      // - Grupos: zera otimisticamente quando uc ≤ 0 OU quando o campo está ausente
+      //   (Evolution API v2 frequentemente omite unreadCount:0 no evento de leitura de grupo)
+      // - Individuais: zera somente quando uc é explicitamente ≤ 0
+      const chatsToProcess = chats.filter((c: Record<string, unknown>) => {
         const jid = String(c?.id || c?.remoteJid || "");
+        if (!jid || jid.endsWith("@broadcast") || jid.endsWith("@newsletter")) return false;
         const uc = c?.unreadCount ?? c?.UnreadCount;
-        return !jid.endsWith("@g.us") && uc !== undefined && uc !== null && Number(uc) <= 0;
+        const ucPresent = uc !== undefined && uc !== null;
+        if (ucPresent && Number(uc) > 0) return false;          // positivo → nova msg → ignora
+        const isGroup = jid.endsWith("@g.us");
+        if (!isGroup && !ucPresent) return false;               // individual sem campo → ignora
+        return true;
       });
 
-      // Grupos: SEMPRE verifica via API (Evolution não inclui unreadCount=0 de forma confiável).
-      // Deduplifica JIDs para evitar múltiplas chamadas para o mesmo grupo.
-      const groupJids = [...new Set(
-        chats
-          .map((c: Record<string, unknown>) => String(c?.id || c?.remoteJid || ""))
-          .filter(jid => jid.endsWith("@g.us"))
-      )];
-
-      if (explicitReadChats.length === 0 && groupJids.length === 0) {
-        return new Response("OK");
-      }
+      if (chatsToProcess.length === 0) return new Response("OK");
 
       // Resolve empresa_id (4 passos: empresa_instancias → empresas, por token e por nome)
       const _tok = tokenFromUrl || body.apikey || body.instance?.apikey || body.instance?.token || "";
@@ -153,15 +151,16 @@ Deno.serve(async (req) => {
       }
 
       if (_eid) {
-        // ── Contatos individuais: unreadCount explícito ≤ 0 ──────────────────
-        for (const chat of explicitReadChats) {
+        for (const chat of chatsToProcess) {
           try {
             const jid = (chat?.id || chat?.remoteJid || "") as string;
-            if (!jid || jid.endsWith("@broadcast") || jid.endsWith("@newsletter")) continue;
-            const phone = jid.replace(/@s\.whatsapp\.net$/, "").replace(/@c\.us$/, "").replace(/:.*$/, "");
+            if (!jid) continue;
+            const isGroup = jid.endsWith("@g.us");
+            const phone   = isGroup
+              ? jid
+              : jid.replace(/@s\.whatsapp\.net$/, "").replace(/@c\.us$/, "").replace(/:.*$/, "");
             if (!phone) continue;
 
-            // 1ª tentativa: match direto por contato_telefone
             const { count: c1 } = await supabase.from("conversas")
               .update({ nao_lidas: 0 })
               .eq("empresa_id", _eid)
@@ -169,7 +168,7 @@ Deno.serve(async (req) => {
               .gt("nao_lidas", 0)
               .select("id", { count: "exact", head: true });
 
-            // 2ª tentativa: contato_lid (conversa migrada de @lid → telefone real)
+            // Fallback contato_lid (conversas migradas @lid → telefone real)
             if ((!c1 || c1 === 0) && jid.endsWith("@lid")) {
               await supabase.from("conversas")
                 .update({ nao_lidas: 0 })
@@ -178,8 +177,8 @@ Deno.serve(async (req) => {
                 .gt("nao_lidas", 0);
             }
 
-            // 3ª tentativa: variações de prefixo (com/sem 55, com/sem 9º dígito)
-            if ((!c1 || c1 === 0) && !jid.endsWith("@lid")) {
+            // Variações de prefixo para contatos individuais (com/sem 55, com/sem 9º dígito)
+            if (!isGroup && (!c1 || c1 === 0) && !jid.endsWith("@lid")) {
               const variants: string[] = [];
               if (/^55\d{10,11}$/.test(phone)) variants.push(phone.slice(2));
               else if (/^\d{10,11}$/.test(phone)) variants.push("55" + phone);
@@ -196,62 +195,6 @@ Deno.serve(async (req) => {
               }
             }
           } catch (_) {}
-        }
-
-        // ── Grupos: consulta Evolution API para verificar unread real ─────────
-        // Evolution API v2 não inclui unreadCount=0 de forma consistente para grupos,
-        // então chamamos findChats para obter o valor real. Busca o grupo específico
-        // no array de resposta em vez de assumir que found[0] é o correto.
-        if (groupJids.length > 0) {
-          const evoBase  = GLOBAL_URL.replace(/\/$/, "");
-          const evoToken = _tok || GLOBAL_KEY;
-          // Se _nm estiver vazio, busca o instance_id da empresa no banco
-          let evoInst = _nm;
-          if (!evoInst && _eid) {
-            try {
-              const { data: empInst } = await supabase.from("empresas")
-                .select("evolution_instance_id").eq("id", _eid).maybeSingle();
-              if (empInst?.evolution_instance_id) evoInst = empInst.evolution_instance_id;
-            } catch (_) {}
-          }
-
-          for (const gJid of groupJids) {
-            try {
-              const r = await fetch(`${evoBase}/chat/findChats/${evoInst}`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json", "apikey": evoToken },
-                body: JSON.stringify({ where: { id: gJid } }),
-                signal: AbortSignal.timeout(5000),
-              });
-              const foundRaw = r.ok ? await r.json() : null;
-              console.log(`[group-read] gJid:${gJid} evoInst:${evoInst} ok:${r.ok} found:${JSON.stringify(foundRaw).slice(0, 300)}`);
-              if (!r.ok || !foundRaw) continue;
-              const found = foundRaw;
-              // Busca o grupo específico no array (API pode retornar todos os chats)
-              const chatData = Array.isArray(found)
-                ? (found.find((c: unknown) => {
-                    const cf = c as Record<string, unknown>;
-                    return String(cf?.id || cf?.remoteJid || "") === gJid;
-                  }) ?? found[0])
-                : found;
-              if (!chatData) continue;
-              const realUnread = chatData?.unreadCount ?? chatData?.unread ?? chatData?.UnreadCount ?? chatData?.unreadMessages;
-              // Zera badge se: unread ≤ 0, OU se o campo não existe (API não filtrou: aplica otimisticamente)
-              const shouldClear = realUnread === undefined || realUnread === null || Number(realUnread) <= 0;
-              console.log(`[group-read] chatData keys:${Object.keys(chatData||{}).join(",")} realUnread:${realUnread} shouldClear:${shouldClear}`);
-              if (shouldClear) {
-                const { count: upd } = await supabase.from("conversas")
-                  .update({ nao_lidas: 0 })
-                  .eq("empresa_id", _eid)
-                  .eq("contato_telefone", gJid)
-                  .gt("nao_lidas", 0)
-                  .select("id", { count: "exact", head: true });
-                console.log(`[group-read] DB update rows:${upd} gJid:${gJid} eid:${_eid}`);
-              }
-            } catch (ex) {
-              console.log(`[group-read] erro:`, (ex as Error).message);
-            }
-          }
         }
       }
       return new Response("OK");
