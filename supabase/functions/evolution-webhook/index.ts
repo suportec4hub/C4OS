@@ -189,9 +189,8 @@ Deno.serve(async (req) => {
         const ucPresent = uc !== undefined && uc !== null;
         if (ucPresent && Number(uc) > 0) return false;          // positivo → nova msg → ignora
         const isGroup = jid.endsWith("@g.us");
-        const isLid   = jid.endsWith("@lid");
-        // @lid: sem unreadCount = evento de leitura (igual a grupos, tratar otimisticamente)
-        if (!isGroup && !isLid && !ucPresent) return false;     // individual sem campo → ignora
+        // Individuais (inclui @lid): só processa quando unreadCount está presente no evento
+        if (!isGroup && !ucPresent) return false;
         return true;
       });
 
@@ -442,39 +441,23 @@ Deno.serve(async (req) => {
               }
             } else {
               // Nós lemos a mensagem do contato no celular → zera badge no sistema
+              // Nota: messages.update com fromMe=false pode disparar automaticamente
+              // na entrega (ack de servidor). Só processa quando statusStr é explicitamente READ/PLAYED.
+              if (statusStr !== "READ" && statusStr !== "PLAYED") continue;
+
               const isGroup = remoteJid.endsWith("@g.us");
               let matched = false;
 
-              // Tentativa 1: match por wamid na tabela mensagens (independe de JID/@lid/telefone)
-              // É a forma mais confiável: o ID da mensagem é universal para todos os tipos de contato.
-              if (wamid) {
-                const { data: msgRow } = await supabase.from("mensagens")
-                  .select("conversa_id")
-                  .eq("empresa_id", _eid)
-                  .eq("wamid", wamid)
-                  .maybeSingle();
-                if (msgRow?.conversa_id) {
-                  const { data: wUpd } = await supabase.from("conversas")
-                    .update({ nao_lidas: 0 })
-                    .eq("id", msgRow.conversa_id)
-                    .gt("nao_lidas", 0)
-                    .select("id");
-                  matched = (wUpd?.length ?? 0) > 0;
-                }
-              }
+              // Tentativa 1: match por contato_telefone (contato com número real)
+              const { data: ackUpd } = await supabase.from("conversas")
+                .update({ nao_lidas: 0 })
+                .eq("empresa_id", _eid)
+                .eq("contato_telefone", phone)
+                .gt("nao_lidas", 0)
+                .select("id");
+              matched = (ackUpd?.length ?? 0) > 0;
 
-              // Tentativa 2: match por contato_telefone (contato com número real)
-              if (!matched) {
-                const { data: ackUpd } = await supabase.from("conversas")
-                  .update({ nao_lidas: 0 })
-                  .eq("empresa_id", _eid)
-                  .eq("contato_telefone", phone)
-                  .gt("nao_lidas", 0)
-                  .select("id");
-                matched = (ackUpd?.length ?? 0) > 0;
-              }
-
-              // Tentativa 3: match por contato_lid (para @lid onde temos o mapeamento)
+              // Tentativa 2: match por contato_lid (para @lid onde temos o mapeamento)
               if (!matched && remoteJid.endsWith("@lid")) {
                 const { data: lidUpd } = await supabase.from("conversas")
                   .update({ nao_lidas: 0 })
@@ -485,15 +468,15 @@ Deno.serve(async (req) => {
                 matched = (lidUpd?.length ?? 0) > 0;
               }
 
-              // Tentativa 4: contato_telefone = JID @lid direto (conversas antigas criadas com @lid como telefone)
+              // Tentativa 3: contato_telefone = JID @lid direto (conversas antigas com @lid como telefone)
               if (!matched && remoteJid.endsWith("@lid")) {
-                const { data: t4Upd } = await supabase.from("conversas")
+                const { data: t3Upd } = await supabase.from("conversas")
                   .update({ nao_lidas: 0 })
                   .eq("empresa_id", _eid)
                   .eq("contato_telefone", remoteJid)
                   .gt("nao_lidas", 0)
                   .select("id");
-                matched = (t4Upd?.length ?? 0) > 0;
+                matched = (t3Upd?.length ?? 0) > 0;
               }
 
               await logWA(supabase, {
