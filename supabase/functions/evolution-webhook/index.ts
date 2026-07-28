@@ -169,17 +169,18 @@ Deno.serve(async (req) => {
               : jid.replace(/@s\.whatsapp\.net$/, "").replace(/@c\.us$/, "").replace(/:.*$/, "");
             if (!phone) continue;
 
-            const { count: c1, error: upErr } = await supabase.from("conversas")
+            const { data: updated1, error: upErr } = await supabase.from("conversas")
               .update({ nao_lidas: 0 })
               .eq("empresa_id", _eid)
               .eq("contato_telefone", phone)
               .gt("nao_lidas", 0)
-              .select("id", { count: "exact", head: true });
+              .select("id");
+            const c1 = updated1?.length ?? 0;
             await logWA(supabase, {
               empresa_id: _eid, tipo: "webhook_recebido", nivel: c1 ? "info" : "warn",
               origem: "evolution-webhook", evento: "chats.update-zerou",
               resumo: c1 ? `Zerou ${c1} conversa(s) para ${phone}` : `Sem match para ${phone}`,
-              payload: { phone, jid, isGroup, count: c1 ?? 0, err: upErr?.message },
+              payload: { phone, jid, isGroup, count: c1, err: upErr?.message },
             });
 
             // Fallback contato_lid (conversas migradas @lid → telefone real)
@@ -199,13 +200,13 @@ Deno.serve(async (req) => {
               if (/^\d{11}$/.test(phone) && phone[2] === "9") variants.push(phone.slice(0, 2) + phone.slice(3));
               if (/^55\d{11}$/.test(phone) && phone[4] === "9") variants.push("55" + phone.slice(2, 4) + phone.slice(5));
               for (const v of variants) {
-                const { count: cv } = await supabase.from("conversas")
+                const { data: updV } = await supabase.from("conversas")
                   .update({ nao_lidas: 0 })
                   .eq("empresa_id", _eid)
                   .eq("contato_telefone", v)
                   .gt("nao_lidas", 0)
-                  .select("id", { count: "exact", head: true });
-                if (cv && cv > 0) break;
+                  .select("id");
+                if (updV && updV.length > 0) break;
               }
             }
           } catch (_) {}
