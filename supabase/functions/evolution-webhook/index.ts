@@ -92,10 +92,78 @@ Deno.serve(async (req) => {
     // Saída rápida para eventos de alta frequência que não precisam consultar o banco
     const SKIP_EVENTS = [
       "CHATS_UPSERT", "CHATS_SET", "CHATS_DELETE",
-      "contacts.update", "CONTACTS_UPDATE", "CONTACTS_SET",
+      "contacts.update", "CONTACTS_UPDATE",
+      // CONTACTS_SET removido propositalmente → precisamos dele para mapear @lid ↔ telefone
       "labels.edit", "LABELS_EDIT", "labels.association", "LABELS_ASSOCIATION",
     ];
     if (SKIP_EVENTS.includes(event)) return new Response("OK");
+
+    // ── CONTACTS_SET / contacts.upsert: mapeia @lid → telefone em contato_lid ──
+    if (["contacts.set", "CONTACTS_SET", "contacts.upsert", "CONTACTS_UPSERT"].includes(event)) {
+      const rawContacts = Array.isArray(data) ? data : (data?.contacts || []);
+      const lidContacts = rawContacts.filter((c: Record<string, unknown>) =>
+        c?.lid && String(c.lid).endsWith("@lid")
+      );
+      if (lidContacts.length === 0) return new Response("OK");
+
+      // Resolve empresa_id (4 passos padrão)
+      const _tok = tokenFromUrl || body.apikey || body.instance?.apikey || body.instance?.token || "";
+      const _nm  = body.instance?.instanceName || body.instance?.name || body.instanceName || "";
+      let _eid: string | null = null;
+      if (_tok) {
+        const { data: i1 } = await supabase.from("empresa_instancias").select("empresa_id").eq("evolution_instance_token", _tok).maybeSingle();
+        if (i1) _eid = i1.empresa_id;
+      }
+      if (!_eid && _nm) {
+        const { data: i2 } = await supabase.from("empresa_instancias").select("empresa_id").eq("evolution_instance_id", _nm).maybeSingle();
+        if (i2) _eid = i2.empresa_id;
+      }
+      if (!_eid && _tok) {
+        const { data: e1 } = await supabase.from("empresas").select("id").eq("evolution_instance_token", _tok).maybeSingle();
+        if (e1) _eid = e1.id;
+      }
+      if (!_eid && _nm) {
+        const { data: e2 } = await supabase.from("empresas").select("id").eq("evolution_instance_id", _nm).maybeSingle();
+        if (e2) _eid = e2.id;
+      }
+      if (!_eid) return new Response("OK");
+
+      let updated = 0;
+      for (const contact of lidContacts) {
+        try {
+          const phoneJid = String(contact.id || "");
+          const lid      = String(contact.lid);
+          if (!phoneJid) continue;
+          const phone = phoneJid.replace(/@s\.whatsapp\.net$/, "").replace(/@c\.us$/, "").replace(/:.*$/, "");
+          if (!phone || phone.includes("@")) continue;
+
+          // Tenta o telefone e variações de prefixo/9º dígito
+          const variants = [phone];
+          if (/^\d{10,11}$/.test(phone)) variants.push("55" + phone);
+          if (/^55\d{10,11}$/.test(phone)) variants.push(phone.slice(2));
+
+          for (const v of variants) {
+            const { data: upd } = await supabase.from("conversas")
+              .update({ contato_lid: lid })
+              .eq("empresa_id", _eid)
+              .eq("contato_telefone", v)
+              .is("contato_lid", null)
+              .select("id");
+            if (upd && upd.length > 0) { updated++; break; }
+          }
+        } catch (_) {}
+      }
+
+      if (updated > 0) {
+        await logWA(supabase, {
+          empresa_id: _eid, tipo: "fluxo", nivel: "info",
+          origem: "evolution-webhook", evento: "contacts-lid-mapped",
+          resumo: `Mapeou contato_lid para ${updated} conversa(s) de ${lidContacts.length} contatos`,
+          payload: { total: lidContacts.length, updated },
+        });
+      }
+      return new Response("OK");
+    }
 
     // ── CHATS_UPDATE: usuário leu conversa no celular → unreadCount cai a 0 ───
     if (["chats.update", "CHATS_UPDATE"].includes(event)) {

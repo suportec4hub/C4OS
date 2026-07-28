@@ -229,6 +229,61 @@ Deno.serve(async (req) => {
       return json({ success: true, instanceName: savedName, token: savedToken, webhookUrl: finalWebhookUrl, qrBase64: createQr });
     }
 
+    // ── syncContactLids: busca contatos da Evolution API e popula contato_lid ──
+    // Resolve o mapeamento @lid ↔ telefone para que leituras no celular limpem o badge.
+    if (action === "syncContactLids") {
+      try {
+        const r = await iFetch(`/contact/findContacts/${instName}`, {
+          method: "POST",
+          body: JSON.stringify({ where: {} }),
+        });
+        if (!r.ok) return json({ ok: false, error: `findContacts status ${r.status}` });
+
+        const contacts = await r.json();
+        if (!Array.isArray(contacts)) return json({ ok: false, error: "Resposta inesperada da API" });
+
+        const lidContacts = contacts.filter((c: Record<string, unknown>) =>
+          c?.lid && String(c.lid).endsWith("@lid")
+        );
+
+        let updated = 0;
+        for (const contact of lidContacts) {
+          try {
+            const phoneJid = String(contact.id || "");
+            const lid      = String(contact.lid);
+            if (!phoneJid) continue;
+            const phone = phoneJid.replace(/@s\.whatsapp\.net$/, "").replace(/@c\.us$/, "").replace(/:.*$/, "");
+            if (!phone || phone.includes("@")) continue;
+
+            const variants = [phone];
+            if (/^\d{10,11}$/.test(phone)) variants.push("55" + phone);
+            if (/^55\d{10,11}$/.test(phone)) variants.push(phone.slice(2));
+
+            for (const v of variants) {
+              const { data: upd } = await supabase.from("conversas")
+                .update({ contato_lid: lid })
+                .eq("empresa_id", emp.id)
+                .eq("contato_telefone", v)
+                .is("contato_lid", null)
+                .select("id");
+              if (upd && upd.length > 0) { updated++; break; }
+            }
+          } catch (_) {}
+        }
+
+        await supabase.from("logs_whatsapp").insert({
+          empresa_id: emp.id, tipo: "fluxo", nivel: "info",
+          origem: "evolution-action", evento: "syncContactLids",
+          resumo: `Mapeou contato_lid para ${updated} conversa(s) de ${lidContacts.length} contatos com @lid`,
+          payload: { total: contacts.length, withLid: lidContacts.length, updated },
+        }).catch(() => {});
+
+        return json({ ok: true, total: contacts.length, withLid: lidContacts.length, updated });
+      } catch (ex) {
+        return json({ ok: false, error: ex.message });
+      }
+    }
+
     // ── readMessages: marca mensagens como lidas no WhatsApp ao abrir no C4OS ──
     // DEVE ficar ANTES do guard de instToken para funcionar mesmo sem instância configurada.
     if (action === "readMessages") {
