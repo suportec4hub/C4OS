@@ -272,6 +272,22 @@ Deno.serve(async (req) => {
       }
       if (_eid) {
         const updates = Array.isArray(data) ? data : [data];
+        // Debug: log eventos messages.update para grupos (ajuda diagnóstico de badge)
+        const groupUpdates = updates.filter((u: Record<string,unknown>) => {
+          const jid = String((u?.key as Record<string,unknown>)?.remoteJid || u?.remoteJid || "");
+          return jid.endsWith("@g.us");
+        });
+        if (groupUpdates.length > 0) {
+          await logWA(supabase, {
+            empresa_id: _eid, tipo: "webhook_recebido", nivel: "info",
+            origem: "evolution-webhook", evento: "messages.update-group-debug",
+            resumo: `messages.update para ${groupUpdates.length} mensagem(ns) de grupo`,
+            payload: { count: groupUpdates.length, sample: groupUpdates.slice(0,3).map((u: Record<string,unknown>) => ({
+              keys: Object.keys(u||{}), remoteJid: (u?.key as Record<string,unknown>)?.remoteJid || u?.remoteJid,
+              fromMe: (u?.key as Record<string,unknown>)?.fromMe, ack: u?.ack, status: (u as Record<string,unknown>)?.update,
+            })) },
+          });
+        }
         for (const upd of updates) {
           try {
             const key_     = (upd?.key || {}) as Record<string, unknown>;
@@ -298,13 +314,22 @@ Deno.serve(async (req) => {
                   .eq("wamid", wamid);
               }
             } else {
-              // Nós lemos a mensagem do contato no celular → zera contador de não lidas no sistema
-              const { count: ackC1 } = await supabase.from("conversas")
+              // Nós lemos a mensagem do contato no celular → zera badge no sistema
+              const isGroup = remoteJid.endsWith("@g.us");
+              const { data: ackUpd, error: ackErr } = await supabase.from("conversas")
                 .update({ nao_lidas: 0 })
                 .eq("empresa_id", _eid)
                 .eq("contato_telefone", phone)
                 .gt("nao_lidas", 0)
-                .select("id", { count: "exact", head: true });
+                .select("id");
+              const ackC1 = ackUpd?.length ?? 0;
+              await logWA(supabase, {
+                empresa_id: _eid, tipo: "webhook_recebido",
+                nivel: ackC1 ? "info" : "warn",
+                origem: "evolution-webhook", evento: "messages.update-lido",
+                resumo: ackC1 ? `Zerou badge via messages.update para ${phone}` : `messages.update sem match para ${phone}`,
+                payload: { phone, isGroup, fromMe, ackNum, statusStr, wamid, count: ackC1, err: ackErr?.message },
+              });
               // Fallback por contato_lid (conversas migradas LID → telefone)
               if ((!ackC1 || ackC1 === 0) && remoteJid.endsWith("@lid")) {
                 await supabase.from("conversas")
