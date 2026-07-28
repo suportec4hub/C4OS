@@ -234,36 +234,25 @@ Deno.serve(async (req) => {
             const jid = (chat?.id || chat?.remoteJid || "") as string;
             if (!jid) continue;
             const isGroup = jid.endsWith("@g.us");
-            const phone   = isGroup
+            const isLid   = jid.endsWith("@lid");
+
+            // Extrai telefone puro: para @lid, preserva o JID completo (é indexado como telefone em conversas antigas)
+            const phone = isGroup
               ? jid
               : jid.replace(/@s\.whatsapp\.net$/, "").replace(/@c\.us$/, "").replace(/:.*$/, "");
             if (!phone) continue;
 
-            const { data: updated1, error: upErr } = await supabase.from("conversas")
+            // ── Tentativa 1: match direto por contato_telefone ─────────────────
+            const { data: upd1 } = await supabase.from("conversas")
               .update({ nao_lidas: 0 })
               .eq("empresa_id", _eid)
               .eq("contato_telefone", phone)
               .gt("nao_lidas", 0)
               .select("id");
-            const c1 = updated1?.length ?? 0;
-            await logWA(supabase, {
-              empresa_id: _eid, tipo: "webhook_recebido", nivel: c1 ? "info" : "warn",
-              origem: "evolution-webhook", evento: "chats.update-zerou",
-              resumo: c1 ? `Zerou ${c1} conversa(s) para ${phone}` : `Sem match para ${phone}`,
-              payload: { phone, jid, isGroup, count: c1, err: upErr?.message },
-            });
+            let matched = (upd1?.length ?? 0) > 0;
 
-            // Fallback contato_lid (conversas migradas @lid → telefone real)
-            if ((!c1 || c1 === 0) && jid.endsWith("@lid")) {
-              await supabase.from("conversas")
-                .update({ nao_lidas: 0 })
-                .eq("empresa_id", _eid)
-                .eq("contato_lid", jid)
-                .gt("nao_lidas", 0);
-            }
-
-            // Variações de prefixo para contatos individuais (com/sem 55, com/sem 9º dígito)
-            if (!isGroup && (!c1 || c1 === 0) && !jid.endsWith("@lid")) {
+            // ── Tentativa 2: variações de prefixo (55, sem 55, com/sem 9) ─────
+            if (!matched && !isGroup && !isLid) {
               const variants: string[] = [];
               if (/^55\d{10,11}$/.test(phone)) variants.push(phone.slice(2));
               else if (/^\d{10,11}$/.test(phone)) variants.push("55" + phone);
@@ -276,9 +265,77 @@ Deno.serve(async (req) => {
                   .eq("contato_telefone", v)
                   .gt("nao_lidas", 0)
                   .select("id");
-                if (updV && updV.length > 0) break;
+                if (updV && updV.length > 0) { matched = true; break; }
               }
             }
+
+            // ── Tentativa 3: fallback por contato_lid ─────────────────────────
+            if (!matched && isLid) {
+              const { data: upd3 } = await supabase.from("conversas")
+                .update({ nao_lidas: 0 })
+                .eq("empresa_id", _eid)
+                .eq("contato_lid", jid)
+                .gt("nao_lidas", 0)
+                .select("id");
+              matched = (upd3?.length ?? 0) > 0;
+            }
+
+            // ── Tentativa 4 (último recurso): resolver @lid → telefone via API ─
+            // Quando o JID é @lid e não achamos por contato_telefone nem contato_lid,
+            // tentamos perguntar à Evolution API qual é o telefone real deste @lid.
+            if (!matched && isLid) {
+              try {
+                const instName = _nm;
+                const instKey  = _tok || GLOBAL_KEY;
+                if (instName && instKey && GLOBAL_URL) {
+                  // Tenta múltiplos formatos de endpoint (versões diferentes da Evolution API)
+                  let contactPhone = "";
+                  for (const [method, url, bodyStr] of [
+                    ["POST", `${GLOBAL_URL}/contact/findContacts/${instName}`, JSON.stringify({ where: { id: jid } })],
+                    ["POST", `${GLOBAL_URL}/contact/findContacts/${instName}`, JSON.stringify({ where: { remoteJid: jid } })],
+                    ["GET",  `${GLOBAL_URL}/contact/fetchContacts/${instName}?jid=${encodeURIComponent(jid)}`, ""],
+                  ] as [string, string, string][]) {
+                    const opts: RequestInit = { method, headers: { "apikey": instKey, "Content-Type": "application/json" } };
+                    if (bodyStr) opts.body = bodyStr;
+                    const resp = await fetch(url, opts);
+                    if (!resp.ok) continue;
+                    const ct = await resp.json();
+                    const contacts = Array.isArray(ct) ? ct : (ct?.contacts || [ct]);
+                    for (const c of contacts) {
+                      const altJid = String(c?.remoteJid || c?.phone || c?.number || c?.jid || "");
+                      if (altJid.endsWith("@s.whatsapp.net") || altJid.endsWith("@c.us")) {
+                        contactPhone = altJid.replace(/@s\.whatsapp\.net$/, "").replace(/@c\.us$/, "").replace(/:.*$/, "");
+                        if (contactPhone && !contactPhone.includes("@")) break;
+                      }
+                    }
+                    if (contactPhone) break;
+                  }
+
+                  if (contactPhone) {
+                    // Salva o mapeamento e zera o badge pela nova informação
+                    const variants = [contactPhone];
+                    if (/^\d{10,11}$/.test(contactPhone))  variants.push("55" + contactPhone);
+                    if (/^55\d{10,11}$/.test(contactPhone)) variants.push(contactPhone.slice(2));
+                    for (const v of variants) {
+                      const { data: updApi } = await supabase.from("conversas")
+                        .update({ nao_lidas: 0, contato_lid: jid })
+                        .eq("empresa_id", _eid)
+                        .eq("contato_telefone", v)
+                        .gt("nao_lidas", 0)
+                        .select("id");
+                      if (updApi && updApi.length > 0) { matched = true; break; }
+                    }
+                  }
+                }
+              } catch (_) {}
+            }
+
+            await logWA(supabase, {
+              empresa_id: _eid, tipo: "webhook_recebido", nivel: matched ? "info" : "warn",
+              origem: "evolution-webhook", evento: "chats.update-zerou",
+              resumo: matched ? `Zerou conversa(s) para ${phone}` : `Sem match para ${phone}`,
+              payload: { phone, jid, isGroup, isLid, matched },
+            });
           } catch (_) {}
         }
       }

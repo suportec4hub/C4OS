@@ -5,12 +5,24 @@ const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const EVOLUTION_URL = (Deno.env.get("EVOLUTION_GLOBAL_URL") || "").replace(/\/$/, "");
 const EVOLUTION_KEY = Deno.env.get("EVOLUTION_GLOBAL_KEY") || "";
 
+function extractPhone(jid: string): string {
+  return jid.replace(/@s\.whatsapp\.net$/, "").replace(/@c\.us$/, "").replace(/:.*$/, "");
+}
+
+function phoneVariants(phone: string): string[] {
+  const s = new Set([phone]);
+  if (/^\d{10,11}$/.test(phone))  s.add("55" + phone);
+  if (/^55\d{10,11}$/.test(phone)) s.add(phone.slice(2));
+  if (/^\d{11}$/.test(phone) && phone[2] === "9")    s.add(phone.slice(0,2) + phone.slice(3));
+  if (/^55\d{11}$/.test(phone) && phone[4] === "9")  s.add("55" + phone.slice(2,4) + phone.slice(5));
+  return [...s];
+}
+
 Deno.serve(async (_req) => {
   if (!EVOLUTION_URL) return new Response("OK");
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
-  // Busca todas as conversas com badge > 0 (grupos e individuais)
   const { data: conversas } = await supabase
     .from("conversas")
     .select("id, empresa_id, contato_telefone, contato_lid, nao_lidas")
@@ -18,18 +30,16 @@ Deno.serve(async (_req) => {
 
   if (!conversas || conversas.length === 0) return new Response("OK");
 
-  // Agrupa por empresa_id para minimizar chamadas à API
   const byEmpresa: Record<string, { id: string; contato_telefone: string; contato_lid: string | null }[]> = {};
   for (const g of conversas) {
     if (!byEmpresa[g.empresa_id]) byEmpresa[g.empresa_id] = [];
-    byEmpresa[g.empresa_id].push({ id: g.id, contato_telefone: g.contato_telefone, contato_lid: g.contato_lid });
+    byEmpresa[g.empresa_id].push({ id: g.id, contato_telefone: g.contato_telefone, contato_lid: g.contato_lid ?? null });
   }
 
   let totalZerado = 0;
 
   for (const [empresaId, convs] of Object.entries(byEmpresa)) {
     try {
-      // Busca credenciais da instância Evolution para esta empresa
       let instName = "";
       let instKey = EVOLUTION_KEY;
 
@@ -57,7 +67,6 @@ Deno.serve(async (_req) => {
 
       if (!instName) continue;
 
-      // Consulta todos os chats da instância
       const r = await fetch(`${EVOLUTION_URL}/chat/findChats/${instName}`, {
         method: "GET",
         headers: { "apikey": instKey },
@@ -68,74 +77,116 @@ Deno.serve(async (_req) => {
       const allChats = await r.json();
       if (!Array.isArray(allChats)) continue;
 
-      // Mapas: jid → unreadCount
-      // chatMapGroup: @g.us → unreadCount (match por contato_telefone)
-      // chatMapLid:   @lid  → unreadCount (match por contato_lid)
-      // chatMapPhone: phone → unreadCount (match por contato_telefone sem @)
+      // Mapas de unreadCount por tipo de JID
       const chatMapGroup: Record<string, number> = {};
-      const chatMapLid: Record<string, number> = {};
+      const chatMapLid:   Record<string, number> = {};
       const chatMapPhone: Record<string, number> = {};
+      // Mapeamento @lid → telefone real extraído de campos alternativos do chat
+      const lidToPhone:   Record<string, string> = {};
 
       for (const chat of allChats) {
-        const jid = String(chat.id || chat.remoteJid || "");
+        const jid    = String(chat.id || chat.remoteJid || "");
         const unread = Number(chat.unreadCount ?? 0);
+        if (!jid) continue;
 
         if (jid.endsWith("@g.us")) {
           chatMapGroup[jid] = unread;
+
         } else if (jid.endsWith("@lid")) {
           chatMapLid[jid] = unread;
+
+          // Tenta extrair telefone real de outros campos do objeto de chat
+          // Baileys pode incluir remoteJid (phone format), phone, number, etc.
+          const altRaw = String(
+            chat.remoteJid || chat.phone || chat.number || chat.jid || ""
+          );
+          if (altRaw && altRaw !== jid) {
+            let phone = "";
+            if (altRaw.endsWith("@s.whatsapp.net") || altRaw.endsWith("@c.us")) {
+              phone = extractPhone(altRaw);
+            } else if (/^\d{8,15}$/.test(altRaw)) {
+              phone = altRaw;
+            }
+            if (phone && !phone.includes("@")) {
+              lidToPhone[jid] = phone;
+              for (const v of phoneVariants(phone)) chatMapPhone[v] = unread;
+            }
+          }
+
         } else if (jid.endsWith("@s.whatsapp.net") || jid.endsWith("@c.us")) {
-          // Extrai número puro
-          const phone = jid.replace(/@s\.whatsapp\.net$/, "").replace(/@c\.us$/, "").replace(/:.*$/, "");
+          const phone = extractPhone(jid);
           if (phone && !phone.includes("@")) {
-            chatMapPhone[phone] = unread;
-            // Também indexa variantes (com/sem 55)
-            if (/^\d{10,11}$/.test(phone)) chatMapPhone["55" + phone] = unread;
-            if (/^55\d{10,11}$/.test(phone)) chatMapPhone[phone.slice(2)] = unread;
+            for (const v of phoneVariants(phone)) chatMapPhone[v] = unread;
           }
         }
       }
 
-      // Zera badge onde Evolution API confirma unreadCount = 0
+      // Retroativamente popula contato_lid onde temos o mapeamento lid → telefone
+      // Isso corrige conversas antigas que nunca receberam o mapeamento
+      for (const [lid, phone] of Object.entries(lidToPhone)) {
+        for (const v of phoneVariants(phone)) {
+          supabase.from("conversas")
+            .update({ contato_lid: lid })
+            .eq("empresa_id", empresaId)
+            .eq("contato_telefone", v)
+            .is("contato_lid", null)
+            .then(() => {}).catch(() => {});
+        }
+      }
+
+      // Zera badges onde Evolution API confirma unreadCount = 0
       for (const conv of convs) {
         const jid = conv.contato_telefone;
         let shouldZero = false;
 
         if (jid.endsWith("@g.us")) {
           // Grupo: match direto por JID
-          if (!(jid in chatMapGroup)) continue;
-          if (chatMapGroup[jid] !== 0) continue;
+          if (!(jid in chatMapGroup) || chatMapGroup[jid] !== 0) continue;
           shouldZero = true;
-        } else if (conv.contato_lid && conv.contato_lid.endsWith("@lid")) {
-          // Contato individual com @lid mapeado
-          if (!(conv.contato_lid in chatMapLid)) {
-            // Sem match por lid, tenta por telefone
-            const phone = jid.replace(/@s\.whatsapp\.net$/, "").replace(/@c\.us$/, "").replace(/:.*$/, "");
-            if (phone && phone in chatMapPhone && chatMapPhone[phone] === 0) {
-              shouldZero = true;
-            } else {
-              continue;
-            }
-          } else if (chatMapLid[conv.contato_lid] !== 0) {
-            continue;
-          } else {
+
+        } else if (jid.endsWith("@lid")) {
+          // Conversa onde contato_telefone é o @lid diretamente
+          if (chatMapLid[jid] === 0) {
+            shouldZero = true;
+          } else if (jid in lidToPhone) {
+            // Temos o telefone real para este @lid
+            if (phoneVariants(lidToPhone[jid]).some(v => chatMapPhone[v] === 0)) shouldZero = true;
+          }
+          if (!shouldZero) continue;
+
+        } else {
+          // Contato individual com telefone real
+          const phone = extractPhone(jid);
+          if (!phone || phone.includes("@")) continue;
+
+          const variants = phoneVariants(phone);
+
+          // 1. Match por telefone direto
+          if (variants.some(v => chatMapPhone[v] === 0)) {
             shouldZero = true;
           }
-        } else if (jid.endsWith("@lid")) {
-          // Conversa cujo contato_telefone já é um @lid (criada antes do mapeamento)
-          if (!(jid in chatMapLid)) continue;
-          if (chatMapLid[jid] !== 0) continue;
-          shouldZero = true;
-        } else {
-          // Contato individual sem @lid: match por telefone
-          const phone = jid.replace(/@s\.whatsapp\.net$/, "").replace(/@c\.us$/, "").replace(/:.*$/, "");
-          if (!phone || phone.includes("@")) continue;
-          if (!(phone in chatMapPhone)) continue;
-          if (chatMapPhone[phone] !== 0) continue;
-          shouldZero = true;
-        }
+          // 2. Match por contato_lid já populado
+          if (!shouldZero && conv.contato_lid && conv.contato_lid in chatMapLid) {
+            if (chatMapLid[conv.contato_lid] === 0) shouldZero = true;
+          }
+          // 3. Contato_lid é null mas @lid foi cruzado com este telefone via lidToPhone
+          if (!shouldZero && conv.contato_lid === null) {
+            for (const [lid, lphone] of Object.entries(lidToPhone)) {
+              if (phoneVariants(lphone).some(v => variants.includes(v)) && chatMapLid[lid] === 0) {
+                shouldZero = true;
+                // Aproveita e popula contato_lid agora que sabemos o mapeamento
+                supabase.from("conversas")
+                  .update({ contato_lid: lid })
+                  .eq("id", conv.id)
+                  .is("contato_lid", null)
+                  .then(() => {}).catch(() => {});
+                break;
+              }
+            }
+          }
 
-        if (!shouldZero) continue;
+          if (!shouldZero) continue;
+        }
 
         const { data: upd } = await supabase
           .from("conversas")
@@ -163,4 +214,3 @@ Deno.serve(async (_req) => {
 
   return new Response(`OK zerou:${totalZerado}`);
 });
-
