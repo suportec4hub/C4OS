@@ -10,20 +10,19 @@ Deno.serve(async (_req) => {
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
-  // Busca todos os grupos com badge > 0 em qualquer empresa
-  const { data: grupos } = await supabase
+  // Busca todas as conversas com badge > 0 (grupos e individuais)
+  const { data: conversas } = await supabase
     .from("conversas")
-    .select("id, empresa_id, contato_telefone, nao_lidas")
-    .gt("nao_lidas", 0)
-    .like("contato_telefone", "%@g.us");
+    .select("id, empresa_id, contato_telefone, contato_lid, nao_lidas")
+    .gt("nao_lidas", 0);
 
-  if (!grupos || grupos.length === 0) return new Response("OK");
+  if (!conversas || conversas.length === 0) return new Response("OK");
 
   // Agrupa por empresa_id para minimizar chamadas à API
-  const byEmpresa: Record<string, { id: string; contato_telefone: string }[]> = {};
-  for (const g of grupos) {
+  const byEmpresa: Record<string, { id: string; contato_telefone: string; contato_lid: string | null }[]> = {};
+  for (const g of conversas) {
     if (!byEmpresa[g.empresa_id]) byEmpresa[g.empresa_id] = [];
-    byEmpresa[g.empresa_id].push({ id: g.id, contato_telefone: g.contato_telefone });
+    byEmpresa[g.empresa_id].push({ id: g.id, contato_telefone: g.contato_telefone, contato_lid: g.contato_lid });
   }
 
   let totalZerado = 0;
@@ -58,7 +57,7 @@ Deno.serve(async (_req) => {
 
       if (!instName) continue;
 
-      // Consulta todos os chats da instância e filtra grupos lidos
+      // Consulta todos os chats da instância
       const r = await fetch(`${EVOLUTION_URL}/chat/findChats/${instName}`, {
         method: "GET",
         headers: { "apikey": instKey },
@@ -69,20 +68,69 @@ Deno.serve(async (_req) => {
       const allChats = await r.json();
       if (!Array.isArray(allChats)) continue;
 
-      // Mapa jid → unreadCount conforme Evolution API retorna
-      const chatMap: Record<string, number> = {};
+      // Mapas: jid → unreadCount
+      // chatMapGroup: @g.us → unreadCount (match por contato_telefone)
+      // chatMapLid:   @lid  → unreadCount (match por contato_lid)
+      // chatMapPhone: phone → unreadCount (match por contato_telefone sem @)
+      const chatMapGroup: Record<string, number> = {};
+      const chatMapLid: Record<string, number> = {};
+      const chatMapPhone: Record<string, number> = {};
+
       for (const chat of allChats) {
         const jid = String(chat.id || chat.remoteJid || "");
+        const unread = Number(chat.unreadCount ?? 0);
+
         if (jid.endsWith("@g.us")) {
-          chatMap[jid] = Number(chat.unreadCount ?? 0);
+          chatMapGroup[jid] = unread;
+        } else if (jid.endsWith("@lid")) {
+          chatMapLid[jid] = unread;
+        } else if (jid.endsWith("@s.whatsapp.net") || jid.endsWith("@c.us")) {
+          // Extrai número puro
+          const phone = jid.replace(/@s\.whatsapp\.net$/, "").replace(/@c\.us$/, "").replace(/:.*$/, "");
+          if (phone && !phone.includes("@")) {
+            chatMapPhone[phone] = unread;
+            // Também indexa variantes (com/sem 55)
+            if (/^\d{10,11}$/.test(phone)) chatMapPhone["55" + phone] = unread;
+            if (/^55\d{10,11}$/.test(phone)) chatMapPhone[phone.slice(2)] = unread;
+          }
         }
       }
 
       // Zera badge onde Evolution API confirma unreadCount = 0
       for (const conv of convs) {
         const jid = conv.contato_telefone;
-        if (!(jid in chatMap)) continue;        // grupo não encontrado → não toca
-        if (chatMap[jid] !== 0) continue;       // ainda tem não lidas → não toca
+        let shouldZero = false;
+
+        if (jid.endsWith("@g.us")) {
+          // Grupo: match direto por JID
+          if (!(jid in chatMapGroup)) continue;
+          if (chatMapGroup[jid] !== 0) continue;
+          shouldZero = true;
+        } else if (conv.contato_lid && conv.contato_lid.endsWith("@lid")) {
+          // Contato individual com @lid mapeado
+          if (!(conv.contato_lid in chatMapLid)) {
+            // Sem match por lid, tenta por telefone
+            const phone = jid.replace(/@s\.whatsapp\.net$/, "").replace(/@c\.us$/, "").replace(/:.*$/, "");
+            if (phone && phone in chatMapPhone && chatMapPhone[phone] === 0) {
+              shouldZero = true;
+            } else {
+              continue;
+            }
+          } else if (chatMapLid[conv.contato_lid] !== 0) {
+            continue;
+          } else {
+            shouldZero = true;
+          }
+        } else {
+          // Contato individual sem @lid: match por telefone
+          const phone = jid.replace(/@s\.whatsapp\.net$/, "").replace(/@c\.us$/, "").replace(/:.*$/, "");
+          if (!phone || phone.includes("@")) continue;
+          if (!(phone in chatMapPhone)) continue;
+          if (chatMapPhone[phone] !== 0) continue;
+          shouldZero = true;
+        }
+
+        if (!shouldZero) continue;
 
         const { data: upd } = await supabase
           .from("conversas")
@@ -101,7 +149,7 @@ Deno.serve(async (_req) => {
             origem: "sync-badges",
             evento: "badge-zerado-cron",
             resumo: `Badge zerado via sync periódico para ${jid}`,
-            payload: { jid, instName },
+            payload: { jid, instName, contato_lid: conv.contato_lid },
           }).catch(() => {});
         }
       }
