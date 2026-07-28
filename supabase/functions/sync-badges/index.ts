@@ -163,3 +163,4 @@ Deno.serve(async (_req) => {
 
   return new Response(`OK zerou:${totalZerado}`);
 });
+
