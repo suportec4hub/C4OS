@@ -229,6 +229,98 @@ Deno.serve(async (req) => {
       return json({ success: true, instanceName: savedName, token: savedToken, webhookUrl: finalWebhookUrl, qrBase64: createQr });
     }
 
+    // ── readMessages: marca mensagens como lidas no WhatsApp ao abrir no C4OS ──
+    // DEVE ficar ANTES do guard de instToken para funcionar mesmo sem instância configurada.
+    if (action === "readMessages") {
+      const { conversa_id } = body;
+      if (!conversa_id) return json({ ok: true });
+
+      const { data: msgs } = await supabase.from("mensagens")
+        .select("wamid")
+        .eq("conversa_id", conversa_id)
+        .eq("de", "contato")
+        .not("wamid", "is", null)
+        .order("hora", { ascending: false })
+        .limit(20);
+
+      if (!msgs || msgs.length === 0) return json({ ok: true });
+
+      const { data: conv } = await supabase.from("conversas")
+        .select("contato_telefone")
+        .eq("id", conversa_id)
+        .single();
+      if (!conv) return json({ ok: true });
+
+      const phone = conv.contato_telefone as string;
+      const remoteJid = phone.endsWith("@g.us")
+        ? phone
+        : phone.includes("@") ? phone : `${phone}@s.whatsapp.net`;
+
+      const readMsgs = msgs
+        .filter((m: Record<string, string>) => m.wamid)
+        .map((m: Record<string, string>) => ({
+          key: { remoteJid, fromMe: false, id: m.wamid },
+        }));
+
+      if (readMsgs.length === 0) return json({ ok: true });
+
+      const logPayload: Record<string, unknown> = {
+        instName, remoteJid, msgCount: readMsgs.length,
+        wamids: readMsgs.slice(0, 3).map((m: Record<string, unknown>) => (m.key as Record<string,unknown>)?.id),
+        hasInstToken: !!instToken,
+      };
+
+      // Tenta endpoint v2 Baileys: POST /chat/readMessage/{instance}
+      try {
+        const r = await iFetch(`/chat/readMessage/${instName}`, {
+          method: "POST",
+          body: JSON.stringify({ readMessages: readMsgs }),
+        });
+        const txt = await r.text().catch(() => "");
+        logPayload.status1 = r.status;
+        logPayload.body1 = txt.slice(0, 300);
+        if (r.ok) {
+          await supabase.from("logs_whatsapp").insert({
+            empresa_id: emp.id, conversa_id, tipo: "fluxo", nivel: "info",
+            origem: "evolution-action", evento: "readMessages-ok",
+            resumo: `readMessage ok ${r.status} msgs:${readMsgs.length}`,
+            payload: logPayload,
+          }).catch(() => {});
+          return json({ ok: true });
+        }
+      } catch (ex) {
+        logPayload.err1 = (ex as Error).message;
+      }
+
+      // Fallback: POST /message/readMessage/{instance}
+      try {
+        const r2 = await iFetch(`/message/readMessage/${instName}`, {
+          method: "POST",
+          body: JSON.stringify({ readMessages: readMsgs }),
+        });
+        const txt2 = await r2.text().catch(() => "");
+        logPayload.status2 = r2.status;
+        logPayload.body2 = txt2.slice(0, 300);
+        await supabase.from("logs_whatsapp").insert({
+          empresa_id: emp.id, conversa_id, tipo: "fluxo", nivel: r2.ok ? "info" : "error",
+          origem: "evolution-action", evento: r2.ok ? "readMessages-fallback-ok" : "readMessages-failed",
+          resumo: `readMessage fallback ${r2.status} msgs:${readMsgs.length}`,
+          payload: logPayload,
+        }).catch(() => {});
+        return json({ ok: r2.ok });
+      } catch (ex2) {
+        logPayload.err2 = (ex2 as Error).message;
+      }
+
+      await supabase.from("logs_whatsapp").insert({
+        empresa_id: emp.id, conversa_id, tipo: "erro_api", nivel: "error",
+        origem: "evolution-action", evento: "readMessages-exception",
+        resumo: `readMessage exception`,
+        payload: logPayload,
+      }).catch(() => {});
+      return json({ ok: true });
+    }
+
     // Guard: bloqueia ações que precisam de instância (exceto connect que auto-cria)
     if (!instToken && action !== "connect") {
       return json({ error: "Instância não criada. Clique em 'Conectar WhatsApp' primeiro." }, 400);
@@ -1932,101 +2024,6 @@ Deno.serve(async (req) => {
         elapsed_ms:   Date.now() - startMs,
         errors:       errors.slice(0, 10),
       });
-    }
-
-    // ── readMessages: marca mensagens como lidas no WhatsApp ao abrir no C4OS ──
-    // Chamada fire-and-forget do frontend quando o usuário abre uma conversa.
-    if (action === "readMessages") {
-      const { conversa_id } = body;
-      if (!conversa_id || !instName) {
-        return json({ ok: true });
-      }
-
-      // Pega wamids das últimas mensagens recebidas do contato
-      const { data: msgs } = await supabase.from("mensagens")
-        .select("wamid")
-        .eq("conversa_id", conversa_id)
-        .eq("de", "contato")
-        .not("wamid", "is", null)
-        .order("hora", { ascending: false })
-        .limit(20);
-
-      if (!msgs || msgs.length === 0) return json({ ok: true });
-
-      // Pega o JID da conversa para montar a key correta
-      const { data: conv } = await supabase.from("conversas")
-        .select("contato_telefone")
-        .eq("id", conversa_id)
-        .single();
-      if (!conv) return json({ ok: true });
-
-      const phone = conv.contato_telefone as string;
-      const remoteJid = phone.endsWith("@g.us")
-        ? phone
-        : phone.includes("@") ? phone : `${phone}@s.whatsapp.net`;
-
-      const readMsgs = msgs
-        .filter((m: Record<string, string>) => m.wamid)
-        .map((m: Record<string, string>) => ({
-          key: { remoteJid, fromMe: false, id: m.wamid },
-        }));
-
-      if (readMsgs.length === 0) return json({ ok: true });
-
-      const logPayload: Record<string, unknown> = {
-        instName, remoteJid, msgCount: readMsgs.length,
-        wamids: readMsgs.slice(0, 3).map((m: Record<string, unknown>) => (m.key as Record<string,unknown>)?.id),
-      };
-
-      // Tenta endpoint v2 Baileys: /chat/readMessage
-      try {
-        const r = await iFetch(`/chat/readMessage/${instName}`, {
-          method: "POST",
-          body: JSON.stringify({ readMessages: readMsgs }),
-        });
-        const txt = await r.text().catch(() => "");
-        logPayload.status1 = r.status;
-        logPayload.body1 = txt.slice(0, 300);
-        if (r.ok) {
-          await supabase.from("logs_whatsapp").insert({
-            empresa_id: emp.id, conversa_id, tipo: "fluxo", nivel: "info",
-            origem: "evolution-action", evento: "readMessages-ok",
-            resumo: `readMessage ok ${r.status} msgs:${readMsgs.length}`,
-            payload: logPayload,
-          }).catch(() => {});
-          return json({ ok: true });
-        }
-      } catch (ex) {
-        logPayload.err1 = (ex as Error).message;
-      }
-
-      // Fallback: /message/readMessage
-      try {
-        const r2 = await iFetch(`/message/readMessage/${instName}`, {
-          method: "POST",
-          body: JSON.stringify({ readMessages: readMsgs }),
-        });
-        const txt2 = await r2.text().catch(() => "");
-        logPayload.status2 = r2.status;
-        logPayload.body2 = txt2.slice(0, 300);
-        await supabase.from("logs_whatsapp").insert({
-          empresa_id: emp.id, conversa_id, tipo: "fluxo", nivel: r2.ok ? "info" : "error",
-          origem: "evolution-action", evento: r2.ok ? "readMessages-fallback-ok" : "readMessages-failed",
-          resumo: `readMessage fallback ${r2.status} msgs:${readMsgs.length}`,
-          payload: logPayload,
-        }).catch(() => {});
-        return json({ ok: r2.ok });
-      } catch (ex2) {
-        logPayload.err2 = (ex2 as Error).message;
-      }
-
-      await supabase.from("logs_whatsapp").insert({
-        empresa_id: emp.id, conversa_id, tipo: "erro_api", nivel: "error",
-        origem: "evolution-action", evento: "readMessages-exception",
-        resumo: `readMessage exception`,
-        payload: logPayload,
-      }).catch(() => {});
-      return json({ ok: true });
     }
 
     return json({ error: `Ação desconhecida: ${action}` }, 400);

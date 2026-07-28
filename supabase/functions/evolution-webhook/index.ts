@@ -101,6 +101,14 @@ Deno.serve(async (req) => {
     if (["chats.update", "CHATS_UPDATE"].includes(event)) {
       const chats = Array.isArray(data) ? data : [data];
 
+      // Log de debug para confirmar que o evento está chegando (remover depois de verificado)
+      await logWA(supabase, {
+        tipo: "webhook_recebido", nivel: "info", origem: "evolution-webhook",
+        evento: "chats.update-debug",
+        resumo: `chats.update: ${chats.length} items`,
+        payload: { count: chats.length, sample: chats.slice(0,2).map((c: Record<string,unknown>) => ({ keys: Object.keys(c||{}), id: c?.id || c?.remoteJid, uc: c?.unreadCount ?? c?.UnreadCount })) },
+      });
+
       // Filtra chats que devem ter o badge zerado:
       // - Descarta se unreadCount for explicitamente > 0 (nova mensagem ainda não lida)
       // - Grupos: zera otimisticamente quando uc ≤ 0 OU quando o campo está ausente
@@ -161,12 +169,18 @@ Deno.serve(async (req) => {
               : jid.replace(/@s\.whatsapp\.net$/, "").replace(/@c\.us$/, "").replace(/:.*$/, "");
             if (!phone) continue;
 
-            const { count: c1 } = await supabase.from("conversas")
+            const { count: c1, error: upErr } = await supabase.from("conversas")
               .update({ nao_lidas: 0 })
               .eq("empresa_id", _eid)
               .eq("contato_telefone", phone)
               .gt("nao_lidas", 0)
               .select("id", { count: "exact", head: true });
+            await logWA(supabase, {
+              empresa_id: _eid, tipo: "webhook_recebido", nivel: c1 ? "info" : "warn",
+              origem: "evolution-webhook", evento: "chats.update-zerou",
+              resumo: c1 ? `Zerou ${c1} conversa(s) para ${phone}` : `Sem match para ${phone}`,
+              payload: { phone, jid, isGroup, count: c1 ?? 0, err: upErr?.message },
+            });
 
             // Fallback contato_lid (conversas migradas @lid → telefone real)
             if ((!c1 || c1 === 0) && jid.endsWith("@lid")) {

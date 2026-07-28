@@ -1671,21 +1671,36 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
     if (sidebarTab === "contatos") loadWppContatos();
   }, [sidebarTab, loadWppContatos]);
 
-  // ── forçar sincronização ──────────────────────────────────────────────────
+  // ── forçar sincronização completa (histórico + grupos) ───────────────────
   const forceSincronizar = async () => {
     if (syncing) return;
     setSyncing(true);
-    setSyncMsg("");
+    setSyncMsg("Sincronizando grupos...");
     try {
+      // 1. Sincroniza grupos
       await supabase.functions.invoke("evolution-action", {
         body: { action: "fetchGroups", empresa_id: user.empresa_id },
       });
-      await supabase.functions.invoke("evolution-action", {
-        body: { action: "importHistory", empresa_id: user.empresa_id, page: 1 },
-      });
+
+      // 2. Sync histórico completo com paginação automática
+      setSyncMsg("Importando histórico...");
+      let page = 1;
+      let total = 0;
+      for (let i = 0; i < 20; i++) {  // máx 20 chamadas = 20.000 msgs
+        const { data } = await supabase.functions.invoke("evolution-action", {
+          body: { action: "forceSyncHistory", empresa_id: user.empresa_id, page },
+        });
+        if (!data) break;
+        total += data.synced || 0;
+        setSyncMsg(`Importando... ${total} mensagens`);
+        if (!data.next_page) break;
+        page = data.next_page;
+        await new Promise(r => setTimeout(r, 300));
+      }
+
       await loadConversas(true);
-      setSyncMsg("✓ Sincronizado");
-      setTimeout(() => setSyncMsg(""), 3000);
+      setSyncMsg(`✓ Sincronizado — ${total} mensagens importadas`);
+      setTimeout(() => setSyncMsg(""), 5000);
     } catch (e) {
       setSyncMsg("Erro: " + (e?.message || "falha na sincronização"));
       setTimeout(() => setSyncMsg(""), 4000);
