@@ -1012,10 +1012,14 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
   // ── load messages ─────────────────────────────────────────────────────────
   const loadMensagens = useCallback(async (convId) => {
     if (!convId) return;
+    // Busca as 200 mensagens mais recentes (desc) e inverte para exibição cronológica.
+    // Sem limit explícito o Supabase retorna apenas 1000 rows (as mais antigas),
+    // fazendo conversas com muitas mensagens mostrarem conteúdo desatualizado.
     const { data } = await supabase.from("mensagens").select("*")
       .eq("conversa_id", convId)
-      .order("hora", { ascending: true, nullsFirst: false });
-    const msgs = (data || []).sort((a, b) =>
+      .order("hora", { ascending: false, nullsFirst: false })
+      .limit(200);
+    const msgs = (data || []).reverse().sort((a, b) =>
       new Date(msgHora(a) || 0) - new Date(msgHora(b) || 0)
     );
     setMensagens(msgs);
