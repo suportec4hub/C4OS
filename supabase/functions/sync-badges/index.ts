@@ -85,10 +85,12 @@ Deno.serve(async (_req) => {
       }
 
       empresaDiag.findChatsStatus = r.status;
-      if (!r.ok) { diagReport.push(empresaDiag); continue; }
-
-      const allChats = await r.json();
-      if (!Array.isArray(allChats)) { empresaDiag.findChatsNotArray = true; diagReport.push(empresaDiag); continue; }
+      // Se findChats falhar (instância desconectada, etc.), não abandona a empresa —
+      // continua com chatMapGroup vazio para que a regra dos 30 min limpe badges órfãos.
+      // deno-lint-ignore no-explicit-any
+      const rawChats: any = r.ok ? await r.json().catch(() => []) : [];
+      // deno-lint-ignore no-explicit-any
+      const allChats: any[] = Array.isArray(rawChats) ? rawChats : [];
       empresaDiag.findChatsTotal = allChats.length;
 
       // Mapas de unreadCount por tipo de JID
