@@ -177,24 +177,26 @@ Deno.serve(async (req) => {
         payload: { count: chats.length, sample: chats.slice(0,2).map((c: Record<string,unknown>) => ({ keys: Object.keys(c||{}), id: c?.id || c?.remoteJid, uc: c?.unreadCount ?? c?.UnreadCount })) },
       });
 
-      // Filtra chats que devem ter o badge zerado:
-      // - Descarta se unreadCount for explicitamente > 0 (nova mensagem ainda não lida)
-      // - Grupos: zera otimisticamente quando uc ≤ 0 OU quando o campo está ausente
-      //   (Evolution API v2 frequentemente omite unreadCount:0 no evento de leitura de grupo)
-      // - Individuais: zera somente quando uc é explicitamente ≤ 0
-      const chatsToProcess = chats.filter((c: Record<string, unknown>) => {
-        const jid = String(c?.id || c?.remoteJid || "");
-        if (!jid || jid.endsWith("@broadcast") || jid.endsWith("@newsletter")) return false;
-        const uc = c?.unreadCount ?? c?.UnreadCount;
-        const ucPresent = uc !== undefined && uc !== null;
-        // Só zera quando unreadCount está explicitamente 0 no evento.
-        // Quando ausente, não é possível distinguir leitura de nova mensagem
-        // → ignora aqui e deixa o sync-badges (cron) confirmar via findChats.
-        if (!ucPresent || Number(uc) !== 0) return false;
-        return true;
-      });
+      // Chats com unreadCount explicitamente 0 → zeramos imediatamente
+      const chatsConfirmed: Record<string, unknown>[] = [];
+      // Grupos com unreadCount ausente → precisamos verificar via findChats
+      const groupJidsToVerify: string[] = [];
 
-      if (chatsToProcess.length === 0) return new Response("OK");
+      for (const c of chats) {
+        const jid = String((c as Record<string, unknown>)?.id || (c as Record<string, unknown>)?.remoteJid || "");
+        if (!jid || jid.endsWith("@broadcast") || jid.endsWith("@newsletter")) continue;
+        const uc = (c as Record<string, unknown>)?.unreadCount ?? (c as Record<string, unknown>)?.UnreadCount;
+        const ucPresent = uc !== undefined && uc !== null;
+        if (ucPresent && Number(uc) === 0) {
+          chatsConfirmed.push(c as Record<string, unknown>);
+        } else if (!ucPresent && jid.endsWith("@g.us")) {
+          // Grupo sem unreadCount: não sabemos se foi leitura ou nova msg → verificar
+          groupJidsToVerify.push(jid);
+        }
+        // ucPresent && Number(uc) > 0 → nova mensagem não lida, ignora
+      }
+
+      if (chatsConfirmed.length === 0 && groupJidsToVerify.length === 0) return new Response("OK");
 
       // Resolve empresa_id (4 passos: empresa_instancias → empresas, por token e por nome)
       const _tok = tokenFromUrl || body.apikey || body.instance?.apikey || body.instance?.token || "";
@@ -228,6 +230,39 @@ Deno.serve(async (req) => {
       }
 
       if (_eid) {
+        // Verificação de grupos via findChats: resolução de unreadCount ausente no evento
+        const chatsToProcess: Record<string, unknown>[] = [...chatsConfirmed];
+        if (groupJidsToVerify.length > 0 && _nm && GLOBAL_URL) {
+          try {
+            const instKey = _tok || GLOBAL_KEY;
+            const fcResp = await fetch(`${GLOBAL_URL}/chat/findChats/${_nm}`, {
+              method: "GET",
+              headers: { "apikey": instKey },
+            });
+            if (fcResp.ok) {
+              const allChats = await fcResp.json();
+              if (Array.isArray(allChats)) {
+                const groupUnreadMap: Record<string, number> = {};
+                for (const fc of allChats) {
+                  const fcJid = String(fc?.id || fc?.remoteJid || "");
+                  if (fcJid.endsWith("@g.us")) groupUnreadMap[fcJid] = Number(fc?.unreadCount ?? 0);
+                }
+                for (const gJid of groupJidsToVerify) {
+                  if ((groupUnreadMap[gJid] ?? -1) === 0) {
+                    chatsToProcess.push({ id: gJid, unreadCount: 0 });
+                  }
+                }
+                await logWA(supabase, {
+                  empresa_id: _eid, tipo: "webhook_recebido", nivel: "info",
+                  origem: "evolution-webhook", evento: "chats.update-verify-groups",
+                  resumo: `Verificou ${groupJidsToVerify.length} grupo(s) via findChats`,
+                  payload: { groupJidsToVerify, verified: chatsToProcess.length - chatsConfirmed.length, groupUnreadMap: Object.fromEntries(groupJidsToVerify.map(j => [j, groupUnreadMap[j] ?? null])) },
+                });
+              }
+            }
+          } catch (_) {}
+        }
+
         for (const chat of chatsToProcess) {
           try {
             const jid = (chat?.id || chat?.remoteJid || "") as string;
