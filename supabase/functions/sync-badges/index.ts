@@ -70,10 +70,19 @@ Deno.serve(async (_req) => {
       empresaDiag.instName = instName || null;
       if (!instName) { diagReport.push(empresaDiag); continue; }
 
-      const r = await fetch(`${EVOLUTION_URL}/chat/findChats/${instName}`, {
-        method: "GET",
-        headers: { "apikey": instKey },
+      // Evolution API v2 uses POST with {"where":{}} for findChats
+      let r = await fetch(`${EVOLUTION_URL}/chat/findChats/${instName}`, {
+        method: "POST",
+        headers: { "apikey": instKey, "Content-Type": "application/json" },
+        body: JSON.stringify({ where: {} }),
       });
+      // Fallback to GET for older Evolution API versions
+      if (r.status === 404 || r.status === 405) {
+        r = await fetch(`${EVOLUTION_URL}/chat/findChats/${instName}`, {
+          method: "GET",
+          headers: { "apikey": instKey },
+        });
+      }
 
       empresaDiag.findChatsStatus = r.status;
       if (!r.ok) { diagReport.push(empresaDiag); continue; }
