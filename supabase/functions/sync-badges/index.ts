@@ -348,6 +348,14 @@ Deno.serve(async (_req) => {
       empresaDiag.diagGroupsCount = diagGroups.length;
       diagReport.push(empresaDiag);
 
+      // Log sempre disparado por empresa para visibilidade de processamento
+      await supabase.from("logs_whatsapp").insert({
+        empresa_id: empresaId, tipo: "fluxo", nivel: "info", origem: "sync-badges",
+        evento: "badge-empresa-summary",
+        resumo: `Empresa processada: findChats=${empresaDiag.findChatsStatus ?? "skip"}, chats=${empresaDiag.findChatsTotal ?? 0}, zerado=${updateSuccess}/${convs.length}`,
+        payload: empresaDiag,
+      }).then(() => {}).catch(() => {});
+
       // Log diagnóstico agrupado por empresa (awaited para garantir inserção)
       if (diagGroups.length > 0) {
         await supabase.from("logs_whatsapp").insert({
