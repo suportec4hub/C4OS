@@ -268,7 +268,9 @@ Deno.serve(async (req) => {
                   const m: Record<string, number> = {};
                   // Indexa todos os tipos de JID, não só grupos.
                   for (const fc of allChats) {
-                    const fcJid = String(fc?.id || fc?.remoteJid || "");
+                    // remoteJid primeiro: na Evolution v2 o campo id é um CUID do banco,
+                    // não o JID do WhatsApp.
+                    const fcJid = String(fc?.remoteJid || fc?.id || "");
                     if (fcJid) m[fcJid] = Number(fc?.unreadCount ?? 0);
                   }
                   groupUnreadMap = m;

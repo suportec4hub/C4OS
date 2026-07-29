@@ -1178,7 +1178,8 @@ Deno.serve(async (req) => {
       const bulkSyncChats = async (chats: ChatEntry[], instanciaId: string | null) => {
         const parsed: ParsedChat[] = [];
         for (const chat of chats) {
-          const jid = (chat.id || chat.remoteJid || "") as string;
+          // remoteJid primeiro: o campo id da Evolution v2 é um CUID do banco.
+          const jid = (chat.remoteJid || chat.id || "") as string;
           if (!jid || jid.endsWith("@broadcast") || jid.endsWith("@newsletter")) continue;
           const isGroup = jid.endsWith("@g.us");
           if (!isGroup && !jid.endsWith("@s.whatsapp.net")) continue;

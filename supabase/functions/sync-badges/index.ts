@@ -106,12 +106,13 @@ Deno.serve(async (_req) => {
       {
         const suf: Record<string, number> = {};
         for (const c of allChats) {
-          const j = String(c?.id || c?.remoteJid || "");
+          const j = String(c?.remoteJid || c?.id || "");
           const k = j.includes("@") ? "@" + j.split("@")[1] : (j ? "sem-arroba" : "vazio");
           suf[k] = (suf[k] || 0) + 1;
         }
         empresaDiag.sufixos = suf;
-        empresaDiag.amostra = allChats.slice(0, 2).map((c) => JSON.stringify(c).slice(0, 400));
+        empresaDiag.campos = allChats.length ? Object.keys(allChats[0] || {}) : [];
+        empresaDiag.comUnread = allChats.filter((c) => Number(c?.unreadCount ?? 0) > 0).length;
       }
 
       // Mapas de unreadCount por tipo de JID
@@ -122,7 +123,9 @@ Deno.serve(async (_req) => {
       const lidToPhone:   Record<string, string> = {};
 
       for (const chat of allChats) {
-        const jid    = String(chat.id || chat.remoteJid || "");
+        // remoteJid primeiro: na Evolution v2 o campo id é um CUID do banco,
+        // não o JID do WhatsApp.
+        const jid    = String(chat.remoteJid || chat.id || "");
         const unread = Number(chat.unreadCount ?? 0);
         if (!jid) continue;
 
@@ -132,10 +135,10 @@ Deno.serve(async (_req) => {
         } else if (jid.endsWith("@lid")) {
           chatMapLid[jid] = unread;
 
-          // Tenta extrair telefone real de outros campos do objeto de chat
-          // Baileys pode incluir remoteJid (phone format), phone, number, etc.
+          // Tenta extrair telefone real de outros campos do objeto de chat.
+          // remoteJid fica de fora: já é a origem do jid acima.
           const altRaw = String(
-            chat.remoteJid || chat.phone || chat.number || chat.jid || ""
+            chat.phone || chat.number || chat.jid || chat.pnJid || ""
           );
           if (altRaw && altRaw !== jid) {
             let phone = "";
