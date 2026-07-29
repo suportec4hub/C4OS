@@ -241,23 +241,54 @@ Deno.serve(async (req) => {
       if (_eid) {
         // Verificação de grupos via findChats: resolução de unreadCount ausente no evento
         const chatsToProcess: Record<string, unknown>[] = [...chatsConfirmed];
-        if (groupJidsToVerify.length > 0 && _nm && GLOBAL_URL) {
+
+        // O payload de chats.update nem sempre traz o nome da instância — sem
+        // ele a verificação via findChats era simplesmente pulada. Resolve pelo
+        // empresa_id nesse caso.
+        let _instName = _nm;
+        let _instKey  = _tok;
+        if (groupJidsToVerify.length > 0 && !_instName) {
+          let cred = _empCredCache.get(_eid);
+          if (!cred || (Date.now() - cred.ts) >= _CACHE_TTL) {
+            const { data: ei } = await supabase.from("empresa_instancias")
+              .select("evolution_instance_id, evolution_instance_token")
+              .eq("empresa_id", _eid).not("evolution_instance_id", "is", null).maybeSingle();
+            if (ei?.evolution_instance_id) {
+              cred = {
+                evolution_instance_id: ei.evolution_instance_id,
+                evolution_instance_token: ei.evolution_instance_token, ts: Date.now(),
+              };
+            } else {
+              const { data: e } = await supabase.from("empresas")
+                .select("evolution_instance_id, evolution_instance_token").eq("id", _eid).maybeSingle();
+              cred = {
+                evolution_instance_id: e?.evolution_instance_id ?? null,
+                evolution_instance_token: e?.evolution_instance_token ?? null, ts: Date.now(),
+              };
+            }
+            _empCredCache.set(_eid, cred);
+          }
+          _instName = cred.evolution_instance_id || "";
+          if (!_instKey) _instKey = cred.evolution_instance_token || "";
+        }
+
+        if (groupJidsToVerify.length > 0 && _instName && GLOBAL_URL) {
           try {
-            const instKey = _tok || GLOBAL_KEY;
-            const cached = _findChatsCache.get(_nm);
+            const instKey = _instKey || GLOBAL_KEY;
+            const cached = _findChatsCache.get(_instName);
             let groupUnreadMap: Record<string, number> | null =
               cached && (Date.now() - cached.ts) < _FIND_CHATS_TTL ? cached.map : null;
 
             if (!groupUnreadMap) {
               // Evolution v2 usa POST com {"where":{}}; o GET usado antes
               // respondia 404 e a verificação nunca funcionava.
-              let fcResp = await fetch(`${GLOBAL_URL}/chat/findChats/${_nm}`, {
+              let fcResp = await fetch(`${GLOBAL_URL}/chat/findChats/${_instName}`, {
                 method: "POST",
                 headers: { "apikey": instKey, "Content-Type": "application/json" },
                 body: JSON.stringify({ where: {} }),
               });
               if (fcResp.status === 404 || fcResp.status === 405) {
-                fcResp = await fetch(`${GLOBAL_URL}/chat/findChats/${_nm}`, {
+                fcResp = await fetch(`${GLOBAL_URL}/chat/findChats/${_instName}`, {
                   method: "GET",
                   headers: { "apikey": instKey },
                 });
@@ -274,7 +305,7 @@ Deno.serve(async (req) => {
                     if (fcJid) m[fcJid] = Number(fc?.unreadCount ?? 0);
                   }
                   groupUnreadMap = m;
-                  _findChatsCache.set(_nm, { map: m, ts: Date.now() });
+                  _findChatsCache.set(_instName, { map: m, ts: Date.now() });
                 }
               }
             }
@@ -289,7 +320,7 @@ Deno.serve(async (req) => {
               await logWA(supabase, {
                 empresa_id: _eid, tipo: "webhook_recebido", nivel: "info",
                 origem: "evolution-webhook", evento: "chats.update-verify-groups",
-                resumo: `Verificou ${groupJidsToVerify.length} chat(s) via findChats`,
+                resumo: `Verificou ${groupJidsToVerify.length} chat(s) via findChats na instância ${_instName}`,
                 payload: {
                   groupJidsToVerify,
                   verified: chatsToProcess.length - chatsConfirmed.length,
@@ -356,8 +387,8 @@ Deno.serve(async (req) => {
             // tentamos perguntar à Evolution API qual é o telefone real deste @lid.
             if (!matched && isLid) {
               try {
-                const instName = _nm;
-                const instKey  = _tok || GLOBAL_KEY;
+                const instName = _instName || _nm;
+                const instKey  = _instKey || _tok || GLOBAL_KEY;
                 if (instName && instKey && GLOBAL_URL) {
                   // Tenta múltiplos formatos de endpoint (versões diferentes da Evolution API)
                   let contactPhone = "";

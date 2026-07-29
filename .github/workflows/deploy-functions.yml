@@ -12,6 +12,8 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
+      # 12 jobs simultâneos esbarravam no limite de taxa do setup-cli
+      max-parallel: 4
       matrix:
         function:
           - evolution-webhook
