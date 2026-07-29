@@ -216,6 +216,7 @@ Deno.serve(async (_req) => {
             // findChats não confirmou leitura — tenta force-read se a mensagem tiver
             // mais de 3 minutos (dá tempo para a webhook processar naturalmente antes)
             let forceRead = false;
+            let rkStatus: number | null = null;
             try {
               const { data: lastMsg } = await supabase.from("mensagens")
                 .select("hora, wamid")
@@ -245,6 +246,7 @@ Deno.serve(async (_req) => {
                       body: JSON.stringify({ readMessages: readMsgs }),
                     }).catch(() => null);
                     forceRead = rkResp?.ok ?? false;
+                    rkStatus = rkResp?.status ?? null;
                     if (forceRead) shouldZero = true;
                   }
                 }
@@ -261,7 +263,7 @@ Deno.serve(async (_req) => {
               }
             } catch (_) {}
 
-            diagGroups.push({ convId: conv.id, jid, reason: !inMap ? "not_in_findChats" : `unreadCount=${ucVal}`, ucVal, forceRead });
+            diagGroups.push({ convId: conv.id, jid, reason: !inMap ? "not_in_findChats" : `unreadCount=${ucVal}`, ucVal, forceRead, rkStatus });
             if (!shouldZero) continue;
           } else {
             shouldZero = true;
