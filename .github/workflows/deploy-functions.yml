@@ -5,6 +5,7 @@ on:
     branches: [master]
     paths:
       - 'supabase/functions/**'
+      - '.github/workflows/deploy-functions.yml'
   workflow_dispatch:
 
 jobs:
@@ -31,13 +32,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: supabase/setup-cli@v1
-        with:
-          version: latest
-
+      # Instalado via npm em vez de supabase/setup-cli: a action resolve a
+      # release mais recente pela API do GitHub sem autenticação e falhava
+      # intermitentemente com "rate limit exceeded".
       - name: Deploy ${{ matrix.function }}
         run: |
-          supabase functions deploy ${{ matrix.function }} \
+          npx --yes supabase@latest functions deploy ${{ matrix.function }} \
             --project-ref zexjmlthyxtunioojlga \
             --no-verify-jwt
         env:
