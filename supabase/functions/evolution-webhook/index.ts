@@ -19,7 +19,9 @@ const _empCredCache = new Map<string, {
 const _CACHE_TTL = 90_000; // 90 segundos
 // Cache curto do findChats por instância: chats.update chega em rajadas e cada
 // consulta devolve a lista completa de chats da instância.
-const _findChatsCache = new Map<string, { map: Record<string, number>; ts: number }>();
+const _findChatsCache = new Map<string, {
+  map: Record<string, number>; alt: Record<string, string>; ts: number;
+}>();
 const _FIND_CHATS_TTL = 15_000; // 15 segundos
 
 function getAwsClient(): AwsClient | null {
@@ -276,8 +278,9 @@ Deno.serve(async (req) => {
           try {
             const instKey = _instKey || GLOBAL_KEY;
             const cached = _findChatsCache.get(_instName);
-            let groupUnreadMap: Record<string, number> | null =
-              cached && (Date.now() - cached.ts) < _FIND_CHATS_TTL ? cached.map : null;
+            const _fresh = cached && (Date.now() - cached.ts) < _FIND_CHATS_TTL;
+            let groupUnreadMap: Record<string, number> | null = _fresh ? cached!.map : null;
+            let lidAltMap: Record<string, string> = _fresh ? cached!.alt : {};
 
             if (!groupUnreadMap) {
               // Evolution v2 usa POST com {"where":{}}; o GET usado antes
@@ -297,15 +300,24 @@ Deno.serve(async (req) => {
                 const allChats = await fcResp.json();
                 if (Array.isArray(allChats)) {
                   const m: Record<string, number> = {};
+                  const a: Record<string, string> = {};
                   // Indexa todos os tipos de JID, não só grupos.
                   for (const fc of allChats) {
                     // remoteJid primeiro: na Evolution v2 o campo id é um CUID do banco,
                     // não o JID do WhatsApp.
                     const fcJid = String(fc?.remoteJid || fc?.id || "");
-                    if (fcJid) m[fcJid] = Number(fc?.unreadCount ?? 0);
+                    if (!fcJid) continue;
+                    m[fcJid] = Number(fc?.unreadCount ?? 0);
+                    // Para chats endereçados por @lid a Evolution entrega o
+                    // telefone real em lastMessage.key.remoteJidAlt.
+                    const alt = String(fc?.lastMessage?.key?.remoteJidAlt || "");
+                    if (alt.endsWith("@s.whatsapp.net") || alt.endsWith("@c.us")) {
+                      a[fcJid] = alt.replace(/@s\.whatsapp\.net$/, "").replace(/@c\.us$/, "").replace(/:.*$/, "");
+                    }
                   }
                   groupUnreadMap = m;
-                  _findChatsCache.set(_instName, { map: m, ts: Date.now() });
+                  lidAltMap = a;
+                  _findChatsCache.set(_instName, { map: m, alt: a, ts: Date.now() });
                 }
               }
             }
@@ -314,7 +326,7 @@ Deno.serve(async (req) => {
               const unreadMap = groupUnreadMap;
               for (const gJid of groupJidsToVerify) {
                 if ((unreadMap[gJid] ?? -1) === 0) {
-                  chatsToProcess.push({ id: gJid, unreadCount: 0 });
+                  chatsToProcess.push({ id: gJid, unreadCount: 0, altPhone: lidAltMap[gJid] || "" });
                 }
               }
               await logWA(supabase, {
@@ -380,6 +392,25 @@ Deno.serve(async (req) => {
                 .gt("nao_lidas", 0)
                 .select("id");
               matched = (upd3?.length ?? 0) > 0;
+            }
+
+            // ── Tentativa 3b: telefone vindo de lastMessage.key.remoteJidAlt ──
+            // A Evolution entrega o telefone real do @lid no próprio findChats,
+            // o que dispensa a consulta de contatos abaixo na maioria dos casos.
+            const _altPhone = String((chat as Record<string, unknown>)?.altPhone || "");
+            if (!matched && isLid && _altPhone) {
+              const altVariants = [_altPhone];
+              if (/^\d{10,11}$/.test(_altPhone))   altVariants.push("55" + _altPhone);
+              if (/^55\d{10,11}$/.test(_altPhone)) altVariants.push(_altPhone.slice(2));
+              for (const v of altVariants) {
+                const { data: updAlt } = await supabase.from("conversas")
+                  .update({ nao_lidas: 0, contato_lid: jid })
+                  .eq("empresa_id", _eid)
+                  .eq("contato_telefone", v)
+                  .gt("nao_lidas", 0)
+                  .select("id");
+                if (updAlt && updAlt.length > 0) { matched = true; break; }
+              }
             }
 
             // ── Tentativa 4 (último recurso): resolver @lid → telefone via API ─

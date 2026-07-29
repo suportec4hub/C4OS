@@ -138,9 +138,11 @@ Deno.serve(async (_req) => {
         } else if (jid.endsWith("@lid")) {
           chatMapLid[jid] = unread;
 
-          // Tenta extrair telefone real de outros campos do objeto de chat.
-          // remoteJid fica de fora: já é a origem do jid acima.
+          // Quando o chat é endereçado por @lid, a Evolution entrega o telefone
+          // real em lastMessage.key.remoteJidAlt — evita ter que resolver o
+          // @lid por chamadas extras à API.
           const altRaw = String(
+            chat.lastMessage?.key?.remoteJidAlt ||
             chat.phone || chat.number || chat.jid || chat.pnJid || ""
           );
           if (altRaw && altRaw !== jid) {
