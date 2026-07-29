@@ -39,7 +39,15 @@ Deno.serve(async (_req) => {
   let totalZerado = 0;
   const diagReport: Record<string, unknown>[] = [];
 
-  for (const [empresaId, convs] of Object.entries(byEmpresa)) {
+  // Deadline global para trabalho opcional (resolução de @lid). A função tem
+  // ~150s de execução; passado esse limite paramos as buscas extras para
+  // garantir que TODAS as empresas concluam o processamento principal.
+  const softDeadline = Date.now() + 45_000;
+
+  // Empresas são processadas em paralelo: cada uma faz várias chamadas HTTP à
+  // Evolution e, em série, uma única empresa grande consumia todo o tempo de
+  // execução — as demais nunca eram processadas.
+  await Promise.all(Object.entries(byEmpresa).map(async ([empresaId, convs]) => {
     const empresaDiag: Record<string, unknown> = { empresaId: empresaId.slice(0, 8), convs: convs.length };
     try {
       let instName = "";
@@ -68,7 +76,7 @@ Deno.serve(async (_req) => {
       }
 
       empresaDiag.instName = instName || null;
-      if (!instName) { diagReport.push(empresaDiag); continue; }
+      if (!instName) { diagReport.push(empresaDiag); return; }
 
       // Evolution API v2 uses POST with {"where":{}} for findChats
       let r = await fetch(`${EVOLUTION_URL}/chat/findChats/${instName}`, {
@@ -153,10 +161,18 @@ Deno.serve(async (_req) => {
       // Resolução adicional: para @lid com unreadCount=0 sem mapeamento de telefone,
       // consulta a API da Evolution para resolver @lid → telefone real.
       // Cobre o cenário de mensagens lidas no celular durante período offline.
+      // Limitado a LID_BUDGET por execução e interrompido no softDeadline: com
+      // centenas de chats, o sweep sequencial estourava o tempo da função.
+      // As resoluções são persistidas em contato_lid, então execuções
+      // sucessivas do cron cobrem o restante de forma incremental.
+      const LID_BUDGET = 20;
       const unresolvedLids = Object.entries(chatMapLid)
-        .filter(([lid, unread]) => unread === 0 && !(lid in lidToPhone));
+        .filter(([lid, unread]) => unread === 0 && !(lid in lidToPhone))
+        .slice(0, LID_BUDGET);
+      empresaDiag.lidsToResolve = unresolvedLids.length;
 
-      for (const [lid] of unresolvedLids) {
+      await Promise.all(unresolvedLids.map(async ([lid]) => {
+        if (Date.now() > softDeadline) return;
         try {
           for (const [method, url, bodyStr] of [
             ["POST", `${EVOLUTION_URL}/contact/findContacts/${instName}`, JSON.stringify({ where: { id: lid } })],
@@ -195,7 +211,7 @@ Deno.serve(async (_req) => {
             }
           }
         } catch (_) {}
-      }
+      }));
 
       empresaDiag.groupsInMap = Object.keys(chatMapGroup).length;
       empresaDiag.groupsUnreadZero = Object.values(chatMapGroup).filter(v => v === 0).length;
@@ -366,7 +382,7 @@ Deno.serve(async (_req) => {
         }).then(() => {}).catch(() => {});
       }
     } catch (e) { diagReport.push({ ...empresaDiag, caught: String(e).slice(0, 150) }); }
-  }
+  }));
 
   return new Response(JSON.stringify({ zerado: totalZerado, report: diagReport }));
 });
