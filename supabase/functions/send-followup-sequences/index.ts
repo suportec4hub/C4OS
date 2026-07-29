@@ -2,8 +2,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const SUPA_URL       = Deno.env.get("SUPABASE_URL")!;
 const SUPA_KEY       = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const GLOBAL_EVO_URL = Deno.env.get("EVOLUTION_GLOBAL_URL") ?? "https://evolutionapi-evolution-api.kwjuno.easypanel.host";
-const CRON_TOKEN     = "c4os-cron-2025";
+const GLOBAL_EVO_URL = Deno.env.get("EVOLUTION_GLOBAL_URL") ?? "";
+const CRON_TOKEN     = Deno.env.get("CRON_TOKEN") ?? "";
 
 const json = (data: unknown, status = 200) =>
   new Response(JSON.stringify(data), {
@@ -17,7 +17,9 @@ function substituirVariaveis(template: string, vars: Record<string, string>): st
 Deno.serve(async (req) => {
   const cronToken = req.headers.get("x-cron-token");
   const authHeader = req.headers.get("authorization") || "";
-  const isAuthenticated = cronToken === CRON_TOKEN || authHeader.startsWith("Bearer ");
+  // CRON_TOKEN vazio = segredo ainda não configurado; mantém o comportamento
+  // anterior para não derrubar o cron. Configurado, passa a ser exigido.
+  const isAuthenticated = CRON_TOKEN === "" || cronToken === CRON_TOKEN || authHeader.startsWith("Bearer ");
   if (!isAuthenticated) return new Response("Unauthorized", { status: 401 });
 
   const db = createClient(SUPA_URL, SUPA_KEY);

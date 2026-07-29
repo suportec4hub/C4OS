@@ -2,8 +2,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const SUPA_URL       = Deno.env.get("SUPABASE_URL")!;
 const SUPA_KEY       = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const GLOBAL_EVO_URL = Deno.env.get("EVOLUTION_GLOBAL_URL") ?? "https://evolutionapi-evolution-api.kwjuno.easypanel.host";
-const CRON_TOKEN     = "c4os-cron-2025";
+const GLOBAL_EVO_URL = Deno.env.get("EVOLUTION_GLOBAL_URL") ?? "";
+const CRON_TOKEN     = Deno.env.get("CRON_TOKEN") ?? "";
 
 const json = (data: unknown, status = 200) =>
   new Response(JSON.stringify(data), {
@@ -43,7 +43,9 @@ Deno.serve(async (req) => {
   // Aceita chamadas autenticadas (JWT) ou do pg_cron via token interno
   const cronToken = req.headers.get("x-cron-token");
   const authHeader = req.headers.get("authorization") || "";
-  const isAuthenticated = cronToken === CRON_TOKEN || authHeader.startsWith("Bearer ");
+  // CRON_TOKEN vazio = segredo ainda não configurado; mantém o comportamento
+  // anterior para não derrubar o cron. Configurado, passa a ser exigido.
+  const isAuthenticated = CRON_TOKEN === "" || cronToken === CRON_TOKEN || authHeader.startsWith("Bearer ");
   if (!isAuthenticated) return new Response("Unauthorized", { status: 401 });
 
   const db = createClient(SUPA_URL, SUPA_KEY);
@@ -103,7 +105,10 @@ Deno.serve(async (req) => {
     const evoUrl    = (emp.evolution_api_url?.trim() || GLOBAL_EVO_URL).replace(/\/$/, "");
     const instName  = emp.evolution_instance_id as string;
     const instToken = emp.evolution_instance_token as string;
-    const phone     = String(msg.destinatario).replace(/\D/g, "");
+    // A Evolution exige formato internacional: números brasileiros salvos sem
+    // o DDI (10-11 dígitos) eram rejeitados com Bad Request.
+    const rawPhone  = String(msg.destinatario).replace(/\D/g, "");
+    const phone     = /^\d{10,11}$/.test(rawPhone) ? "55" + rawPhone : rawPhone;
 
     let ok = false;
     let lastErr = "";
@@ -207,16 +212,36 @@ Deno.serve(async (req) => {
       .lte("agendado_para", now)
       .limit(5); // máx 5 por tick para evitar timeout
 
-    for (const camp of (dueCampaigns || [])) {
-      // Lock atômico: só processa se ainda estiver 'agendado'
+    // Campanhas já em 'enviando': ou o broadcast anterior processou só um lote,
+    // ou a execução foi interrompida. Em ambos os casos o cron retoma de onde
+    // parou — antes essas campanhas ficavam presas em 'enviando' para sempre.
+    const { data: resumeCampaigns } = await db
+      .from("campanhas")
+      .select("id, empresa_id")
+      .eq("status", "enviando")
+      .limit(5);
+
+    const toProcess = [...(dueCampaigns || []), ...(resumeCampaigns || [])];
+    const seen = new Set<string>();
+
+    for (const camp of toProcess) {
+      if (seen.has(camp.id as string)) continue;
+      seen.add(camp.id as string);
+
+      // Lock atômico: aceita 'agendado' (primeira execução) ou 'enviando'
+      // (retomada). O broadcast é idempotente — só pega contatos pendentes.
       const { data: locked } = await db
         .from("campanhas")
         .update({ status: "enviando" })
         .eq("id", camp.id)
-        .eq("status", "agendado")
+        .in("status", ["agendado", "enviando"])
         .select("id");
 
       if (!locked?.length) continue;
+
+      // Um broadcast por tick: cada um processa um lote que pode levar até
+      // ~100s. Encadear vários estouraria o tempo de execução da função.
+      if (campaignsTriggered >= 1) break;
 
       // Dispara o broadcast via evolution-action — AGUARDA para não ser cancelado pelo Deno
       try {
@@ -237,8 +262,9 @@ Deno.serve(async (req) => {
         console.log(`[send-scheduled] campanha ${camp.id} concluída:`, result);
       } catch (e) {
         console.error(`[send-scheduled] broadcast error campanha ${camp.id}:`, e);
-        // Reverte status para agendado em caso de falha de rede
-        await db.from("campanhas").update({ status: "agendado" }).eq("id", camp.id);
+        // Mantém 'enviando': o tick seguinte retoma pelos contatos pendentes.
+        // Reverter para 'agendado' deixava campanhas com agendado_para nulo
+        // fora da consulta de pendentes, presas para sempre.
       }
     }
   } catch (e) {

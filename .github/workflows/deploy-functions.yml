@@ -10,6 +10,22 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        function:
+          - evolution-webhook
+          - evolution-action
+          - sync-whatsapp-history
+          - sync-badges
+          - send-scheduled
+          - send-followup-sequences
+          - send-cobranca
+          - meta-sync
+          - meta-action
+          - meta-webhook
+          - chatbot-engine
+          - media-upload
     steps:
       - uses: actions/checkout@v4
 
@@ -17,33 +33,9 @@ jobs:
         with:
           version: latest
 
-      - name: Deploy evolution-webhook
+      - name: Deploy ${{ matrix.function }}
         run: |
-          supabase functions deploy evolution-webhook \
-            --project-ref zexjmlthyxtunioojlga \
-            --no-verify-jwt
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-
-      - name: Deploy evolution-action
-        run: |
-          supabase functions deploy evolution-action \
-            --project-ref zexjmlthyxtunioojlga \
-            --no-verify-jwt
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-
-      - name: Deploy sync-whatsapp-history
-        run: |
-          supabase functions deploy sync-whatsapp-history \
-            --project-ref zexjmlthyxtunioojlga \
-            --no-verify-jwt
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-
-      - name: Deploy sync-badges
-        run: |
-          supabase functions deploy sync-badges \
+          supabase functions deploy ${{ matrix.function }} \
             --project-ref zexjmlthyxtunioojlga \
             --no-verify-jwt
         env:

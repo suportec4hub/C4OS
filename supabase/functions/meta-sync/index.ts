@@ -3,7 +3,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const CRON_TOKEN   = Deno.env.get("CRON_TOKEN") ?? "c4os-cron-2025";
+const CRON_TOKEN   = Deno.env.get("CRON_TOKEN") ?? "";
 const META_API_VER = "v19.0";
 const BASE_URL     = `https://graph.facebook.com/${META_API_VER}`;
 
@@ -198,7 +198,8 @@ Deno.serve(async (req: Request) => {
   const cronHeader = req.headers.get("x-cron-token");
   const authHeader = req.headers.get("authorization");
   const isAdmin = authHeader?.includes("service_role");
-  if (cronHeader !== CRON_TOKEN && !isAdmin) {
+  // CRON_TOKEN vazio = segredo ainda não configurado (ver send-followup-sequences).
+  if (CRON_TOKEN !== "" && cronHeader !== CRON_TOKEN && !isAdmin) {
     return new Response("Unauthorized", { status: 401 });
   }
 

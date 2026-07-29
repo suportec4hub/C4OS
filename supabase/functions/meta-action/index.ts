@@ -267,7 +267,7 @@ Deno.serve(async (req: Request) => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-cron-token": "c4os-cron-2025",
+        "x-cron-token": Deno.env.get("CRON_TOKEN") ?? "",
       },
       body: "{}",
     });

@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const CRON_TOKEN = "c4os-cron-2025";
+const CRON_TOKEN = Deno.env.get("CRON_TOKEN") ?? "";
 
 const json = (data: unknown, status = 200) =>
   new Response(JSON.stringify(data), {
@@ -62,7 +62,8 @@ function calcVencimento(today: { year: number; month: number; day: number }, dia
 Deno.serve(async (req) => {
   const cronToken = req.headers.get("x-cron-token");
   const auth      = req.headers.get("authorization") ?? "";
-  if (cronToken !== CRON_TOKEN && !auth.startsWith("Bearer ")) {
+  // CRON_TOKEN vazio = segredo ainda não configurado (ver send-followup-sequences).
+  if (CRON_TOKEN !== "" && cronToken !== CRON_TOKEN && !auth.startsWith("Bearer ")) {
     return new Response("Unauthorized", { status: 401 });
   }
 

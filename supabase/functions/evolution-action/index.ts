@@ -868,14 +868,34 @@ Deno.serve(async (req) => {
         .eq("id", campanha_id).eq("empresa_id", empresa_id).single();
       if (!camp) return json({ error: "Campanha não encontrada" }, 404);
 
+      // Lote limitado por execução: com o intervalo entre mensagens, campanhas
+      // grandes estouram o tempo máximo da edge function e a campanha ficava
+      // presa em "enviando" com contatos nunca enviados. O cron do
+      // send-scheduled reprocessa a campanha até esgotar os pendentes.
+      const BATCH_LIMIT = 25;
       const { data: contatos } = await supabase.from("transmissao_contatos")
-        .select("id, nome, telefone, empresa").eq("campanha_id", campanha_id).eq("status", "pendente");
-      if (!contatos?.length) return json({ error: "Nenhum contato pendente" }, 400);
+        .select("id, nome, telefone, empresa")
+        .eq("campanha_id", campanha_id).eq("status", "pendente")
+        .limit(BATCH_LIMIT);
 
-      // Marca campanha como enviando
-      await supabase.from("campanhas").update({ status: "enviando", enviados: 0 }).eq("id", campanha_id);
+      const { count: jaEnviados } = await supabase.from("transmissao_contatos")
+        .select("id", { count: "exact", head: true })
+        .eq("campanha_id", campanha_id).eq("status", "enviado");
 
-      let enviados = 0;
+      if (!contatos?.length) {
+        // Sem pendentes a campanha acabou (ou nunca teve contatos). Fecha o
+        // status — antes retornava 400 deixando a campanha presa em "enviando".
+        await supabase.from("campanhas")
+          .update({ status: "concluido", enviados: jaEnviados ?? 0 }).eq("id", campanha_id);
+        return json({ success: true, enviados: jaEnviados ?? 0, restantes: 0 });
+      }
+
+      await supabase.from("campanhas").update({ status: "enviando" }).eq("id", campanha_id);
+
+      // Interrompe o lote antes do limite de execução para que o status final
+      // seja sempre gravado e o próximo tick continue de onde parou.
+      const bcDeadline = Date.now() + 100_000;
+      let enviados = jaEnviados ?? 0;
       const minMs = (camp.intervalo_min || 5) * 1000;
       const maxMs = (camp.intervalo_max || 15) * 1000;
       const tipoMidia = (camp.tipo_midia as string) || "texto";
@@ -885,13 +905,26 @@ Deno.serve(async (req) => {
         imagem: "image", video: "video", audio: "audio", documento: "document",
       };
 
-      const sendMsg = async (num: string, texto: string): Promise<boolean> => {
-        for (const [path, bd] of [
-          [`/message/sendText/${instName}`, JSON.stringify({ number: num, text: texto })],
-          ["/send/text", JSON.stringify({ instanceName: instName, id: instName, number: num, text: texto })],
-        ] as [string, string][]) {
-          const res = await iFetch(path, { method: "POST", body: bd }).catch(() => null);
-          if (res?.ok) return true;
+      // A Evolution exige o número em formato internacional. Contatos brasileiros
+      // salvos sem o DDI (10-11 dígitos) eram rejeitados — tentamos a variante
+      // com 55 primeiro e caímos para o número original como fallback.
+      const numCandidates = (raw: string): string[] => {
+        const d = String(raw).replace(/\D/g, "");
+        const out: string[] = [];
+        if (/^\d{10,11}$/.test(d)) out.push("55" + d);
+        if (d) out.push(d);
+        return [...new Set(out)];
+      };
+
+      const sendMsg = async (nums: string[], texto: string): Promise<boolean> => {
+        for (const num of nums) {
+          for (const [path, bd] of [
+            [`/message/sendText/${instName}`, JSON.stringify({ number: num, text: texto })],
+            ["/send/text", JSON.stringify({ instanceName: instName, id: instName, number: num, text: texto })],
+          ] as [string, string][]) {
+            const res = await iFetch(path, { method: "POST", body: bd }).catch(() => null);
+            if (res?.ok) return true;
+          }
         }
         return false;
       };
@@ -908,7 +941,17 @@ Deno.serve(async (req) => {
         return mm[ext] || (type==="image"?"image/jpeg":type==="video"?"video/mp4":type==="audio"?"audio/mpeg":"application/octet-stream");
       };
 
-      const sendMedia = async (num: string, mediatype: string, mediaUrl: string, caption: string): Promise<{ ok: boolean; err: string }> => {
+      const sendMedia = async (nums: string[], mediatype: string, mediaUrl: string, caption: string): Promise<{ ok: boolean; err: string }> => {
+        let lastErr = "Falha ao enviar mídia";
+        for (const num of nums) {
+          const r = await sendMediaTo(num, mediatype, mediaUrl, caption);
+          if (r.ok) return r;
+          lastErr = r.err || lastErr;
+        }
+        return { ok: false, err: lastErr };
+      };
+
+      const sendMediaTo = async (num: string, mediatype: string, mediaUrl: string, caption: string): Promise<{ ok: boolean; err: string }> => {
         const fileName = decodeURIComponent(mediaUrl.split("?")[0].split("/").pop() || "file");
         const mimetype = getMimetype(mediaUrl, mediatype);
 
@@ -955,22 +998,19 @@ Deno.serve(async (req) => {
           console.log("[broadcast] sendMedia v2+opts status:", r2.status, JSON.stringify(d2).slice(0, 200));
           if (r2.ok) return { ok: true, err: "" };
 
-          // Tentativa 3: mediaMessage aninhado
-          const r3 = await iFetch(`/message/sendMedia/${instName}`, {
-            method: "POST",
-            body: JSON.stringify({ number: num, mediaMessage: { mediatype, mimetype, media: mediaUrl, caption, fileName } }),
-          });
-          const d3 = await r3.json().catch(() => ({}));
-          console.log("[broadcast] sendMedia nested status:", r3.status, JSON.stringify(d3).slice(0, 200));
-          if (r3.ok) return { ok: true, err: "" };
-
-          return { ok: false, err: (JSON.stringify(d3 || d2 || d1)).slice(0, 300) };
+          // Reporta o erro da primeira tentativa: antes havia uma terceira
+          // tentativa com mediaMessage aninhado (sem mediatype no topo) que
+          // sempre falhava com "requires property mediatype" e mascarava a
+          // causa real registrada em erro_msg.
+          return { ok: false, err: (JSON.stringify(d1) || JSON.stringify(d2)).slice(0, 300) };
         } catch (e) { return { ok: false, err: (e as Error).message }; }
       };
 
       for (const contato of contatos) {
+        if (Date.now() > bcDeadline) break;
         try {
-          const num = String(contato.telefone).replace(/\D/g, "");
+          const nums = numCandidates(String(contato.telefone));
+          const num  = nums[nums.length - 1] || "";
           const interpolate = (t: string) => t
             .replace(/\{nome\}/gi, (contato as Record<string, string>).nome || "")
             .replace(/\{empresa\}/gi, (contato as Record<string, string>).empresa || "")
@@ -983,13 +1023,13 @@ Deno.serve(async (req) => {
             // PIX: mensagem de texto + chave PIX em destaque
             const pixKey = (camp.chave_pix as string) || "";
             const texto  = pixKey ? `${mensagem}\n\n💳 *Chave PIX:* ${pixKey}` : mensagem;
-            sent = await sendMsg(num, texto);
+            sent = await sendMsg(nums, texto);
 
           } else if (tipoMidia !== "texto" && camp.url_midia) {
             // Mídia (imagem, vídeo, áudio, documento)
             const mediatype = mediaTypeMap[tipoMidia] || "image";
             const caption   = interpolate((camp.caption as string) || mensagem);
-            const mResult   = await sendMedia(num, mediatype, camp.url_midia as string, caption);
+            const mResult   = await sendMedia(nums, mediatype, camp.url_midia as string, caption);
             sent = mResult.ok;
             if (!mResult.ok) {
               await supabase.from("transmissao_contatos")
@@ -1002,7 +1042,7 @@ Deno.serve(async (req) => {
 
           } else {
             // Texto simples
-            sent = await sendMsg(num, mensagem);
+            sent = await sendMsg(nums, mensagem);
           }
 
           if (sent) {
@@ -1025,8 +1065,16 @@ Deno.serve(async (req) => {
         }
       }
 
-      await supabase.from("campanhas").update({ status: "concluido", enviados }).eq("id", campanha_id);
-      return json({ success: true, enviados });
+      // Só conclui quando não restar nenhum pendente; caso contrário mantém
+      // "enviando" para o próximo tick do cron continuar o lote seguinte.
+      const { count: restantes } = await supabase.from("transmissao_contatos")
+        .select("id", { count: "exact", head: true })
+        .eq("campanha_id", campanha_id).eq("status", "pendente");
+
+      await supabase.from("campanhas")
+        .update({ status: (restantes ?? 0) > 0 ? "enviando" : "concluido", enviados })
+        .eq("id", campanha_id);
+      return json({ success: true, enviados, restantes: restantes ?? 0 });
     }
 
     // ────────────────────────────────────────────────────────────────────────
