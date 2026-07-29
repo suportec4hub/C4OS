@@ -112,6 +112,9 @@ Deno.serve(async (_req) => {
         }
         empresaDiag.sufixos = suf;
         empresaDiag.campos = allChats.length ? Object.keys(allChats[0] || {}) : [];
+        const lidSample = allChats.find((c) => String(c?.remoteJid || "").endsWith("@lid"));
+        empresaDiag.lastMessageAmostra = lidSample
+          ? JSON.stringify(lidSample.lastMessage ?? null).slice(0, 500) : null;
         empresaDiag.comUnread = allChats.filter((c) => Number(c?.unreadCount ?? 0) > 0).length;
       }
 
