@@ -101,23 +101,6 @@ Deno.serve(async (_req) => {
       const allChats: any[] = Array.isArray(rawChats) ? rawChats : [];
       empresaDiag.findChatsTotal = allChats.length;
 
-      // DIAGNÓSTICO TEMPORÁRIO: distribuição de sufixos de JID e amostra bruta,
-      // para descobrir em que formato a Evolution devolve os chats por instância.
-      {
-        const suf: Record<string, number> = {};
-        for (const c of allChats) {
-          const j = String(c?.remoteJid || c?.id || "");
-          const k = j.includes("@") ? "@" + j.split("@")[1] : (j ? "sem-arroba" : "vazio");
-          suf[k] = (suf[k] || 0) + 1;
-        }
-        empresaDiag.sufixos = suf;
-        empresaDiag.campos = allChats.length ? Object.keys(allChats[0] || {}) : [];
-        const lidSample = allChats.find((c) => String(c?.remoteJid || "").endsWith("@lid"));
-        empresaDiag.lastMessageAmostra = lidSample
-          ? JSON.stringify(lidSample.lastMessage ?? null).slice(0, 500) : null;
-        empresaDiag.comUnread = allChats.filter((c) => Number(c?.unreadCount ?? 0) > 0).length;
-      }
-
       // Mapas de unreadCount por tipo de JID
       const chatMapGroup: Record<string, number> = {};
       const chatMapLid:   Record<string, number> = {};
@@ -385,21 +368,25 @@ Deno.serve(async (_req) => {
       empresaDiag.diagGroupsCount = diagGroups.length;
       diagReport.push(empresaDiag);
 
-      // Log sempre disparado por empresa para visibilidade de processamento
-      await supabase.from("logs_whatsapp").insert({
+      // Registrado apenas quando houve limpeza: um log por empresa a cada
+      // minuto inundava logs_whatsapp com ~14 mil linhas por dia.
+      if (updateSuccess > 0) await supabase.from("logs_whatsapp").insert({
         empresa_id: empresaId, tipo: "fluxo", nivel: "info", origem: "sync-badges",
         evento: "badge-empresa-summary",
         resumo: `Empresa processada: findChats=${empresaDiag.findChatsStatus ?? "skip"}, chats=${empresaDiag.findChatsTotal ?? 0}, zerado=${updateSuccess}/${convs.length}`,
         payload: empresaDiag,
       }).then(() => {}).catch(() => {});
 
-      // Log diagnóstico agrupado por empresa (awaited para garantir inserção)
-      if (diagGroups.length > 0) {
+      // Só interessa registrar quando houve tentativa de force-read: um grupo
+      // apenas não confirmado como lido é o estado normal de quem tem mensagem
+      // pendente, e logar isso a cada minuto inundava logs_whatsapp.
+      const forceReadGroups = diagGroups.filter(g => g.forceRead);
+      if (forceReadGroups.length > 0) {
         await supabase.from("logs_whatsapp").insert({
-          empresa_id: empresaId, tipo: "fluxo", nivel: "warn", origem: "sync-badges",
+          empresa_id: empresaId, tipo: "fluxo", nivel: "info", origem: "sync-badges",
           evento: "badge-grupos-diagnostico",
-          resumo: `${diagGroups.length} grupo(s) com badge travado (${diagGroups.filter(g => g.forceRead).length} force-read)`,
-          payload: { instName, groups: diagGroups.slice(0, 20) },
+          resumo: `${forceReadGroups.length} grupo(s) marcados como lidos via force-read`,
+          payload: { instName, groups: forceReadGroups.slice(0, 20) },
         }).then(() => {}).catch(() => {});
       }
     } catch (e) { diagReport.push({ ...empresaDiag, caught: String(e).slice(0, 150) }); }

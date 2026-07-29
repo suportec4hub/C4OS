@@ -175,14 +175,6 @@ Deno.serve(async (req) => {
     if (["chats.update", "CHATS_UPDATE"].includes(event)) {
       const chats = Array.isArray(data) ? data : [data];
 
-      // Log de debug para confirmar que o evento está chegando (remover depois de verificado)
-      await logWA(supabase, {
-        tipo: "webhook_recebido", nivel: "info", origem: "evolution-webhook",
-        evento: "chats.update-debug",
-        resumo: `chats.update: ${chats.length} items`,
-        payload: { count: chats.length, sample: chats.slice(0,2).map((c: Record<string,unknown>) => ({ keys: Object.keys(c||{}), id: c?.id || c?.remoteJid, uc: c?.unreadCount ?? c?.UnreadCount })) },
-      });
-
       // Chats com unreadCount explicitamente 0 → zeramos imediatamente
       const chatsConfirmed: Record<string, unknown>[] = [];
       // Chats com unreadCount ausente → precisamos verificar via findChats.
@@ -329,7 +321,10 @@ Deno.serve(async (req) => {
                   chatsToProcess.push({ id: gJid, unreadCount: 0, altPhone: lidAltMap[gJid] || "" });
                 }
               }
-              await logWA(supabase, {
+              // Só registra quando algum chat foi confirmado como lido: o
+              // evento chega para toda mensagem nova e logar sempre inundava
+              // logs_whatsapp com milhares de linhas por dia.
+              if (chatsToProcess.length > chatsConfirmed.length) await logWA(supabase, {
                 empresa_id: _eid, tipo: "webhook_recebido", nivel: "info",
                 origem: "evolution-webhook", evento: "chats.update-verify-groups",
                 resumo: `Verificou ${groupJidsToVerify.length} chat(s) via findChats na instância ${_instName}`,
