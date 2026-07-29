@@ -248,6 +248,16 @@ Deno.serve(async (_req) => {
                     if (forceRead) shouldZero = true;
                   }
                 }
+
+                // Grupo ausente do findChats com mensagem antiga: Evolution não
+                // rastreia mais este chat (instância reconectada, grupo saído, etc.)
+                // → zera o badge pois não há forma de marcar como lido.
+                if (!inMap && !shouldZero && ageMs > 30 * 60 * 1000) {
+                  shouldZero = true;
+                }
+              } else if (!inMap) {
+                // Sem mensagens do contato mas badge >0 → badge órfão, zera.
+                shouldZero = true;
               }
             } catch (_) {}
 
