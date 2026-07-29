@@ -17,6 +17,10 @@ const _empCredCache = new Map<string, {
   evolution_instance_id: string | null; evolution_instance_token: string | null; ts: number;
 }>();
 const _CACHE_TTL = 90_000; // 90 segundos
+// Cache curto do findChats por instância: chats.update chega em rajadas e cada
+// consulta devolve a lista completa de chats da instância.
+const _findChatsCache = new Map<string, { map: Record<string, number>; ts: number }>();
+const _FIND_CHATS_TTL = 15_000; // 15 segundos
 
 function getAwsClient(): AwsClient | null {
   const keyId  = Deno.env.get("R2_KEY_ID");
@@ -179,7 +183,9 @@ Deno.serve(async (req) => {
 
       // Chats com unreadCount explicitamente 0 → zeramos imediatamente
       const chatsConfirmed: Record<string, unknown>[] = [];
-      // Grupos com unreadCount ausente → precisamos verificar via findChats
+      // Chats com unreadCount ausente → precisamos verificar via findChats.
+      // A Evolution v2 envia chats.update apenas com {remoteJid, instanceId},
+      // então este é o caminho normal, não a exceção.
       const groupJidsToVerify: string[] = [];
 
       for (const c of chats) {
@@ -189,8 +195,11 @@ Deno.serve(async (req) => {
         const ucPresent = uc !== undefined && uc !== null;
         if (ucPresent && Number(uc) === 0) {
           chatsConfirmed.push(c as Record<string, unknown>);
-        } else if (!ucPresent && jid.endsWith("@g.us")) {
-          // Grupo sem unreadCount: não sabemos se foi leitura ou nova msg → verificar
+        } else if (!ucPresent) {
+          // Sem unreadCount não dá para saber se foi leitura ou mensagem nova.
+          // Antes só grupos eram verificados e todo chat individual (@lid ou
+          // telefone) era descartado — nenhum badge de conversa individual era
+          // limpo em tempo real.
           groupJidsToVerify.push(jid);
         }
         // ucPresent && Number(uc) > 0 → nova mensagem não lida, ignora
@@ -235,30 +244,56 @@ Deno.serve(async (req) => {
         if (groupJidsToVerify.length > 0 && _nm && GLOBAL_URL) {
           try {
             const instKey = _tok || GLOBAL_KEY;
-            const fcResp = await fetch(`${GLOBAL_URL}/chat/findChats/${_nm}`, {
-              method: "GET",
-              headers: { "apikey": instKey },
-            });
-            if (fcResp.ok) {
-              const allChats = await fcResp.json();
-              if (Array.isArray(allChats)) {
-                const groupUnreadMap: Record<string, number> = {};
-                for (const fc of allChats) {
-                  const fcJid = String(fc?.id || fc?.remoteJid || "");
-                  if (fcJid.endsWith("@g.us")) groupUnreadMap[fcJid] = Number(fc?.unreadCount ?? 0);
-                }
-                for (const gJid of groupJidsToVerify) {
-                  if ((groupUnreadMap[gJid] ?? -1) === 0) {
-                    chatsToProcess.push({ id: gJid, unreadCount: 0 });
-                  }
-                }
-                await logWA(supabase, {
-                  empresa_id: _eid, tipo: "webhook_recebido", nivel: "info",
-                  origem: "evolution-webhook", evento: "chats.update-verify-groups",
-                  resumo: `Verificou ${groupJidsToVerify.length} grupo(s) via findChats`,
-                  payload: { groupJidsToVerify, verified: chatsToProcess.length - chatsConfirmed.length, groupUnreadMap: Object.fromEntries(groupJidsToVerify.map(j => [j, groupUnreadMap[j] ?? null])) },
+            const cached = _findChatsCache.get(_nm);
+            let groupUnreadMap: Record<string, number> | null =
+              cached && (Date.now() - cached.ts) < _FIND_CHATS_TTL ? cached.map : null;
+
+            if (!groupUnreadMap) {
+              // Evolution v2 usa POST com {"where":{}}; o GET usado antes
+              // respondia 404 e a verificação nunca funcionava.
+              let fcResp = await fetch(`${GLOBAL_URL}/chat/findChats/${_nm}`, {
+                method: "POST",
+                headers: { "apikey": instKey, "Content-Type": "application/json" },
+                body: JSON.stringify({ where: {} }),
+              });
+              if (fcResp.status === 404 || fcResp.status === 405) {
+                fcResp = await fetch(`${GLOBAL_URL}/chat/findChats/${_nm}`, {
+                  method: "GET",
+                  headers: { "apikey": instKey },
                 });
               }
+              if (fcResp.ok) {
+                const allChats = await fcResp.json();
+                if (Array.isArray(allChats)) {
+                  const m: Record<string, number> = {};
+                  // Indexa todos os tipos de JID, não só grupos.
+                  for (const fc of allChats) {
+                    const fcJid = String(fc?.id || fc?.remoteJid || "");
+                    if (fcJid) m[fcJid] = Number(fc?.unreadCount ?? 0);
+                  }
+                  groupUnreadMap = m;
+                  _findChatsCache.set(_nm, { map: m, ts: Date.now() });
+                }
+              }
+            }
+
+            if (groupUnreadMap) {
+              const unreadMap = groupUnreadMap;
+              for (const gJid of groupJidsToVerify) {
+                if ((unreadMap[gJid] ?? -1) === 0) {
+                  chatsToProcess.push({ id: gJid, unreadCount: 0 });
+                }
+              }
+              await logWA(supabase, {
+                empresa_id: _eid, tipo: "webhook_recebido", nivel: "info",
+                origem: "evolution-webhook", evento: "chats.update-verify-groups",
+                resumo: `Verificou ${groupJidsToVerify.length} chat(s) via findChats`,
+                payload: {
+                  groupJidsToVerify,
+                  verified: chatsToProcess.length - chatsConfirmed.length,
+                  groupUnreadMap: Object.fromEntries(groupJidsToVerify.map(j => [j, unreadMap[j] ?? null])),
+                },
+              });
             }
           } catch (_) {}
         }
