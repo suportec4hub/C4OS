@@ -134,6 +134,53 @@ Deno.serve(async (_req) => {
         }
       }
 
+      // Resolução adicional: para @lid com unreadCount=0 sem mapeamento de telefone,
+      // consulta a API da Evolution para resolver @lid → telefone real.
+      // Cobre o cenário de mensagens lidas no celular durante período offline.
+      const unresolvedLids = Object.entries(chatMapLid)
+        .filter(([lid, unread]) => unread === 0 && !(lid in lidToPhone));
+
+      for (const [lid] of unresolvedLids) {
+        try {
+          for (const [method, url, bodyStr] of [
+            ["POST", `${EVOLUTION_URL}/contact/findContacts/${instName}`, JSON.stringify({ where: { id: lid } })],
+            ["POST", `${EVOLUTION_URL}/contact/findContacts/${instName}`, JSON.stringify({ where: { remoteJid: lid } })],
+            ["GET",  `${EVOLUTION_URL}/contact/fetchContacts/${instName}?jid=${encodeURIComponent(lid)}`, ""],
+          ] as [string, string, string][]) {
+            const opts: RequestInit = { method, headers: { "apikey": instKey, "Content-Type": "application/json" } };
+            if (bodyStr) opts.body = bodyStr;
+            const resp = await fetch(url, opts);
+            if (!resp.ok) continue;
+            const ct = await resp.json();
+            const contacts = Array.isArray(ct) ? ct : (ct?.contacts || [ct]);
+            let resolved = "";
+            for (const c of contacts) {
+              const altJid = String(c?.remoteJid || c?.phone || c?.number || c?.jid || "");
+              if (altJid.endsWith("@s.whatsapp.net") || altJid.endsWith("@c.us")) {
+                const p = extractPhone(altJid);
+                if (p && !p.includes("@")) { resolved = p; break; }
+              } else if (/^\d{8,15}$/.test(altJid)) {
+                resolved = altJid; break;
+              }
+            }
+            if (resolved) {
+              lidToPhone[lid] = resolved;
+              for (const v of phoneVariants(resolved)) chatMapPhone[v] = 0;
+              // Popula contato_lid retroativamente
+              for (const v of phoneVariants(resolved)) {
+                supabase.from("conversas")
+                  .update({ contato_lid: lid })
+                  .eq("empresa_id", empresaId)
+                  .eq("contato_telefone", v)
+                  .is("contato_lid", null)
+                  .then(() => {}).catch(() => {});
+              }
+              break;
+            }
+          }
+        } catch (_) {}
+      }
+
       // Zera badges onde Evolution API confirma unreadCount = 0
       for (const conv of convs) {
         const jid = conv.contato_telefone;

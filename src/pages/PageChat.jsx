@@ -964,6 +964,13 @@ export default function PageChat({ user, openPhone, onChatTargetUsed }) {
 
   useEffect(() => { loadConversas(); }, [loadConversas, statusTab]);
 
+  // Ao carregar a página, dispara sync-badges imediatamente para reconciliar
+  // badges de mensagens lidas no celular durante período offline.
+  useEffect(() => {
+    if (!user?.empresa_id) return;
+    supabase.functions.invoke("sync-badges").catch(() => {});
+  }, [user?.empresa_id]);
+
   // ── popup de nova conversa / atribuição ──────────────────────────────────
   const showConvPopup = useCallback(({ tipo, conv }) => {
     const pid = `${tipo}-${conv.id}-${Date.now()}`;
