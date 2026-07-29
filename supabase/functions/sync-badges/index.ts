@@ -101,6 +101,19 @@ Deno.serve(async (_req) => {
       const allChats: any[] = Array.isArray(rawChats) ? rawChats : [];
       empresaDiag.findChatsTotal = allChats.length;
 
+      // DIAGNÓSTICO TEMPORÁRIO: distribuição de sufixos de JID e amostra bruta,
+      // para descobrir em que formato a Evolution devolve os chats por instância.
+      {
+        const suf: Record<string, number> = {};
+        for (const c of allChats) {
+          const j = String(c?.id || c?.remoteJid || "");
+          const k = j.includes("@") ? "@" + j.split("@")[1] : (j ? "sem-arroba" : "vazio");
+          suf[k] = (suf[k] || 0) + 1;
+        }
+        empresaDiag.sufixos = suf;
+        empresaDiag.amostra = allChats.slice(0, 2).map((c) => JSON.stringify(c).slice(0, 400));
+      }
+
       // Mapas de unreadCount por tipo de JID
       const chatMapGroup: Record<string, number> = {};
       const chatMapLid:   Record<string, number> = {};
