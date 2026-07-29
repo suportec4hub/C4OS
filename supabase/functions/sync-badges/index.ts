@@ -30,6 +30,14 @@ Deno.serve(async (_req) => {
 
   if (!conversas || conversas.length === 0) return new Response("OK");
 
+  // Debug: log top-level invocation
+  await supabase.from("logs_whatsapp").insert({
+    tipo: "fluxo", nivel: "info", origem: "sync-badges",
+    evento: "sync-badges-inicio",
+    resumo: `sync-badges: ${conversas.length} conversas com nao_lidas>0`,
+    payload: { total: conversas.length },
+  }).catch(() => {});
+
   const byEmpresa: Record<string, { id: string; contato_telefone: string; contato_lid: string | null }[]> = {};
   for (const g of conversas) {
     if (!byEmpresa[g.empresa_id]) byEmpresa[g.empresa_id] = [];
@@ -65,17 +73,49 @@ Deno.serve(async (_req) => {
         }
       }
 
-      if (!instName) continue;
+      if (!instName) {
+        await supabase.from("logs_whatsapp").insert({
+          empresa_id: empresaId, tipo: "fluxo", nivel: "warn", origem: "sync-badges",
+          evento: "sync-badges-sem-instancia",
+          resumo: `Empresa ${empresaId} sem instância Evolution configurada`,
+          payload: {},
+        }).catch(() => {});
+        continue;
+      }
 
       const r = await fetch(`${EVOLUTION_URL}/chat/findChats/${instName}`, {
         method: "GET",
         headers: { "apikey": instKey },
       });
 
-      if (!r.ok) continue;
+      if (!r.ok) {
+        await supabase.from("logs_whatsapp").insert({
+          empresa_id: empresaId, tipo: "fluxo", nivel: "warn", origem: "sync-badges",
+          evento: "sync-badges-findchats-erro",
+          resumo: `findChats falhou: HTTP ${r.status} para instância ${instName}`,
+          payload: { instName, status: r.status },
+        }).catch(() => {});
+        continue;
+      }
 
       const allChats = await r.json();
-      if (!Array.isArray(allChats)) continue;
+      if (!Array.isArray(allChats)) {
+        await supabase.from("logs_whatsapp").insert({
+          empresa_id: empresaId, tipo: "fluxo", nivel: "warn", origem: "sync-badges",
+          evento: "sync-badges-findchats-invalido",
+          resumo: `findChats retornou dados inválidos para instância ${instName}`,
+          payload: { instName, tipo: typeof allChats },
+        }).catch(() => {});
+        continue;
+      }
+
+      // Debug: findChats OK
+      await supabase.from("logs_whatsapp").insert({
+        empresa_id: empresaId, tipo: "fluxo", nivel: "info", origem: "sync-badges",
+        evento: "sync-badges-findchats-ok",
+        resumo: `findChats retornou ${allChats.length} chats para ${instName}`,
+        payload: { instName, totalChats: allChats.length },
+      }).catch(() => {});
 
       // Mapas de unreadCount por tipo de JID
       const chatMapGroup: Record<string, number> = {};
