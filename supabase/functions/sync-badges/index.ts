@@ -37,8 +37,10 @@ Deno.serve(async (_req) => {
   }
 
   let totalZerado = 0;
+  const diagReport: Record<string, unknown>[] = [];
 
   for (const [empresaId, convs] of Object.entries(byEmpresa)) {
+    const empresaDiag: Record<string, unknown> = { empresaId: empresaId.slice(0, 8), convs: convs.length };
     try {
       let instName = "";
       let instKey = EVOLUTION_KEY;
@@ -65,17 +67,20 @@ Deno.serve(async (_req) => {
         }
       }
 
-      if (!instName) continue;
+      empresaDiag.instName = instName || null;
+      if (!instName) { diagReport.push(empresaDiag); continue; }
 
       const r = await fetch(`${EVOLUTION_URL}/chat/findChats/${instName}`, {
         method: "GET",
         headers: { "apikey": instKey },
       });
 
-      if (!r.ok) continue;
+      empresaDiag.findChatsStatus = r.status;
+      if (!r.ok) { diagReport.push(empresaDiag); continue; }
 
       const allChats = await r.json();
-      if (!Array.isArray(allChats)) continue;
+      if (!Array.isArray(allChats)) { empresaDiag.findChatsNotArray = true; diagReport.push(empresaDiag); continue; }
+      empresaDiag.findChatsTotal = allChats.length;
 
       // Mapas de unreadCount por tipo de JID
       const chatMapGroup: Record<string, number> = {};
@@ -181,9 +186,13 @@ Deno.serve(async (_req) => {
         } catch (_) {}
       }
 
+      empresaDiag.groupsInMap = Object.keys(chatMapGroup).length;
+      empresaDiag.groupsUnreadZero = Object.values(chatMapGroup).filter(v => v === 0).length;
+
       // Zera badges onde Evolution API confirma unreadCount = 0
       // Para grupos travados (findChats discorda), tenta force-read via readMessage API
       const diagGroups: { convId: string; jid: string; reason: string; ucVal: number | null; forceRead?: boolean }[] = [];
+      let shouldZeroCount = 0, updateRan = 0, updateSuccess = 0;
 
       for (const conv of convs) {
         const jid = conv.contato_telefone;
@@ -283,7 +292,9 @@ Deno.serve(async (_req) => {
           if (!shouldZero) continue;
         }
 
-        const { data: upd } = await supabase
+        if (shouldZero) shouldZeroCount++;
+        updateRan++;
+        const { data: upd, error: updErr } = await supabase
           .from("conversas")
           .update({ nao_lidas: 0 })
           .eq("id", conv.id)
@@ -291,6 +302,7 @@ Deno.serve(async (_req) => {
           .select("id");
 
         if (upd && upd.length > 0) {
+          updateSuccess++;
           totalZerado++;
           await supabase.from("logs_whatsapp").insert({
             empresa_id: empresaId,
@@ -302,8 +314,16 @@ Deno.serve(async (_req) => {
             resumo: `Badge zerado via sync periódico para ${jid}`,
             payload: { jid, instName, contato_lid: conv.contato_lid },
           }).then(() => {}).catch(() => {});
+        } else if (updErr) {
+          empresaDiag.firstUpdErr = String(updErr.message).slice(0, 100);
         }
       }
+
+      empresaDiag.shouldZeroCount = shouldZeroCount;
+      empresaDiag.updateRan = updateRan;
+      empresaDiag.updateSuccess = updateSuccess;
+      empresaDiag.diagGroupsCount = diagGroups.length;
+      diagReport.push(empresaDiag);
 
       // Log diagnóstico agrupado por empresa (awaited para garantir inserção)
       if (diagGroups.length > 0) {
@@ -314,8 +334,8 @@ Deno.serve(async (_req) => {
           payload: { instName, groups: diagGroups.slice(0, 20) },
         }).then(() => {}).catch(() => {});
       }
-    } catch (_) {}
+    } catch (e) { diagReport.push({ ...empresaDiag, caught: String(e).slice(0, 150) }); }
   }
 
-  return new Response(`OK zerou:${totalZerado}`);
+  return new Response(JSON.stringify({ zerado: totalZerado, report: diagReport }));
 });
