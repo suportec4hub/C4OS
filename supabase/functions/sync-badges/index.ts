@@ -188,7 +188,19 @@ Deno.serve(async (_req) => {
 
         if (jid.endsWith("@g.us")) {
           // Grupo: match direto por JID
-          if (!(jid in chatMapGroup) || chatMapGroup[jid] !== 0) continue;
+          const inMap = jid in chatMapGroup;
+          const ucVal = inMap ? chatMapGroup[jid] : null;
+          if (!inMap || ucVal !== 0) {
+            // Log diagnóstico: por que o grupo não foi zerado
+            supabase.from("logs_whatsapp").insert({
+              empresa_id: empresaId, conversa_id: conv.id,
+              tipo: "fluxo", nivel: "warn", origem: "sync-badges",
+              evento: "badge-grupo-nao-zerado",
+              resumo: `Grupo ${jid}: ${!inMap ? "não encontrado no findChats" : `unreadCount=${ucVal} (>0)`}`,
+              payload: { jid, instName, inMap, ucVal },
+            }).catch(() => {});
+            continue;
+          }
           shouldZero = true;
 
         } else if (jid.endsWith("@lid")) {
