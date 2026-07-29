@@ -182,6 +182,9 @@ Deno.serve(async (_req) => {
       }
 
       // Zera badges onde Evolution API confirma unreadCount = 0
+      // Para grupos travados (findChats discorda), tenta force-read via readMessage API
+      const diagGroups: { convId: string; jid: string; reason: string; ucVal: number | null; forceRead?: boolean }[] = [];
+
       for (const conv of convs) {
         const jid = conv.contato_telefone;
         let shouldZero = false;
@@ -190,18 +193,51 @@ Deno.serve(async (_req) => {
           // Grupo: match direto por JID
           const inMap = jid in chatMapGroup;
           const ucVal = inMap ? chatMapGroup[jid] : null;
+
           if (!inMap || ucVal !== 0) {
-            // Log diagnóstico: por que o grupo não foi zerado
-            supabase.from("logs_whatsapp").insert({
-              empresa_id: empresaId, conversa_id: conv.id,
-              tipo: "fluxo", nivel: "warn", origem: "sync-badges",
-              evento: "badge-grupo-nao-zerado",
-              resumo: `Grupo ${jid}: ${!inMap ? "não encontrado no findChats" : `unreadCount=${ucVal} (>0)`}`,
-              payload: { jid, instName, inMap, ucVal },
-            }).catch(() => {});
-            continue;
+            // findChats não confirmou leitura — tenta force-read se a mensagem tiver
+            // mais de 3 minutos (dá tempo para a webhook processar naturalmente antes)
+            let forceRead = false;
+            try {
+              const { data: lastMsg } = await supabase.from("mensagens")
+                .select("hora, wamid")
+                .eq("conversa_id", conv.id)
+                .eq("de", "contato")
+                .not("wamid", "is", null)
+                .order("hora", { ascending: false })
+                .limit(20);
+
+              if (lastMsg && lastMsg.length > 0) {
+                const lastHora = lastMsg[0].hora;
+                const ageMs = lastHora ? Date.now() - new Date(lastHora).getTime() : 0;
+
+                // Só force-read se a mensagem mais recente tiver pelo menos 3 minutos
+                if (ageMs > 3 * 60 * 1000) {
+                  const readMsgs = lastMsg
+                    .filter((m: Record<string, string>) => m.wamid)
+                    .map((m: Record<string, string>) => ({
+                      key: { remoteJid: jid, fromMe: false, id: m.wamid },
+                    }));
+
+                  if (readMsgs.length > 0) {
+                    // Tenta marcar como lido na Evolution para sincronizar o estado
+                    const rkResp = await fetch(`${EVOLUTION_URL}/chat/readMessage/${instName}`, {
+                      method: "POST",
+                      headers: { "apikey": instKey, "Content-Type": "application/json" },
+                      body: JSON.stringify({ readMessages: readMsgs }),
+                    }).catch(() => null);
+                    forceRead = rkResp?.ok ?? false;
+                    if (forceRead) shouldZero = true;
+                  }
+                }
+              }
+            } catch (_) {}
+
+            diagGroups.push({ convId: conv.id, jid, reason: !inMap ? "not_in_findChats" : `unreadCount=${ucVal}`, ucVal, forceRead });
+            if (!shouldZero) continue;
+          } else {
+            shouldZero = true;
           }
-          shouldZero = true;
 
         } else if (jid.endsWith("@lid")) {
           // Conversa onde contato_telefone é o @lid diretamente
@@ -267,6 +303,16 @@ Deno.serve(async (_req) => {
             payload: { jid, instName, contato_lid: conv.contato_lid },
           }).catch(() => {});
         }
+      }
+
+      // Log diagnóstico agrupado por empresa (awaited para garantir inserção)
+      if (diagGroups.length > 0) {
+        await supabase.from("logs_whatsapp").insert({
+          empresa_id: empresaId, tipo: "fluxo", nivel: "warn", origem: "sync-badges",
+          evento: "badge-grupos-diagnostico",
+          resumo: `${diagGroups.length} grupo(s) com badge travado (${diagGroups.filter(g => g.forceRead).length} force-read)`,
+          payload: { instName, groups: diagGroups.slice(0, 20) },
+        }).catch(() => {});
       }
     } catch (_) {}
   }
