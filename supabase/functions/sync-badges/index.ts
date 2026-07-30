@@ -218,8 +218,6 @@ Deno.serve(async (_req) => {
       // Para grupos travados (findChats discorda), tenta force-read via readMessage API
       const diagGroups: { convId: string; jid: string; reason: string; ucVal: number | null; forceRead?: boolean }[] = [];
       let shouldZeroCount = 0, updateRan = 0, updateSuccess = 0;
-      // DIAGNÓSTICO TEMPORÁRIO
-      const diagIndiv: Record<string, unknown>[] = [];
 
       for (const conv of convs) {
         const jid = conv.contato_telefone;
@@ -326,22 +324,6 @@ Deno.serve(async (_req) => {
             }
           }
 
-          // DIAGNÓSTICO TEMPORÁRIO: por que uma conversa individual antiga não
-          // foi zerada — Evolution reporta não lido, ou o chat nem existe lá?
-          if (!shouldZero && diagIndiv.length < 5) {
-            const lidDoIndice = variants.map(v => phoneToLid[v]).find(Boolean) || null;
-            const ucPorTelefone = variants.map(v => chatMapPhone[v]).find(v => v !== undefined);
-            const lidUsado = conv.contato_lid || lidDoIndice;
-            diagIndiv.push({
-              jid,
-              ucPorTelefone: ucPorTelefone ?? null,
-              contatoLid: conv.contato_lid,
-              lidDoIndice,
-              ucPorLid: lidUsado ? (chatMapLid[lidUsado] ?? null) : null,
-              ausenteDoFindChats: ucPorTelefone === undefined && !lidUsado,
-            });
-          }
-
           if (!shouldZero) continue;
         }
 
@@ -389,16 +371,6 @@ Deno.serve(async (_req) => {
         resumo: `Empresa processada: findChats=${empresaDiag.findChatsStatus ?? "skip"}, chats=${empresaDiag.findChatsTotal ?? 0}, zerado=${updateSuccess}/${convs.length}`,
         payload: empresaDiag,
       }).then(() => {}).catch(() => {});
-
-      // DIAGNÓSTICO TEMPORÁRIO: conversas individuais que seguem com badge.
-      if (diagIndiv.length > 0) {
-        await supabase.from("logs_whatsapp").insert({
-          empresa_id: empresaId, tipo: "fluxo", nivel: "info", origem: "sync-badges",
-          evento: "badge-individual-diagnostico",
-          resumo: `${diagIndiv.length} conversa(s) individual(is) com badge mantido`,
-          payload: { instName, convs: diagIndiv },
-        }).then(() => {}).catch(() => {});
-      }
 
       // Só interessa registrar quando houve tentativa de force-read: um grupo
       // apenas não confirmado como lido é o estado normal de quem tem mensagem
