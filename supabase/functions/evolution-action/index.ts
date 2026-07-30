@@ -901,9 +901,12 @@ Deno.serve(async (req) => {
         .limit(BATCH_LIMIT);
 
       // Soma de envios já realizados (conta repetições, não contatos).
+      // Um contato marcado como enviado conta no mínimo 1 mesmo com envios=0:
+      // linhas gravadas antes da coluna existir zerariam o progresso.
       const { data: enviosRows } = await supabase.from("transmissao_contatos")
-        .select("envios").eq("campanha_id", campanha_id);
-      const jaEnviados = (enviosRows || []).reduce((s, r) => s + Number(r.envios || 0), 0);
+        .select("envios, status").eq("campanha_id", campanha_id);
+      const jaEnviados = (enviosRows || []).reduce((s, r) =>
+        s + Math.max(Number(r.envios || 0), r.status === "enviado" ? 1 : 0), 0);
 
       if (!contatos?.length) {
         // Nada elegível agora. Pode ser fim da campanha, uma rodada a agendar
