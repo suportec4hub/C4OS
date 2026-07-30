@@ -988,17 +988,26 @@ Deno.serve(async (req) => {
         return [...new Set(out)];
       };
 
-      const sendMsg = async (nums: string[], texto: string): Promise<boolean> => {
+      // Devolve o erro da Evolution, não só um booleano: antes o motivo real da
+      // falha era descartado nos envios de texto e o contato ficava com um
+      // "Falha ao enviar" que não distinguia número inexistente de instância
+      // desconectada — o que também impedia classificar o erro como transitório.
+      const sendMsg = async (nums: string[], texto: string): Promise<{ ok: boolean; err: string }> => {
+        let lastErr = "Falha ao enviar";
         for (const num of nums) {
           for (const [path, bd] of [
             [`/message/sendText/${instName}`, JSON.stringify({ number: num, text: texto })],
             ["/send/text", JSON.stringify({ instanceName: instName, id: instName, number: num, text: texto })],
           ] as [string, string][]) {
             const res = await iFetch(path, { method: "POST", body: bd }).catch(() => null);
-            if (res?.ok) return true;
+            if (res?.ok) return { ok: true, err: "" };
+            if (res) {
+              const d = await res.json().catch(() => null);
+              lastErr = d ? JSON.stringify(d).slice(0, 300) : `HTTP ${res.status}`;
+            }
           }
         }
-        return false;
+        return { ok: false, err: lastErr };
       };
 
       const getMimetype = (url: string, type: string): string => {
@@ -1123,7 +1132,7 @@ Deno.serve(async (req) => {
             if (tipoMidia === "pix") {
               const pixKey = (camp.chave_pix as string) || "";
               const texto  = pixKey ? `${mensagem}\n\n💳 *Chave PIX:* ${pixKey}` : mensagem;
-              return { ok: await sendMsg(nums, texto), err: "Falha ao enviar" };
+              return await sendMsg(nums, texto);
             }
             if (tipoMidia !== "texto" && camp.url_midia) {
               const mediatype = mediaTypeMap[tipoMidia] || "image";
@@ -1131,7 +1140,7 @@ Deno.serve(async (req) => {
               const m = await sendMedia(nums, mediatype, camp.url_midia as string, caption);
               return { ok: m.ok, err: m.err || "Falha ao enviar mídia" };
             }
-            return { ok: await sendMsg(nums, mensagem), err: "Falha ao enviar" };
+            return await sendMsg(nums, mensagem);
           };
 
           let feitos = Number(contato.envios || 0);
@@ -1185,9 +1194,20 @@ Deno.serve(async (req) => {
             const MAX_TENTATIVAS = 5;
             const retentar = transitorio && tentativas < MAX_TENTATIVAS;
 
+            // Traduz as causas comuns: o JSON cru da Evolution não diz nada ao
+            // usuário. A classificação acima usa o erro cru, não este texto.
+            const legivel =
+              /"exists"\s*:\s*false/i.test(falhou)
+                ? "Número não existe no WhatsApp — confira o DDD"
+              : /Connection Closed|socket hang up/i.test(falhou)
+                ? (retentar ? "WhatsApp desconectado — será retentado" : "WhatsApp desconectado")
+              : transitorio
+                ? (retentar ? "Erro temporário — será retentado" : "Erro temporário na Evolution")
+              : falhou.slice(0, 300);
+
             await supabase.from("transmissao_contatos").update({
               status: retentar ? "pendente" : "falhou",
-              erro_msg: falhou.slice(0, 500),
+              erro_msg: legivel,
               tentativas,
               // Espera antes de retentar: insistir na hora só repete o erro
               // enquanto a instância não reconectou.

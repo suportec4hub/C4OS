@@ -901,11 +901,14 @@ export default function PageDisparos({ user }) {
                   style={{ flex: 1, border: `1px solid ${L.line}`, borderRadius: 7, padding: "6px 10px",
                     fontSize: 11, outline: "none", fontFamily: "inherit" }} />
                 <input value={novoContato.telefone} onChange={e => setNovoContato(p => ({ ...p, telefone: e.target.value }))}
-                  placeholder="Telefone" type="tel"
+                  placeholder="DDD + número (ex: 62984824794)" type="tel"
                   style={{ flex: 1, border: `1px solid ${L.line}`, borderRadius: 7, padding: "6px 10px",
                     fontSize: 11, outline: "none", fontFamily: "inherit" }} />
                 <button onClick={addContato} style={btn(L.accent, "white", { padding: "6px 12px" })}>+</button>
               </Row>
+              <div style={{ fontSize: 10, color: L.t3, lineHeight: 1.5 }}>
+                Sempre com DDD. Sem ele o WhatsApp não encontra o número e o envio falha.
+              </div>
             </div>
 
             {/* Lista de contatos */}
