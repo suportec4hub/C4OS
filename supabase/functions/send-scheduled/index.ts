@@ -218,6 +218,9 @@ async function processar() {
 
   // ── Campanhas agendadas: detecta e dispara automaticamente ──────────────
   let campaignsTriggered = 0;
+  // A função tem ~150s. Reserva-se margem para gravar os status finais.
+  const tickDeadline = Date.now() + 120_000;
+  const FATIA_MS = 40_000;
   try {
     const now = new Date().toISOString();
     const { data: dueCampaigns } = await db
@@ -230,10 +233,14 @@ async function processar() {
     // Campanhas já em 'enviando': ou o broadcast anterior processou só um lote,
     // ou a execução foi interrompida. Em ambos os casos o cron retoma de onde
     // parou — antes essas campanhas ficavam presas em 'enviando' para sempre.
+    // Ordenado pela menos recentemente atendida: com uma vaga por ciclo, a
+    // primeira da lista monopolizava o agendador e as demais nunca rodavam —
+    // uma campanha grande e travada impedia qualquer repetição de sair.
     const { data: resumeCampaigns } = await db
       .from("campanhas")
       .select("id, empresa_id")
       .eq("status", "enviando")
+      .order("updated_at", { ascending: true, nullsFirst: true })
       .limit(5);
 
     const toProcess = [...(dueCampaigns || []), ...(resumeCampaigns || [])];
@@ -254,9 +261,10 @@ async function processar() {
 
       if (!locked?.length) continue;
 
-      // Um broadcast por tick: cada um processa um lote que pode levar até
-      // ~100s. Encadear vários estouraria o tempo de execução da função.
-      if (campaignsTriggered >= 1) break;
+      // Divide o tempo do ciclo entre as campanhas em vez de dar tudo para a
+      // primeira: cada uma recebe uma fatia e o restante é atendido no mesmo
+      // ciclo, se couber.
+      if (Date.now() > tickDeadline) break;
 
       // Dispara o broadcast via evolution-action — AGUARDA para não ser cancelado pelo Deno
       try {
@@ -270,6 +278,7 @@ async function processar() {
             action:      "broadcast",
             empresa_id:  camp.empresa_id,
             campanha_id: camp.id,
+            budget_ms:   FATIA_MS,
           }),
         });
         const result = await r.json().catch(() => ({}));

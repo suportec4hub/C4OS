@@ -922,7 +922,8 @@ Deno.serve(async (req) => {
         const { data: atual } = await supabase.from("campanhas")
           .select("status").eq("id", campanha_id).maybeSingle();
         if (atual && atual.status !== "enviando") {
-          await supabase.from("campanhas").update({ enviados: total }).eq("id", campanha_id);
+          await supabase.from("campanhas")
+            .update({ enviados: total, updated_at: new Date().toISOString() }).eq("id", campanha_id);
           return json({ success: true, enviados: total, interrompida: atual.status });
         }
 
@@ -943,7 +944,8 @@ Deno.serve(async (req) => {
             .or(`proximo_envio_em.is.null,proximo_envio_em.lte.${new Date().toISOString()}`);
 
           await supabase.from("campanhas")
-            .update({ status: "enviando", enviados: total }).eq("id", campanha_id);
+            .update({ status: "enviando", enviados: total, updated_at: new Date().toISOString() })
+            .eq("id", campanha_id);
           return json({
             success: true, enviados: total, restantes: pendentes,
             ...((vencidos ?? 0) === 0 ? { aguardando_repeticao: true } : {}),
@@ -964,6 +966,7 @@ Deno.serve(async (req) => {
           await supabase.from("campanhas").update({
             status: "enviando", rodada_atual: rodada,
             proxima_rodada_em: proxima, enviados: total,
+            updated_at: new Date().toISOString(),
           }).eq("id", campanha_id);
           return json({ success: true, enviados: total, rodada_agendada: rodada + 1, em: proxima });
         }
@@ -971,7 +974,8 @@ Deno.serve(async (req) => {
         // Sem pendentes e sem rodada restante: fecha o status — antes retornava
         // 400 deixando a campanha presa em "enviando".
         await supabase.from("campanhas")
-          .update({ status: "concluido", enviados: total, proxima_rodada_em: null })
+          .update({ status: "concluido", enviados: total, proxima_rodada_em: null,
+                    updated_at: new Date().toISOString() })
           .eq("id", campanha_id);
         return json({ success: true, enviados: total, restantes: 0 });
       };
@@ -982,8 +986,11 @@ Deno.serve(async (req) => {
         .update({ status: "enviando", proxima_rodada_em: null }).eq("id", campanha_id);
 
       // Interrompe o lote antes do limite de execução para que o status final
-      // seja sempre gravado e o próximo tick continue de onde parou.
-      const bcDeadline = Date.now() + 100_000;
+      // seja sempre gravado e o próximo tick continue de onde parou. O
+      // orçamento pode vir de quem chamou, para caber mais de uma campanha no
+      // mesmo ciclo do cron e nenhuma monopolizar a vaga.
+      const budgetMs = Math.min(100_000, Math.max(10_000, Number(body.budget_ms) || 100_000));
+      const bcDeadline = Date.now() + budgetMs;
       let enviados = jaEnviados ?? 0;
       const minMs = (camp.intervalo_min || 5) * 1000;
       const maxMs = (camp.intervalo_max || 15) * 1000;
@@ -1216,7 +1223,8 @@ Deno.serve(async (req) => {
               proximo_envio_em: faltaRepetir && !cabeAgora
                 ? new Date(Date.now() + repIntervaloMs).toISOString() : null,
             }).eq("id", contato.id);
-            await supabase.from("campanhas").update({ enviados }).eq("id", campanha_id);
+            await supabase.from("campanhas")
+              .update({ enviados, updated_at: new Date().toISOString() }).eq("id", campanha_id);
 
             if (!cabeAgora) break;
 
@@ -1263,7 +1271,8 @@ Deno.serve(async (req) => {
               proximo_envio_em: retentar
                 ? new Date(Date.now() + 5 * 60 * 1000).toISOString() : null,
             }).eq("id", contato.id);
-            await supabase.from("campanhas").update({ enviados }).eq("id", campanha_id);
+            await supabase.from("campanhas")
+              .update({ enviados, updated_at: new Date().toISOString() }).eq("id", campanha_id);
           }
 
           // Intervalo aleatório entre contatos para evitar bloqueio
