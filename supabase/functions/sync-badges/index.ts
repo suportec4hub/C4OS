@@ -1,20 +1,23 @@
-// Mapeia @lid → telefone das conversas, a partir do findChats da Evolution.
+// Faz duas coisas, ambas a cada minuto:
 //
-// Esta função NÃO zera badge, de propósito. Ela já fez isso, apoiada no
-// unreadCount do findChats, e o resultado era apagar notificação de mensagem
-// que ninguém tinha lido: a Evolution é um dispositivo conectado e consome a
-// mensagem ao recebê-la, então o unreadCount dela fica 0 mesmo sem ninguém
-// abrir a conversa. Medido em produção, toda conversa zerada pelo cron não
-// tinha nenhum recibo de leitura nos 30 minutos anteriores.
+// 1. Mapeia @lid → telefone das conversas. É esse mapa que permite ao recibo de
+//    leitura encontrar a conversa certa: a Evolution entrega os recibos
+//    endereçados por @lid, enquanto as conversas são gravadas por telefone.
 //
-// Badge só é zerado por leitura de verdade: recibo do celular
-// (messages.update/message.ack com status READ ou PLAYED, tratado no
-// evolution-webhook) ou abertura da conversa no C4OS.
+// 2. Zera o badge de GRUPOS que a Evolution reporta sem não lidos.
 //
-// O mapeamento @lid → telefone continua valendo a pena porque é justamente ele
-// que permite ao recibo de leitura encontrar a conversa certa: a Evolution
-// entrega os recibos endereçados por @lid, enquanto as conversas são gravadas
-// por telefone.
+// A distinção entre grupo e conversa individual é deliberada. Conversa
+// individual tem recibo de leitura (messages.update com status READ ou PLAYED),
+// que é o WhatsApp dizendo que alguém abriu — sinal confiável, tratado no
+// evolution-webhook. Grupo não emite recibo nenhum: não chega um único
+// messages.update para @g.us, então o unreadCount do findChats é o único sinal
+// existente para saber que o grupo foi aberto no celular.
+//
+// O que NÃO se faz mais aqui, e não deve voltar: chamar /chat/readMessage para
+// "sincronizar" o estado. Aquilo marcava as mensagens como lidas no WhatsApp de
+// verdade, apagando a notificação no celular do próprio usuário sem ninguém ter
+// aberto a conversa. Também não se zera por ausência do chat no findChats:
+// badge sobrando é preferível a mensagem de cliente escondida.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -40,6 +43,10 @@ Deno.serve(async (_req) => {
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
+  // Mensagem recente fica de fora do zeramento de grupo: na chegada, o
+  // findChats ainda não contabilizou o não lido e responde 0.
+  const limiteRecencia = new Date(Date.now() - 45_000).toISOString();
+
   // Só conversas sem mapeamento: as demais não têm o que aprender.
   const { data: pendentes } = await supabase
     .from("conversas")
@@ -48,18 +55,43 @@ Deno.serve(async (_req) => {
     .not("contato_telefone", "is", null)
     .limit(2000);
 
-  if (!pendentes || pendentes.length === 0) return new Response("OK");
+  // Grupos com badge. Diferente das conversas individuais, grupo não emite
+  // recibo de leitura: não chega nenhum messages.update para @g.us, então o
+  // unreadCount do findChats é o único sinal disponível para saber que o grupo
+  // foi aberto no celular.
+  const { data: grupos } = await supabase
+    .from("conversas")
+    .select("id, empresa_id, contato_telefone")
+    .gt("nao_lidas", 0)
+    .lt("ultima_hora", limiteRecencia)
+    .like("contato_telefone", "%@g.us")
+    .limit(500);
+
+  if ((!pendentes || pendentes.length === 0) && (!grupos || grupos.length === 0)) {
+    return new Response("OK");
+  }
 
   const porEmpresa: Record<string, Set<string>> = {};
-  for (const c of pendentes) {
+  for (const c of (pendentes || [])) {
     const jid = String(c.contato_telefone || "");
     if (!jid || jid.endsWith("@g.us")) continue;  // grupo não tem @lid
     (porEmpresa[c.empresa_id] ||= new Set()).add(jid);
   }
 
-  let mapeados = 0;
+  const gruposPorEmpresa: Record<string, { id: string; jid: string }[]> = {};
+  for (const g of (grupos || [])) {
+    (gruposPorEmpresa[g.empresa_id] ||= []).push({ id: g.id, jid: g.contato_telefone });
+  }
 
-  await Promise.all(Object.entries(porEmpresa).map(async ([empresaId, telefones]) => {
+  // Empresas que precisam de consulta por qualquer um dos dois motivos.
+  const empresas = new Set([...Object.keys(porEmpresa), ...Object.keys(gruposPorEmpresa)]);
+
+  let mapeados = 0;
+  let gruposZerados = 0;
+
+  await Promise.all([...empresas].map(async (empresaId) => {
+    const telefones = porEmpresa[empresaId] || new Set<string>();
+    const gruposDaEmpresa = gruposPorEmpresa[empresaId] || [];
     try {
       let instName = "";
       let instKey  = EVOLUTION_KEY;
@@ -108,9 +140,14 @@ Deno.serve(async (_req) => {
       // telefone → @lid. O telefone real vem em lastMessage.key.remoteJidAlt
       // quando o chat é endereçado por @lid.
       const porTelefone: Record<string, string> = {};
+      const naoLidosGrupo: Record<string, number> = {};
       for (const chat of chats) {
         // remoteJid primeiro: na Evolution v2 o campo id é um CUID do banco.
         const jid = String(chat.remoteJid || chat.id || "");
+        if (jid.endsWith("@g.us")) {
+          naoLidosGrupo[jid] = Number(chat.unreadCount ?? 0);
+          continue;
+        }
         if (!jid.endsWith("@lid")) continue;
 
         const alt = String(chat.lastMessage?.key?.remoteJidAlt || chat.phone || chat.number || "");
@@ -141,10 +178,25 @@ Deno.serve(async (_req) => {
       if (escritas.length > 0) {
         await Promise.all(escritas.map(p => Promise.resolve(p).catch(() => {})));
       }
+
+      // Grupo que a Evolution reporta sem não lidos foi aberto no celular.
+      // Sem force-read: marcar como lido por conta própria apagava a
+      // notificação no WhatsApp do usuário. Ausente do findChats, o badge
+      // permanece — badge sobrando é melhor que mensagem escondida.
+      for (const g of gruposDaEmpresa) {
+        if (naoLidosGrupo[g.jid] !== 0) continue;
+        const { data: upd } = await supabase.from("conversas")
+          .update({ nao_lidas: 0 })
+          .eq("id", g.id)
+          .gt("nao_lidas", 0)
+          .lt("ultima_hora", limiteRecencia)
+          .select("id");
+        if (upd && upd.length > 0) gruposZerados++;
+      }
     } catch (_) { /* uma empresa com problema não derruba as demais */ }
   }));
 
-  return new Response(JSON.stringify({ mapeados }), {
+  return new Response(JSON.stringify({ mapeados, gruposZerados }), {
     headers: { "Content-Type": "application/json" },
   });
 });
