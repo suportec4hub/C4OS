@@ -1,3 +1,20 @@
+// Mapeia @lid → telefone das conversas, a partir do findChats da Evolution.
+//
+// Esta função NÃO zera badge, de propósito. Ela já fez isso, apoiada no
+// unreadCount do findChats, e o resultado era apagar notificação de mensagem
+// que ninguém tinha lido: a Evolution é um dispositivo conectado e consome a
+// mensagem ao recebê-la, então o unreadCount dela fica 0 mesmo sem ninguém
+// abrir a conversa. Medido em produção, toda conversa zerada pelo cron não
+// tinha nenhum recibo de leitura nos 30 minutos anteriores.
+//
+// Badge só é zerado por leitura de verdade: recibo do celular
+// (messages.update/message.ack com status READ ou PLAYED, tratado no
+// evolution-webhook) ou abertura da conversa no C4OS.
+//
+// O mapeamento @lid → telefone continua valendo a pena porque é justamente ele
+// que permite ao recibo de leitura encontrar a conversa certa: a Evolution
+// entrega os recibos endereçados por @lid, enquanto as conversas são gravadas
+// por telefone.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -11,10 +28,10 @@ function extractPhone(jid: string): string {
 
 function phoneVariants(phone: string): string[] {
   const s = new Set([phone]);
-  if (/^\d{10,11}$/.test(phone))  s.add("55" + phone);
+  if (/^\d{10,11}$/.test(phone))   s.add("55" + phone);
   if (/^55\d{10,11}$/.test(phone)) s.add(phone.slice(2));
-  if (/^\d{11}$/.test(phone) && phone[2] === "9")    s.add(phone.slice(0,2) + phone.slice(3));
-  if (/^55\d{11}$/.test(phone) && phone[4] === "9")  s.add("55" + phone.slice(2,4) + phone.slice(5));
+  if (/^\d{11}$/.test(phone) && phone[2] === "9")   s.add(phone.slice(0, 2) + phone.slice(3));
+  if (/^55\d{11}$/.test(phone) && phone[4] === "9") s.add("55" + phone.slice(2, 4) + phone.slice(5));
   return [...s];
 }
 
@@ -23,41 +40,29 @@ Deno.serve(async (_req) => {
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
-  // Conversa com mensagem recente fica de fora: o findChats pode ainda não ter
-  // contabilizado o não lido e responder 0, o que marcaria como lida uma
-  // mensagem que ninguém abriu. Passados os 45s, o dado da Evolution é confiável.
-  const limiteRecencia = new Date(Date.now() - 45_000).toISOString();
-
-  const { data: conversas } = await supabase
+  // Só conversas sem mapeamento: as demais não têm o que aprender.
+  const { data: pendentes } = await supabase
     .from("conversas")
-    .select("id, empresa_id, contato_telefone, contato_lid, nao_lidas")
-    .gt("nao_lidas", 0)
-    .lt("ultima_hora", limiteRecencia);
+    .select("empresa_id, contato_telefone")
+    .is("contato_lid", null)
+    .not("contato_telefone", "is", null)
+    .limit(2000);
 
-  if (!conversas || conversas.length === 0) return new Response("OK");
+  if (!pendentes || pendentes.length === 0) return new Response("OK");
 
-  const byEmpresa: Record<string, { id: string; contato_telefone: string; contato_lid: string | null }[]> = {};
-  for (const g of conversas) {
-    if (!byEmpresa[g.empresa_id]) byEmpresa[g.empresa_id] = [];
-    byEmpresa[g.empresa_id].push({ id: g.id, contato_telefone: g.contato_telefone, contato_lid: g.contato_lid ?? null });
+  const porEmpresa: Record<string, Set<string>> = {};
+  for (const c of pendentes) {
+    const jid = String(c.contato_telefone || "");
+    if (!jid || jid.endsWith("@g.us")) continue;  // grupo não tem @lid
+    (porEmpresa[c.empresa_id] ||= new Set()).add(jid);
   }
 
-  let totalZerado = 0;
-  const diagReport: Record<string, unknown>[] = [];
+  let mapeados = 0;
 
-  // Deadline global para trabalho opcional (resolução de @lid). A função tem
-  // ~150s de execução; passado esse limite paramos as buscas extras para
-  // garantir que TODAS as empresas concluam o processamento principal.
-  const softDeadline = Date.now() + 45_000;
-
-  // Empresas são processadas em paralelo: cada uma faz várias chamadas HTTP à
-  // Evolution e, em série, uma única empresa grande consumia todo o tempo de
-  // execução — as demais nunca eram processadas.
-  await Promise.all(Object.entries(byEmpresa).map(async ([empresaId, convs]) => {
-    const empresaDiag: Record<string, unknown> = { empresaId: empresaId.slice(0, 8), convs: convs.length };
+  await Promise.all(Object.entries(porEmpresa).map(async ([empresaId, telefones]) => {
     try {
       let instName = "";
-      let instKey = EVOLUTION_KEY;
+      let instKey  = EVOLUTION_KEY;
 
       const { data: inst } = await supabase
         .from("empresa_instancias")
@@ -68,7 +73,7 @@ Deno.serve(async (_req) => {
 
       if (inst?.evolution_instance_id) {
         instName = inst.evolution_instance_id;
-        instKey = inst.evolution_instance_token || EVOLUTION_KEY;
+        instKey  = inst.evolution_instance_token || EVOLUTION_KEY;
       } else {
         const { data: emp } = await supabase
           .from("empresas")
@@ -77,261 +82,69 @@ Deno.serve(async (_req) => {
           .maybeSingle();
         if (emp?.evolution_instance_id) {
           instName = emp.evolution_instance_id;
-          instKey = emp.evolution_instance_token || EVOLUTION_KEY;
+          instKey  = emp.evolution_instance_token || EVOLUTION_KEY;
         }
       }
+      if (!instName) return;
 
-      empresaDiag.instName = instName || null;
-      if (!instName) { diagReport.push(empresaDiag); return; }
-
-      // Evolution API v2 uses POST with {"where":{}} for findChats
+      // Evolution v2 usa POST com {"where":{}}; GET responde 404.
       let r = await fetch(`${EVOLUTION_URL}/chat/findChats/${instName}`, {
         method: "POST",
         headers: { "apikey": instKey, "Content-Type": "application/json" },
         body: JSON.stringify({ where: {} }),
       });
-      // Fallback to GET for older Evolution API versions
       if (r.status === 404 || r.status === 405) {
         r = await fetch(`${EVOLUTION_URL}/chat/findChats/${instName}`, {
-          method: "GET",
-          headers: { "apikey": instKey },
+          method: "GET", headers: { "apikey": instKey },
         });
       }
+      if (!r.ok) return;
 
-      empresaDiag.findChatsStatus = r.status;
-      // Se findChats falhar (instância desconectada, etc.), segue com os mapas
-      // vazios: nada será zerado, que é o comportamento correto sem confirmação.
       // deno-lint-ignore no-explicit-any
-      const rawChats: any = r.ok ? await r.json().catch(() => []) : [];
+      const raw: any = await r.json().catch(() => []);
       // deno-lint-ignore no-explicit-any
-      const allChats: any[] = Array.isArray(rawChats) ? rawChats : [];
-      empresaDiag.findChatsTotal = allChats.length;
+      const chats: any[] = Array.isArray(raw) ? raw : [];
 
-      // As gravações de contato_lid são acumuladas e aguardadas no fim do
-      // bloco: disparadas sem await, o Deno encerrava a função antes de
-      // concluí-las e o mapeamento nunca era persistido.
-      const lidWrites: PromiseLike<unknown>[] = [];
+      // telefone → @lid. O telefone real vem em lastMessage.key.remoteJidAlt
+      // quando o chat é endereçado por @lid.
+      const porTelefone: Record<string, string> = {};
+      for (const chat of chats) {
+        // remoteJid primeiro: na Evolution v2 o campo id é um CUID do banco.
+        const jid = String(chat.remoteJid || chat.id || "");
+        if (!jid.endsWith("@lid")) continue;
 
-      // Mapas de unreadCount por tipo de JID
-      const chatMapGroup: Record<string, number> = {};
-      const chatMapLid:   Record<string, number> = {};
-      const chatMapPhone: Record<string, number> = {};
-      // Mapeamento @lid → telefone real extraído de campos alternativos do chat
-      const lidToPhone:   Record<string, string> = {};
+        const alt = String(chat.lastMessage?.key?.remoteJidAlt || chat.phone || chat.number || "");
+        let phone = "";
+        if (alt.endsWith("@s.whatsapp.net") || alt.endsWith("@c.us")) phone = extractPhone(alt);
+        else if (/^\d{8,15}$/.test(alt)) phone = alt;
+        if (!phone || phone.includes("@")) continue;
 
-      for (const chat of allChats) {
-        // remoteJid primeiro: na Evolution v2 o campo id é um CUID do banco,
-        // não o JID do WhatsApp.
-        const jid    = String(chat.remoteJid || chat.id || "");
-        const unread = Number(chat.unreadCount ?? 0);
-        if (!jid) continue;
-
-        if (jid.endsWith("@g.us")) {
-          chatMapGroup[jid] = unread;
-
-        } else if (jid.endsWith("@lid")) {
-          chatMapLid[jid] = unread;
-
-          // Quando o chat é endereçado por @lid, a Evolution entrega o telefone
-          // real em lastMessage.key.remoteJidAlt — evita ter que resolver o
-          // @lid por chamadas extras à API.
-          const altRaw = String(
-            chat.lastMessage?.key?.remoteJidAlt ||
-            chat.phone || chat.number || chat.jid || chat.pnJid || ""
-          );
-          if (altRaw && altRaw !== jid) {
-            let phone = "";
-            if (altRaw.endsWith("@s.whatsapp.net") || altRaw.endsWith("@c.us")) {
-              phone = extractPhone(altRaw);
-            } else if (/^\d{8,15}$/.test(altRaw)) {
-              phone = altRaw;
-            }
-            if (phone && !phone.includes("@")) {
-              lidToPhone[jid] = phone;
-              for (const v of phoneVariants(phone)) chatMapPhone[v] = unread;
-            }
-          }
-
-        } else if (jid.endsWith("@s.whatsapp.net") || jid.endsWith("@c.us")) {
-          const phone = extractPhone(jid);
-          if (phone && !phone.includes("@")) {
-            for (const v of phoneVariants(phone)) chatMapPhone[v] = unread;
-          }
-        }
+        for (const v of phoneVariants(phone)) porTelefone[v] = jid;
       }
 
-      // Índice telefone → @lid para consulta direta ao processar as conversas.
-      // A gravação retroativa de contato_lid acontece só para as conversas com
-      // badge pendente: varrer todos os lidToPhone gerava um UPDATE por
-      // variante de telefone de cada chat, milhares de queries por minuto.
-      const phoneToLid: Record<string, string> = {};
-      for (const [lid, phone] of Object.entries(lidToPhone)) {
-        for (const v of phoneVariants(phone)) phoneToLid[v] = lid;
+      // Grava apenas o que interessa: as conversas que ainda não têm o @lid.
+      // Aguardado, porque disparar sem await fazia o Deno encerrar a função
+      // antes de concluir e o mapeamento nunca era persistido.
+      const escritas: PromiseLike<unknown>[] = [];
+      for (const tel of telefones) {
+        const lid = phoneVariants(extractPhone(tel)).map(v => porTelefone[v]).find(Boolean);
+        if (!lid) continue;
+        mapeados++;
+        escritas.push(
+          supabase.from("conversas")
+            .update({ contato_lid: lid })
+            .eq("empresa_id", empresaId)
+            .eq("contato_telefone", tel)
+            .is("contato_lid", null),
+        );
       }
-
-      // Resolução adicional: para @lid com unreadCount=0 sem mapeamento de telefone,
-      // consulta a API da Evolution para resolver @lid → telefone real.
-      // Cobre o cenário de mensagens lidas no celular durante período offline.
-      // Limitado a LID_BUDGET por execução e interrompido no softDeadline: com
-      // centenas de chats, o sweep sequencial estourava o tempo da função.
-      // As resoluções são persistidas em contato_lid, então execuções
-      // sucessivas do cron cobrem o restante de forma incremental.
-      const LID_BUDGET = 20;
-      const unresolvedLids = Object.entries(chatMapLid)
-        .filter(([lid, unread]) => unread === 0 && !(lid in lidToPhone))
-        .slice(0, LID_BUDGET);
-      empresaDiag.lidsToResolve = unresolvedLids.length;
-
-      await Promise.all(unresolvedLids.map(async ([lid]) => {
-        if (Date.now() > softDeadline) return;
-        try {
-          for (const [method, url, bodyStr] of [
-            ["POST", `${EVOLUTION_URL}/contact/findContacts/${instName}`, JSON.stringify({ where: { id: lid } })],
-            ["POST", `${EVOLUTION_URL}/contact/findContacts/${instName}`, JSON.stringify({ where: { remoteJid: lid } })],
-            ["GET",  `${EVOLUTION_URL}/contact/fetchContacts/${instName}?jid=${encodeURIComponent(lid)}`, ""],
-          ] as [string, string, string][]) {
-            const opts: RequestInit = { method, headers: { "apikey": instKey, "Content-Type": "application/json" } };
-            if (bodyStr) opts.body = bodyStr;
-            const resp = await fetch(url, opts);
-            if (!resp.ok) continue;
-            const ct = await resp.json();
-            const contacts = Array.isArray(ct) ? ct : (ct?.contacts || [ct]);
-            let resolved = "";
-            for (const c of contacts) {
-              const altJid = String(c?.remoteJid || c?.phone || c?.number || c?.jid || "");
-              if (altJid.endsWith("@s.whatsapp.net") || altJid.endsWith("@c.us")) {
-                const p = extractPhone(altJid);
-                if (p && !p.includes("@")) { resolved = p; break; }
-              } else if (/^\d{8,15}$/.test(altJid)) {
-                resolved = altJid; break;
-              }
-            }
-            if (resolved) {
-              lidToPhone[lid] = resolved;
-              for (const v of phoneVariants(resolved)) chatMapPhone[v] = 0;
-              // O índice abaixo cobre a gravação, feita por conversa adiante.
-              for (const v of phoneVariants(resolved)) phoneToLid[v] = lid;
-              break;
-            }
-          }
-        } catch (_) {}
-      }));
-
-      empresaDiag.groupsInMap = Object.keys(chatMapGroup).length;
-      empresaDiag.groupsUnreadZero = Object.values(chatMapGroup).filter(v => v === 0).length;
-
-      // Zera badges apenas onde a Evolution confirma unreadCount = 0.
-      let shouldZeroCount = 0, updateRan = 0, updateSuccess = 0;
-
-      for (const conv of convs) {
-        const jid = conv.contato_telefone;
-        let shouldZero = false;
-
-        if (jid.endsWith("@g.us")) {
-          // Grupo: só zera quando a Evolution confirma que não há não lidos.
-          //
-          // Havia aqui três caminhos que zeravam sem evidência de leitura, todos
-          // removidos. O mais grave chamava /chat/readMessage para "sincronizar"
-          // o estado: isso marca as mensagens como lidas no WhatsApp de verdade,
-          // então uma mensagem de grupo com mais de 3 minutos perdia a
-          // notificação no C4OS e no celular sem ninguém ter aberto. Os outros
-          // dois zeravam por ausência no findChats ou por não achar wamid.
-          //
-          // Eram muletas de quando o casamento por JID estava quebrado. Com ele
-          // corrigido, um badge que sobra é preferível a uma mensagem escondida.
-          if (chatMapGroup[jid] === 0) shouldZero = true;
-          if (!shouldZero) continue;
-
-        } else if (jid.endsWith("@lid")) {
-          // Conversa onde contato_telefone é o @lid diretamente
-          if (chatMapLid[jid] === 0) {
-            shouldZero = true;
-          } else if (jid in lidToPhone) {
-            // Temos o telefone real para este @lid
-            if (phoneVariants(lidToPhone[jid]).some(v => chatMapPhone[v] === 0)) shouldZero = true;
-          }
-          if (!shouldZero) continue;
-
-        } else {
-          // Contato individual com telefone real
-          const phone = extractPhone(jid);
-          if (!phone || phone.includes("@")) continue;
-
-          const variants = phoneVariants(phone);
-
-          // 1. Match por telefone direto
-          if (variants.some(v => chatMapPhone[v] === 0)) {
-            shouldZero = true;
-          }
-          // 2. Match por contato_lid já populado
-          if (!shouldZero && conv.contato_lid && conv.contato_lid in chatMapLid) {
-            if (chatMapLid[conv.contato_lid] === 0) shouldZero = true;
-          }
-          // 3. Contato_lid é null mas o telefone foi cruzado com um @lid
-          if (!shouldZero && conv.contato_lid === null) {
-            const lid = variants.map(v => phoneToLid[v]).find(Boolean);
-            if (lid) {
-              // Grava o mapeamento mesmo que o chat ainda esteja não lido:
-              // as próximas execuções e o webhook casam direto por contato_lid.
-              lidWrites.push(supabase.from("conversas")
-                .update({ contato_lid: lid })
-                .eq("id", conv.id)
-                .is("contato_lid", null));
-              if (chatMapLid[lid] === 0) shouldZero = true;
-            }
-          }
-
-          if (!shouldZero) continue;
-        }
-
-        if (shouldZero) shouldZeroCount++;
-        updateRan++;
-        const { data: upd, error: updErr } = await supabase
-          .from("conversas")
-          .update({ nao_lidas: 0 })
-          .eq("id", conv.id)
-          .gt("nao_lidas", 0)
-          // Mensagem que chegou durante a varredura não é zerada.
-          .lt("ultima_hora", limiteRecencia)
-          .select("id");
-
-        if (upd && upd.length > 0) {
-          updateSuccess++;
-          totalZerado++;
-          await supabase.from("logs_whatsapp").insert({
-            empresa_id: empresaId,
-            conversa_id: conv.id,
-            tipo: "fluxo",
-            nivel: "info",
-            origem: "sync-badges",
-            evento: "badge-zerado-cron",
-            resumo: `Badge zerado via sync periódico para ${jid}`,
-            payload: { jid, instName, contato_lid: conv.contato_lid },
-          }).then(() => {}).catch(() => {});
-        } else if (updErr) {
-          empresaDiag.firstUpdErr = String(updErr.message).slice(0, 100);
-        }
+      if (escritas.length > 0) {
+        await Promise.all(escritas.map(p => Promise.resolve(p).catch(() => {})));
       }
-
-      // Garante que o mapeamento @lid -> telefone foi persistido.
-      if (lidWrites.length > 0) await Promise.all(lidWrites.map(p => Promise.resolve(p).catch(() => {})));
-
-      empresaDiag.shouldZeroCount = shouldZeroCount;
-      empresaDiag.updateRan = updateRan;
-      empresaDiag.updateSuccess = updateSuccess;
-      diagReport.push(empresaDiag);
-
-      // Registrado apenas quando houve limpeza: um log por empresa a cada
-      // minuto inundava logs_whatsapp com ~14 mil linhas por dia.
-      if (updateSuccess > 0) await supabase.from("logs_whatsapp").insert({
-        empresa_id: empresaId, tipo: "fluxo", nivel: "info", origem: "sync-badges",
-        evento: "badge-empresa-summary",
-        resumo: `Empresa processada: findChats=${empresaDiag.findChatsStatus ?? "skip"}, chats=${empresaDiag.findChatsTotal ?? 0}, zerado=${updateSuccess}/${convs.length}`,
-        payload: empresaDiag,
-      }).then(() => {}).catch(() => {});
-
-    } catch (e) { diagReport.push({ ...empresaDiag, caught: String(e).slice(0, 150) }); }
+    } catch (_) { /* uma empresa com problema não derruba as demais */ }
   }));
 
-  return new Response(JSON.stringify({ zerado: totalZerado, report: diagReport }));
+  return new Response(JSON.stringify({ mapeados }), {
+    headers: { "Content-Type": "application/json" },
+  });
 });
