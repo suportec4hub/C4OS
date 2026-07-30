@@ -5,7 +5,7 @@ import { supabase } from "../lib/supabase";
 import { Fade, Row, Grid, PBtn, DataTable, Tag, ScBar, IBtn, TD } from "../components/ui";
 import Modal, { Field, Input, Select, ModalFooter } from "../components/Modal";
 
-const VAZIO = { nome:"", cnpj:"", segmento:"", telefone:"", website:"", plano_id:"", status:"trial", mrr:"",
+const VAZIO = { nome:"", cnpj:"", segmento:"", marca:"", telefone:"", website:"", plano_id:"", status:"trial", mrr:"",
                 admin_nome:"", admin_email:"", admin_senha:"", must_change_password: false, bloqueio_msg:"" };
 
 const COBRANCA_VAZIO = {
@@ -389,6 +389,9 @@ export default function PageClientes({ user }) {
                 <Field label="Segmento">         <Input value={form.segmento}  onChange={F("segmento")}  placeholder="Ex: Varejo, Tecnologia..."/></Field>
                 <Field label="Telefone">         <Input value={form.telefone}  onChange={F("telefone")}  placeholder="(11) 99999-9999"/></Field>
                 <Field label="Website">          <Input value={form.website}   onChange={F("website")}   placeholder="www.empresa.com.br"/></Field>
+                {/* Agrupa unidades do mesmo grupo: define para quais WhatsApps
+                    os fluxos de chatbot podem transferir uma conversa. */}
+                <Field label="Marca / grupo">     <Input value={form.marca}     onChange={F("marca")}     placeholder="Ex: Vision Peças"/></Field>
                 <Field label="Status">
                   <Select value={form.status} onChange={F("status")}>
                     {["trial","ativo","inativo","cancelado"].map(s=><option key={s} value={s}>{s.charAt(0).toUpperCase()+s.slice(1)}</option>)}

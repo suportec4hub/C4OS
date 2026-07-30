@@ -30,6 +30,111 @@ async function enviarWhatsApp(empresaId: string, phone: string, message: string)
   });
 }
 
+// Move a conversa para outra empresa do mesmo grupo e avisa o WhatsApp dela.
+// A conversa é recriada no destino para que as respostas saiam pelo número da
+// empresa de destino, e não pelo da origem.
+// deno-lint-ignore no-explicit-any
+async function transferirParaEmpresa(
+  conversaId: string, origemId: string, destinoId: string, conversa: any, phone: string,
+): Promise<boolean> {
+  // O destino precisa ser do mesmo grupo. A validação é feita aqui porque o
+  // motor roda com service role: aceitar o id vindo do fluxo sem conferir
+  // permitiria transferir conversa para qualquer empresa da base.
+  const { data: par } = await supabase.rpc('empresas_sao_do_mesmo_grupo', {
+    a: origemId, b: destinoId,
+  });
+  if (par !== true) {
+    console.error(`[transferir] ${destinoId} não é do mesmo grupo de ${origemId}`);
+    return false;
+  }
+
+  const { data: dest } = await supabase.from('empresas')
+    .select('id, nome, telefone, evolution_instance_id')
+    .eq('id', destinoId).maybeSingle();
+  if (!dest?.evolution_instance_id) {
+    console.error(`[transferir] empresa ${destinoId} sem WhatsApp conectado`);
+    return false;
+  }
+
+  const { data: origem } = await supabase.from('empresas')
+    .select('nome').eq('id', origemId).maybeSingle();
+
+  // Reaproveita a conversa que o destino já tenha com este contato.
+  const { data: existente } = await supabase.from('conversas')
+    .select('id').eq('empresa_id', destinoId).eq('contato_telefone', phone).maybeSingle();
+
+  let destinoConversaId = existente?.id as string | undefined;
+  if (!destinoConversaId) {
+    const { data: nova, error } = await supabase.from('conversas').insert({
+      empresa_id: destinoId,
+      contato_telefone: phone,
+      contato_nome: conversa.contato_nome || phone,
+      contato_lid: conversa.contato_lid ?? null,
+      status: 'aberta',
+      canal: conversa.canal || 'whatsapp',
+      bot_ativo: false,
+      nao_lidas: 1,
+      ultima_mensagem: conversa.ultima_mensagem || '',
+      ultima_hora: new Date().toISOString(),
+      transferida_de_empresa_id: origemId,
+    }).select('id').single();
+    if (error || !nova) {
+      console.error('[transferir] falha ao criar conversa no destino:', error);
+      return false;
+    }
+    destinoConversaId = nova.id;
+  } else {
+    await supabase.from('conversas').update({
+      status: 'aberta', bot_ativo: false,
+      transferida_de_empresa_id: origemId,
+      ultima_hora: new Date().toISOString(),
+    }).eq('id', destinoConversaId);
+  }
+
+  // Copia o histórico recente para o destino entender o contexto.
+  const { data: hist } = await supabase.from('mensagens')
+    .select('texto, tipo, de, remetente, hora')
+    .eq('conversa_id', conversaId)
+    .order('hora', { ascending: false })
+    .limit(20);
+
+  if (hist?.length) {
+    await supabase.from('mensagens').insert(
+      // deno-lint-ignore no-explicit-any
+      hist.slice().reverse().map((m: any) => ({
+        conversa_id: destinoConversaId,
+        empresa_id: destinoId,
+        texto: m.texto,
+        tipo: m.tipo || 'texto',
+        de: m.de,
+        remetente: m.remetente,
+        hora: m.hora,
+      })),
+    );
+  }
+
+  // Avisa o WhatsApp do destino, pelo número da origem.
+  if (dest.telefone) {
+    const aviso =
+      `🔄 *Conversa transferida${origem?.nome ? ` de ${origem.nome}` : ''}*\n\n` +
+      `Cliente: ${conversa.contato_nome || 'sem nome'}\n` +
+      `Telefone: ${phone}\n` +
+      (conversa.ultima_mensagem ? `Última mensagem: ${String(conversa.ultima_mensagem).slice(0, 200)}` : '');
+    await enviarWhatsApp(origemId, String(dest.telefone), aviso);
+  }
+
+  // Encerra na origem, registrando para onde foi.
+  await supabase.from('conversas').update({
+    bot_ativo: false,
+    bot_ultimo_no: null,
+    status: 'resolvida',
+    transferido_em: new Date().toISOString(),
+    nota_interna: `Transferida para ${dest.nome} (WhatsApp ${dest.telefone || 'sem número'})`,
+  }).eq('id', conversaId);
+
+  return true;
+}
+
 async function salvarMensagemBot(conversaId: string, empresaId: string, texto: string) {
   await supabase.from('mensagens').insert({
     conversa_id: conversaId,
@@ -141,11 +246,33 @@ async function executarNo(
       await enviarWhatsApp(empresaId, phone, texto);
       await salvarMensagemBot(conversaId, empresaId, texto);
     }
-    await supabase.from('conversas').update({
+
+    const destino = String(no.transferir_tipo || 'fila');
+
+    // Transferência para o WhatsApp de outra empresa do mesmo grupo.
+    if (destino === 'empresa' && no.transferir_empresa_id) {
+      const ok = await transferirParaEmpresa(
+        conversaId, empresaId, String(no.transferir_empresa_id), conversa, phone,
+      );
+      if (ok) return { proximoNoId: null, aguardando: false };
+      // Falhou (destino inválido ou sem WhatsApp): cai no encerramento normal
+      // abaixo, deixando a conversa aberta para atendimento local.
+    }
+
+    // Atribuição interna. Antes esses campos eram gravados pelo builder mas
+    // ignorados aqui: escolher setor ou atendente não tinha efeito nenhum.
+    const atribuicao: Record<string, unknown> = {
       bot_ativo: false,
       bot_ultimo_no: null,
       status: 'aberta',
-    }).eq('id', conversaId);
+    };
+    if (destino === 'setor' && no.transferir_setor_id) {
+      atribuicao.setor_id = no.transferir_setor_id;
+    } else if (destino === 'usuario' && no.transferir_usuario_id) {
+      atribuicao.atendente_id = no.transferir_usuario_id;
+    }
+
+    await supabase.from('conversas').update(atribuicao).eq('id', conversaId);
     return { proximoNoId: null, aguardando: false };
   }
 

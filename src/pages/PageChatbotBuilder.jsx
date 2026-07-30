@@ -381,7 +381,10 @@ function NodeCard({ no, selected, connecting, onClick, onEdit, onDelete, onConne
     preview = ct ? ct.label + extra : "Condição";
   } else if (no.tipo === "transferir") {
     const dest = no.transferir_tipo || "fila";
-    preview = dest === "setor" ? "🏢 → Setor" : dest === "usuario" ? "👤 → Atendente específico" : "🔄 → Fila automática";
+    preview = dest === "setor" ? "🏢 → Setor"
+            : dest === "usuario" ? "👤 → Atendente específico"
+            : dest === "empresa" ? "📱 → WhatsApp de outra empresa"
+            : "🔄 → Fila automática";
   } else if (no.tipo === "encerrar") {
     preview = "✕ Encerra o fluxo";
   } else if (no.tipo === "aguardar") {
@@ -510,7 +513,7 @@ function NodeBtn({ color, title, onClick, children }) {
 }
 
 // ─── Node Edit Panel ──────────────────────────────────────────────────────────
-function NodeEditPanel({ no, onSave, onClose, onGenerateRoutes, setores = [], usuarios = [], empresaId }) {
+function NodeEditPanel({ no, onSave, onClose, onGenerateRoutes, setores = [], usuarios = [], empresasMarca = [], empresaId }) {
   const [form, setForm] = useState({ ...no });
   const tipo = NODE_TYPES[form.tipo] || NODE_TYPES.mensagem;
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
@@ -808,6 +811,7 @@ function NodeEditPanel({ no, onSave, onClose, onGenerateRoutes, setores = [], us
                   { id: "setor",   label: "Setor",    ico: "🏢" },
                   { id: "usuario", label: "Atendente", ico: "👤" },
                   { id: "fila",    label: "Fila (automático)", ico: "🔄" },
+                  { id: "empresa", label: "Outro WhatsApp", ico: "📱" },
                 ].map(op => {
                   const ativo = (form.transferir_tipo || "fila") === op.id;
                   return (
@@ -859,6 +863,40 @@ function NodeEditPanel({ no, onSave, onClose, onGenerateRoutes, setores = [], us
                 {usuarios.length === 0 && (
                   <div style={{ fontSize: 10, color: L.red, marginTop: 4 }}>
                     Nenhum usuário ativo encontrado.
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Selector de empresa da mesma marca — transferência entre WhatsApps */}
+            {(form.transferir_tipo || "fila") === "empresa" && (
+              <div style={{ marginBottom: 12 }}>
+                {labelS("WhatsApp de destino")}
+                <select value={form.transferir_empresa_id || ""}
+                  onChange={e => set("transferir_empresa_id", e.target.value)}
+                  style={{ width: "100%", border: `1.5px solid ${L.line}`, borderRadius: 8,
+                    padding: "7px 10px", fontSize: 12, outline: "none", fontFamily: "inherit",
+                    background: L.surface, color: L.t1, boxSizing: "border-box" }}>
+                  <option value="">— Escolha a empresa —</option>
+                  {empresasMarca.map(e => (
+                    <option key={e.id} value={e.id} disabled={!e.tem_instancia}>
+                      {e.nome}{e.telefone ? ` — ${e.telefone}` : ""}
+                      {!e.tem_instancia ? " (sem WhatsApp conectado)" : ""}
+                    </option>
+                  ))}
+                </select>
+                {empresasMarca.length === 0 ? (
+                  <div style={{ fontSize: 10, color: L.red, marginTop: 4, lineHeight: 1.5 }}>
+                    Nenhuma outra empresa do mesmo grupo. O agrupamento é pelo nome:
+                    empresas que compartilham as mesmas palavras (ex: <b>Vision Peças</b>)
+                    enxergam umas às outras.
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 10, color: L.t3, marginTop: 6, lineHeight: 1.5 }}>
+                    A conversa passa para o C4OS da empresa escolhida, que responde pelo
+                    próprio número, e o WhatsApp dela recebe um aviso com os dados do
+                    cliente. Use um nó por opção do menu para separar vendas, suporte e
+                    demais destinos.
                   </div>
                 )}
               </div>
@@ -1385,6 +1423,7 @@ export default function PageChatbotBuilder({ user }) {
   const [fluxos,       setFluxos]       = useState([]);
   const [vendedores,   setVendedores]   = useState([]);
   const [setores,      setSetores]      = useState([]);
+  const [empresasMarca, setEmpresasMarca] = useState([]);  // empresas irmãs (mesma marca)
   const [activeFluxo,  setActiveFluxo]  = useState(null);
   const [nos,          setNos]          = useState([]);
   const [conexoes,     setConexoes]     = useState([]);
@@ -1430,6 +1469,10 @@ export default function PageChatbotBuilder({ user }) {
     supabase.from("setores")
       .select("id, nome").eq("empresa_id", user.empresa_id).order("nome")
       .then(({ data }) => setSetores(data || []));
+    // RLS não permite ler outras empresas; a função expõe apenas as irmãs de
+    // mesma marca, com o mínimo para escolher um destino de transferência.
+    supabase.rpc("empresas_da_minha_marca")
+      .then(({ data }) => setEmpresasMarca(data || []));
   }, [user?.empresa_id]);
 
   // ── Unsaved changes tracker (justLoadedRef evita marcar dirty ao carregar fluxo) ──
@@ -1982,6 +2025,7 @@ export default function PageChatbotBuilder({ user }) {
             onGenerateRoutes={generateRoutes}
             setores={setores}
             usuarios={vendedores}
+            empresasMarca={empresasMarca}
             empresaId={user?.empresa_id}
           />
         )}
