@@ -890,7 +890,7 @@ Deno.serve(async (req) => {
       // chegar a horas — muito além do tempo de execução da função.
       const BATCH_LIMIT = 25;
       const { data: contatos } = await supabase.from("transmissao_contatos")
-        .select("id, nome, telefone, empresa, envios, enviado_em")
+        .select("id, nome, telefone, empresa, envios, enviado_em, tentativas")
         .eq("campanha_id", campanha_id).eq("status", "pendente")
         .or(`proximo_envio_em.is.null,proximo_envio_em.lte.${new Date(nowMs).toISOString()}`)
         // No modo contato quem já começou vem primeiro, para concluir as
@@ -1177,9 +1177,23 @@ Deno.serve(async (req) => {
           }
 
           if (falhou) {
-            await supabase.from("transmissao_contatos")
-              .update({ status: "falhou", erro_msg: falhou.slice(0, 500), proximo_envio_em: null })
-              .eq("id", contato.id);
+            // Queda de sessão da instância ou 5xx da Evolution são transitórios:
+            // o número existe e o envio deve ser retentado, não queimado. Só
+            // erros definitivos (número inexistente) falham de vez.
+            const transitorio = /Connection Closed|ECONNRESET|ETIMEDOUT|socket hang up|"status":\s*5\d\d/i.test(falhou);
+            const tentativas = Number(contato.tentativas || 0) + 1;
+            const MAX_TENTATIVAS = 5;
+            const retentar = transitorio && tentativas < MAX_TENTATIVAS;
+
+            await supabase.from("transmissao_contatos").update({
+              status: retentar ? "pendente" : "falhou",
+              erro_msg: falhou.slice(0, 500),
+              tentativas,
+              // Espera antes de retentar: insistir na hora só repete o erro
+              // enquanto a instância não reconectou.
+              proximo_envio_em: retentar
+                ? new Date(Date.now() + 5 * 60 * 1000).toISOString() : null,
+            }).eq("id", contato.id);
             await supabase.from("campanhas").update({ enviados }).eq("id", campanha_id);
           }
 

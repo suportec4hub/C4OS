@@ -48,6 +48,21 @@ Deno.serve(async (req) => {
   const isAuthenticated = CRON_TOKEN === "" || cronToken === CRON_TOKEN || authHeader.startsWith("Bearer ");
   if (!isAuthenticated) return new Response("Unauthorized", { status: 401 });
 
+  // O trabalho roda em segundo plano e a resposta sai na hora. O pg_net encerra
+  // a conexão em 5 segundos e a função era terminada junto: cada ciclo do cron
+  // conseguia enviar só uma mensagem antes de morrer, o que fazia campanhas
+  // grandes arrastarem a 1 envio por minuto.
+  const work = processar().catch((e) => {
+    console.error("[send-scheduled] falha no processamento:", e);
+  });
+  // deno-lint-ignore no-explicit-any
+  const rt = (globalThis as any).EdgeRuntime;
+  if (rt?.waitUntil) rt.waitUntil(work); else await work;
+
+  return json({ iniciado: true });
+});
+
+async function processar() {
   const db = createClient(SUPA_URL, SUPA_KEY);
 
   // 1. Busca mensagens pendentes com hora já vencida
@@ -58,7 +73,7 @@ Deno.serve(async (req) => {
     .lte("agendado_para", new Date().toISOString())
     .limit(20);
 
-  if (fetchErr) return json({ error: fetchErr.message }, 500);
+  if (fetchErr) { console.error("[send-scheduled]", fetchErr.message); return; }
 
   let sent = 0, failed = 0;
 
@@ -275,5 +290,5 @@ Deno.serve(async (req) => {
     console.error("[send-scheduled] erro ao verificar campanhas:", e);
   }
 
-  return json({ sent, failed, campaignsTriggered });
-});
+  console.log(`[send-scheduled] sent=${sent} failed=${failed} campanhas=${campaignsTriggered}`);
+}
