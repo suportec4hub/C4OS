@@ -24,7 +24,21 @@ const TIPOS_MIDIA = [
   { id: "video",  label: "Vídeo",  ico: "🎬" },
 ];
 
-const VAZIO = { titulo: "", mensagem: "", intervalo_min: 5, intervalo_max: 15, intervalo_unidade: "segundos", limite_envios: "", agendado_para: "", tipo_midia: "texto", chave_pix: "", caption: "" };
+const VAZIO = { titulo: "", mensagem: "", intervalo_min: 5, intervalo_max: 15, intervalo_unidade: "segundos", limite_envios: "", agendado_para: "", tipo_midia: "texto", chave_pix: "", caption: "",
+  repeticoes: 1, repeticao_intervalo: 30, repeticao_unidade: "segundos", repeticao_modo: "contato", repeticao_parar_resposta: true };
+
+// Segundos → forma legível (30s, 5min, 2h)
+const fmtDurGlobal = (seg) => {
+  const s = Number(seg) || 0;
+  if (s % 3600 === 0 && s >= 3600) return `${s / 3600}h`;
+  if (s % 60 === 0 && s >= 60)     return `${s / 60}min`;
+  return `${s}s`;
+};
+
+const MODOS_REPETICAO = [
+  { id: "contato",  label: "Por contato",       hint: "conclui as repetições de um contato antes de passar ao próximo" },
+  { id: "campanha", label: "Campanha inteira",  hint: "envia para a lista toda e repete em rodadas" },
+];
 
 const UNIDADES = [
   { id: "segundos", label: "seg", mult: 1 },
@@ -72,6 +86,8 @@ function CampanhaCard({ c, enviandoId, progress, onDisparar, onCancelar, onExclu
       hour: "2-digit", minute: "2-digit" });
   };
 
+  const fmtDur = fmtDurGlobal;
+
   const statusColor = {
     pendente:  { color: L.t3,    bg: L.surface  },
     enviando:  { color: L.yellow,bg: L.yellowBg },
@@ -79,11 +95,16 @@ function CampanhaCard({ c, enviandoId, progress, onDisparar, onCancelar, onExclu
     entregue:  { color: L.teal,  bg: L.tealBg   },
     falhou:    { color: L.red,   bg: L.redBg    },
     cancelado: { color: L.t3,    bg: L.surface  },
+    // Contato que respondeu e teve as repetições restantes interrompidas
+    respondeu: { color: L.blue,  bg: L.blueBg   },
   };
 
   const total   = c.total_contatos || 0;
   const enviados = c.enviados       || 0;
-  const pct = total > 0 ? Math.round((enviados / total) * 100) : 0;
+  // Com repetições, enviados conta mensagens e não contatos: o total previsto
+  // é contatos × repetições, senão a barra passaria de 100%.
+  const totalEnvios = total * Math.max(1, c.repeticoes || 1);
+  const pct = totalEnvios > 0 ? Math.min(100, Math.round((enviados / totalEnvios) * 100)) : 0;
 
   return (
     <div style={{ background: L.white, borderRadius: 12, border: `1px solid ${L.line}`, overflow: "hidden" }}>
@@ -116,6 +137,9 @@ function CampanhaCard({ c, enviandoId, progress, onDisparar, onCancelar, onExclu
               <span style={{ color: L.blue }}>Agendado: {fmtDate(c.agendado_para)}</span>
             )}
             <span>{total} contato{total !== 1 ? "s" : ""}</span>
+            {c.repeticoes > 1 && (
+              <span style={{ color: L.teal }}>{totalEnvios} envios previstos</span>
+            )}
             {c.limite_envios && <span>Limite: {c.limite_envios}</span>}
           </div>
         </div>
@@ -185,6 +209,14 @@ function CampanhaCard({ c, enviandoId, progress, onDisparar, onCancelar, onExclu
               padding: "4px 10px" }}>
               Intervalo: {c.intervalo_min}s – {c.intervalo_max}s
             </div>
+            {c.repeticoes > 1 && (
+              <div style={{ background: L.white, borderRadius: 6, border: `1px solid ${L.line}`,
+                padding: "4px 10px" }}>
+                {c.repeticoes}× a cada {fmtDur(c.repeticao_intervalo_seg)}
+                {c.repeticao_modo === "campanha" ? " (campanha)" : " (por contato)"}
+                {c.repeticao_parar_resposta !== false && " · para ao responder"}
+              </div>
+            )}
             {c.agendado_para && (
               <div style={{ background: L.blueBg, borderRadius: 6, border: `1px solid ${L.line}`,
                 padding: "4px 10px", color: L.blue }}>
@@ -495,6 +527,10 @@ export default function PageDisparos({ user }) {
     const intMax = Math.max(intMin, (parseInt(form.intervalo_max) || 15) * mult);
     const limEnvios = form.limite_envios ? parseInt(form.limite_envios) : null;
     const contatosLimitados = limEnvios ? contatos.slice(0, limEnvios) : contatos;
+    // Repetições: intervalo próprio, também convertido para segundos
+    const repMult = UNIDADES.find(u => u.id === form.repeticao_unidade)?.mult || 1;
+    const repeticoes = Math.min(50, Math.max(1, parseInt(form.repeticoes) || 1));
+    const repIntervaloSeg = Math.max(1, (parseInt(form.repeticao_intervalo) || 30) * repMult);
 
     const { data: camp, error } = await supabase.from("campanhas").insert({
       empresa_id: user.empresa_id,
@@ -512,6 +548,12 @@ export default function PageDisparos({ user }) {
       url_midia: midiaUrl || null,
       chave_pix: form.chave_pix?.trim() || null,
       caption: form.caption?.trim() || null,
+      repeticoes: repeticoes,
+      repeticao_intervalo_seg: repIntervaloSeg,
+      repeticao_modo: form.repeticao_modo || "contato",
+      repeticao_parar_resposta: form.repeticao_parar_resposta !== false,
+      rodada_atual: 0,
+      proxima_rodada_em: null,
     }).select().single();
     if (error) { setErr(error.message); setSaving(false); return; }
 
@@ -533,7 +575,11 @@ export default function PageDisparos({ user }) {
   };
 
   const disparar = async (campId) => {
-    if (!window.confirm("Iniciar disparo agora? Os contatos serão contactados com o intervalo configurado.")) return;
+    const camp = campanhas.find(c => c.id === campId);
+    const rep = camp?.repeticoes > 1
+      ? ` Cada contato receberá até ${camp.repeticoes} mensagens, uma a cada ${fmtDurGlobal(camp.repeticao_intervalo_seg)}.`
+      : "";
+    if (!window.confirm(`Iniciar disparo agora? Os contatos serão contactados com o intervalo configurado.${rep}`)) return;
     await supabase.from("campanhas").update({ status: "enviando" }).eq("id", campId);
     // Trigger via edge function
     const { error } = await supabase.functions.invoke("evolution-action", {
@@ -700,6 +746,75 @@ export default function PageDisparos({ user }) {
                 </div>
               </div>
             </Row>
+
+            <label style={{ fontSize: 11, color: L.t3, display: "block", marginBottom: 4 }}>
+              Repetir mensagem (opcional) — reenvia a mesma mensagem
+            </label>
+            <Row gap={8} mb={form.repeticoes > 1 ? 8 : 14}>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 10, color: L.t3, display: "block", marginBottom: 3 }}>Repetições</label>
+                <input type="number" min={1} max={50} value={form.repeticoes}
+                  onChange={e => setForm(p => ({ ...p, repeticoes: Math.min(50, Math.max(1, parseInt(e.target.value) || 1)) }))}
+                  style={{ width: "100%", border: `1px solid ${L.line}`, borderRadius: 8, padding: "7px 10px",
+                    fontSize: 12, outline: "none", fontFamily: "inherit", boxSizing: "border-box" }} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ fontSize: 10, color: L.t3, display: "block", marginBottom: 3 }}>Intervalo entre elas</label>
+                <input type="number" min={1} max={9999} value={form.repeticao_intervalo}
+                  disabled={form.repeticoes <= 1}
+                  onChange={e => setForm(p => ({ ...p, repeticao_intervalo: parseInt(e.target.value) || 30 }))}
+                  style={{ width: "100%", border: `1px solid ${L.line}`, borderRadius: 8, padding: "7px 10px",
+                    fontSize: 12, outline: "none", fontFamily: "inherit", boxSizing: "border-box",
+                    opacity: form.repeticoes <= 1 ? .45 : 1 }} />
+              </div>
+              <div>
+                <label style={{ fontSize: 10, color: L.t3, display: "block", marginBottom: 3 }}>Unidade</label>
+                <div style={{ display: "flex", gap: 3, opacity: form.repeticoes <= 1 ? .45 : 1 }}>
+                  {UNIDADES.map(u => (
+                    <button key={u.id} disabled={form.repeticoes <= 1}
+                      onClick={() => setForm(p => ({ ...p, repeticao_unidade: u.id }))}
+                      style={{ padding: "7px 11px", borderRadius: 7, fontSize: 11, cursor: form.repeticoes <= 1 ? "default" : "pointer",
+                        border: `1.5px solid ${form.repeticao_unidade === u.id ? L.accent : L.line}`,
+                        background: form.repeticao_unidade === u.id ? L.accent : L.surface,
+                        color:      form.repeticao_unidade === u.id ? "white"  : L.t2,
+                        fontWeight: form.repeticao_unidade === u.id ? 600 : 400 }}>
+                      {u.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </Row>
+
+            {form.repeticoes > 1 && (
+              <div style={{ padding: "10px 12px", background: L.surface, border: `1px solid ${L.line}`,
+                borderRadius: 8, marginBottom: 14 }}>
+                <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+                  {MODOS_REPETICAO.map(m => (
+                    <button key={m.id} onClick={() => setForm(p => ({ ...p, repeticao_modo: m.id }))}
+                      style={{ flex: 1, padding: "7px 10px", borderRadius: 7, fontSize: 11, cursor: "pointer",
+                        border: `1.5px solid ${form.repeticao_modo === m.id ? L.teal : L.line}`,
+                        background: form.repeticao_modo === m.id ? L.teal : "transparent",
+                        color:      form.repeticao_modo === m.id ? "white"  : L.t2,
+                        fontWeight: form.repeticao_modo === m.id ? 600 : 400 }}>
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ fontSize: 10, color: L.t3, marginBottom: 8, lineHeight: 1.5 }}>
+                  {MODOS_REPETICAO.find(m => m.id === form.repeticao_modo)?.hint}
+                </div>
+                <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 11, color: L.t2, cursor: "pointer" }}>
+                  <input type="checkbox" checked={form.repeticao_parar_resposta}
+                    onChange={e => setForm(p => ({ ...p, repeticao_parar_resposta: e.target.checked }))}
+                    style={{ cursor: "pointer" }} />
+                  Parar as repetições se o contato responder
+                </label>
+                <div style={{ fontSize: 10, color: L.t3, marginTop: 8, lineHeight: 1.5 }}>
+                  Cada contato receberá até {form.repeticoes} mensagens.
+                  {!form.repeticao_parar_resposta && " Sem parar ao responder, o número corre mais risco de ser reportado."}
+                </div>
+              </div>
+            )}
 
             <label style={{ fontSize: 11, color: L.t3, display: "block", marginBottom: 4 }}>
               Limite de envios (opcional) — máx. de mensagens por disparo

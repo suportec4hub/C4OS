@@ -258,8 +258,12 @@ Deno.serve(async (req) => {
           }),
         });
         const result = await r.json().catch(() => ({}));
-        campaignsTriggered++;
-        console.log(`[send-scheduled] campanha ${camp.id} concluída:`, result);
+        // Campanha só esperando o intervalo de repetição não gastou tempo nem
+        // enviou nada: não consome a vaga do tick, senão bloquearia as outras
+        // durante todo o intervalo (que pode ser de horas).
+        const apenasAguardando = !!(result?.aguardando_rodada || result?.aguardando_repeticao);
+        if (!apenasAguardando) campaignsTriggered++;
+        console.log(`[send-scheduled] campanha ${camp.id}:`, result);
       } catch (e) {
         console.error(`[send-scheduled] broadcast error campanha ${camp.id}:`, e);
         // Mantém 'enviando': o tick seguinte retoma pelos contatos pendentes.

@@ -864,33 +864,87 @@ Deno.serve(async (req) => {
       if (!campanha_id) return json({ error: "campanha_id obrigatório" }, 400);
 
       const { data: camp } = await supabase.from("campanhas")
-        .select("id, mensagem, intervalo_min, intervalo_max, total_contatos, tipo_midia, url_midia, chave_pix, caption")
+        .select("id, mensagem, intervalo_min, intervalo_max, total_contatos, tipo_midia, url_midia, chave_pix, caption, repeticoes, repeticao_intervalo_seg, repeticao_modo, repeticao_parar_resposta, rodada_atual, proxima_rodada_em")
         .eq("id", campanha_id).eq("empresa_id", empresa_id).single();
       if (!camp) return json({ error: "Campanha não encontrada" }, 404);
+
+      const repeticoes    = Math.max(1, Number(camp.repeticoes ?? 1));
+      const repIntervaloMs = Math.max(1, Number(camp.repeticao_intervalo_seg ?? 60)) * 1000;
+      const repModo       = String(camp.repeticao_modo || "contato");
+      const pararResposta = camp.repeticao_parar_resposta !== false;
+      const nowMs         = Date.now();
+
+      // No modo campanha as rodadas são espaçadas: se a próxima ainda não
+      // venceu, nada a fazer neste tick.
+      if (camp.proxima_rodada_em && new Date(camp.proxima_rodada_em as string).getTime() > nowMs) {
+        return json({ success: true, aguardando_rodada: camp.proxima_rodada_em, rodada: camp.rodada_atual });
+      }
 
       // Lote limitado por execução: com o intervalo entre mensagens, campanhas
       // grandes estouram o tempo máximo da edge function e a campanha ficava
       // presa em "enviando" com contatos nunca enviados. O cron do
       // send-scheduled reprocessa a campanha até esgotar os pendentes.
+      //
+      // proximo_envio_em filtra as repetições que ainda não venceram: o
+      // intervalo entre repetições é agendado, não aguardado, porque pode
+      // chegar a horas — muito além do tempo de execução da função.
       const BATCH_LIMIT = 25;
       const { data: contatos } = await supabase.from("transmissao_contatos")
-        .select("id, nome, telefone, empresa")
+        .select("id, nome, telefone, empresa, envios, enviado_em")
         .eq("campanha_id", campanha_id).eq("status", "pendente")
+        .or(`proximo_envio_em.is.null,proximo_envio_em.lte.${new Date(nowMs).toISOString()}`)
+        // No modo contato quem já começou vem primeiro, para concluir as
+        // repetições de um contato antes de iniciar o próximo. No modo campanha
+        // a ordem é pela hora agendada, mantendo as rodadas parelhas.
+        .order("envios", { ascending: repModo !== "contato" })
+        .order("proximo_envio_em", { ascending: true, nullsFirst: true })
         .limit(BATCH_LIMIT);
 
-      const { count: jaEnviados } = await supabase.from("transmissao_contatos")
-        .select("id", { count: "exact", head: true })
-        .eq("campanha_id", campanha_id).eq("status", "enviado");
+      // Soma de envios já realizados (conta repetições, não contatos).
+      const { data: enviosRows } = await supabase.from("transmissao_contatos")
+        .select("envios").eq("campanha_id", campanha_id);
+      const jaEnviados = (enviosRows || []).reduce((s, r) => s + Number(r.envios || 0), 0);
 
       if (!contatos?.length) {
-        // Sem pendentes a campanha acabou (ou nunca teve contatos). Fecha o
-        // status — antes retornava 400 deixando a campanha presa em "enviando".
+        // Nada elegível agora. Pode ser fim da campanha, uma rodada a agendar
+        // (modo campanha) ou repetições futuras já agendadas (modo contato).
+        const { count: pendentes } = await supabase.from("transmissao_contatos")
+          .select("id", { count: "exact", head: true })
+          .eq("campanha_id", campanha_id).eq("status", "pendente");
+
+        if ((pendentes ?? 0) > 0) {
+          // Repetições agendadas para o futuro: segue em 'enviando'.
+          return json({ success: true, enviados: jaEnviados, aguardando_repeticao: true });
+        }
+
+        const rodada = Number(camp.rodada_atual ?? 0) + 1;
+        if (repModo === "campanha" && rodada < repeticoes) {
+          // Reabre a lista para a próxima rodada, preservando quem respondeu.
+          const reset = supabase.from("transmissao_contatos")
+            .update({ status: "pendente", proximo_envio_em: new Date(nowMs + repIntervaloMs).toISOString() })
+            .eq("campanha_id", campanha_id).eq("status", "enviado");
+          if (pararResposta) reset.is("respondeu_em", null);
+          await reset;
+
+          await supabase.from("campanhas").update({
+            status: "enviando",
+            rodada_atual: rodada,
+            proxima_rodada_em: new Date(nowMs + repIntervaloMs).toISOString(),
+            enviados: jaEnviados,
+          }).eq("id", campanha_id);
+          return json({ success: true, enviados: jaEnviados, proxima_rodada: rodada + 1 });
+        }
+
+        // Sem pendentes e sem rodada restante: fecha o status — antes retornava
+        // 400 deixando a campanha presa em "enviando".
         await supabase.from("campanhas")
-          .update({ status: "concluido", enviados: jaEnviados ?? 0 }).eq("id", campanha_id);
-        return json({ success: true, enviados: jaEnviados ?? 0, restantes: 0 });
+          .update({ status: "concluido", enviados: jaEnviados, proxima_rodada_em: null })
+          .eq("id", campanha_id);
+        return json({ success: true, enviados: jaEnviados, restantes: 0 });
       }
 
-      await supabase.from("campanhas").update({ status: "enviando" }).eq("id", campanha_id);
+      await supabase.from("campanhas")
+        .update({ status: "enviando", proxima_rodada_em: null }).eq("id", campanha_id);
 
       // Interrompe o lote antes do limite de execução para que o status final
       // seja sempre gravado e o próximo tick continue de onde parou.
@@ -1006,9 +1060,36 @@ Deno.serve(async (req) => {
         } catch (e) { return { ok: false, err: (e as Error).message }; }
       };
 
+      // Detecta se o contato respondeu depois do último envio, para não seguir
+      // insistindo com quem já respondeu (reduz risco de bloqueio no WhatsApp).
+      const respondeuDepois = async (telefone: string, desde: string | null): Promise<boolean> => {
+        if (!desde) return false;
+        try {
+          const variantes = numCandidates(telefone);
+          const { data: convs } = await supabase.from("conversas")
+            .select("id").eq("empresa_id", empresa_id).in("contato_telefone", variantes);
+          if (!convs?.length) return false;
+          const { count } = await supabase.from("mensagens")
+            .select("id", { count: "exact", head: true })
+            .in("conversa_id", convs.map(c => c.id))
+            .eq("de", "contato")
+            .gt("hora", desde);
+          return (count ?? 0) > 0;
+        } catch (_) { return false; }
+      };
+
       for (const contato of contatos) {
         if (Date.now() > bcDeadline) break;
         try {
+          // Já respondeu desde o último envio: encerra as repetições dele.
+          if (pararResposta && Number(contato.envios || 0) > 0 &&
+              await respondeuDepois(String(contato.telefone), contato.enviado_em as string | null)) {
+            await supabase.from("transmissao_contatos").update({
+              status: "respondeu", respondeu_em: new Date().toISOString(), proximo_envio_em: null,
+            }).eq("id", contato.id);
+            continue;
+          }
+
           const nums = numCandidates(String(contato.telefone));
           const num  = nums[nums.length - 1] || "";
           const interpolate = (t: string) => t
@@ -1017,48 +1098,76 @@ Deno.serve(async (req) => {
             .replace(/\{telefone\}/gi, num);
 
           const mensagem = interpolate((camp.mensagem as string) || "");
-          let sent = false;
 
-          if (tipoMidia === "pix") {
-            // PIX: mensagem de texto + chave PIX em destaque
-            const pixKey = (camp.chave_pix as string) || "";
-            const texto  = pixKey ? `${mensagem}\n\n💳 *Chave PIX:* ${pixKey}` : mensagem;
-            sent = await sendMsg(nums, texto);
-
-          } else if (tipoMidia !== "texto" && camp.url_midia) {
-            // Mídia (imagem, vídeo, áudio, documento)
-            const mediatype = mediaTypeMap[tipoMidia] || "image";
-            const caption   = interpolate((camp.caption as string) || mensagem);
-            const mResult   = await sendMedia(nums, mediatype, camp.url_midia as string, caption);
-            sent = mResult.ok;
-            if (!mResult.ok) {
-              await supabase.from("transmissao_contatos")
-                .update({ status: "falhou", erro_msg: mResult.err || "Falha ao enviar mídia" }).eq("id", contato.id);
-              await supabase.from("campanhas").update({ enviados }).eq("id", campanha_id);
-              const delay2 = minMs + Math.random() * (maxMs - minMs);
-              await new Promise(r => setTimeout(r, delay2));
-              continue;
+          // Um envio para este contato. Isolado numa função porque no modo
+          // contato ele é chamado várias vezes, uma por repetição.
+          const enviarUm = async (): Promise<{ ok: boolean; err: string }> => {
+            if (tipoMidia === "pix") {
+              const pixKey = (camp.chave_pix as string) || "";
+              const texto  = pixKey ? `${mensagem}\n\n💳 *Chave PIX:* ${pixKey}` : mensagem;
+              return { ok: await sendMsg(nums, texto), err: "Falha ao enviar" };
             }
+            if (tipoMidia !== "texto" && camp.url_midia) {
+              const mediatype = mediaTypeMap[tipoMidia] || "image";
+              const caption   = interpolate((camp.caption as string) || mensagem);
+              const m = await sendMedia(nums, mediatype, camp.url_midia as string, caption);
+              return { ok: m.ok, err: m.err || "Falha ao enviar mídia" };
+            }
+            return { ok: await sendMsg(nums, mensagem), err: "Falha ao enviar" };
+          };
 
-          } else {
-            // Texto simples
-            sent = await sendMsg(nums, mensagem);
-          }
+          let feitos = Number(contato.envios || 0);
+          let falhou = "";
+          // Acompanha o horário do último envio: a checagem de resposta precisa
+          // olhar a partir dele, não do valor lido do banco no início do lote.
+          let ultimoEnvio = (contato.enviado_em as string | null) ?? null;
 
-          if (sent) {
-            await supabase.from("transmissao_contatos")
-              .update({ status: "enviado", enviado_em: new Date().toISOString() }).eq("id", contato.id);
+          // Repete enquanto couber no tempo desta execução. O que não couber
+          // fica agendado em proximo_envio_em e o cron retoma — é o que permite
+          // intervalos de horas sem travar a função.
+          for (;;) {
+            const r = await enviarUm();
+            if (!r.ok) { falhou = r.err; break; }
+            feitos++;
             enviados++;
-          } else {
-            await supabase.from("transmissao_contatos")
-              .update({ status: "falhou", erro_msg: "Falha ao enviar" }).eq("id", contato.id);
+            ultimoEnvio = new Date().toISOString();
+
+            const faltaRepetir = repModo === "contato" && feitos < repeticoes;
+            const cabeAgora = faltaRepetir && (Date.now() + repIntervaloMs) < bcDeadline;
+
+            await supabase.from("transmissao_contatos").update({
+              status: faltaRepetir ? "pendente" : "enviado",
+              enviado_em: ultimoEnvio,
+              envios: feitos,
+              proximo_envio_em: faltaRepetir && !cabeAgora
+                ? new Date(Date.now() + repIntervaloMs).toISOString() : null,
+            }).eq("id", contato.id);
+            await supabase.from("campanhas").update({ enviados }).eq("id", campanha_id);
+
+            if (!cabeAgora) break;
+
+            await new Promise(r2 => setTimeout(r2, repIntervaloMs));
+
+            // Respondeu no meio das repetições: para de insistir.
+            if (pararResposta && await respondeuDepois(String(contato.telefone), ultimoEnvio)) {
+              await supabase.from("transmissao_contatos").update({
+                status: "respondeu", respondeu_em: new Date().toISOString(), proximo_envio_em: null,
+              }).eq("id", contato.id);
+              falhou = "";
+              break;
+            }
           }
 
-          await supabase.from("campanhas").update({ enviados }).eq("id", campanha_id);
+          if (falhou) {
+            await supabase.from("transmissao_contatos")
+              .update({ status: "falhou", erro_msg: falhou.slice(0, 500), proximo_envio_em: null })
+              .eq("id", contato.id);
+            await supabase.from("campanhas").update({ enviados }).eq("id", campanha_id);
+          }
 
-          // Intervalo aleatório entre mensagens para evitar bloqueio
+          // Intervalo aleatório entre contatos para evitar bloqueio
           const delay = minMs + Math.random() * (maxMs - minMs);
-          await new Promise(r => setTimeout(r, delay));
+          await new Promise(r3 => setTimeout(r3, delay));
         } catch (e) {
           await supabase.from("transmissao_contatos")
             .update({ status: "falhou", erro_msg: (e as Error).message }).eq("id", contato.id);
