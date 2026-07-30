@@ -23,10 +23,16 @@ Deno.serve(async (_req) => {
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
 
+  // Conversa com mensagem recente fica de fora: o findChats pode ainda não ter
+  // contabilizado o não lido e responder 0, o que marcaria como lida uma
+  // mensagem que ninguém abriu. Passados os 45s, o dado da Evolution é confiável.
+  const limiteRecencia = new Date(Date.now() - 45_000).toISOString();
+
   const { data: conversas } = await supabase
     .from("conversas")
     .select("id, empresa_id, contato_telefone, contato_lid, nao_lidas")
-    .gt("nao_lidas", 0);
+    .gt("nao_lidas", 0)
+    .lt("ultima_hora", limiteRecencia);
 
   if (!conversas || conversas.length === 0) return new Response("OK");
 
@@ -334,6 +340,8 @@ Deno.serve(async (_req) => {
           .update({ nao_lidas: 0 })
           .eq("id", conv.id)
           .gt("nao_lidas", 0)
+          // Mensagem que chegou durante a varredura não é zerada.
+          .lt("ultima_hora", limiteRecencia)
           .select("id");
 
         if (upd && upd.length > 0) {

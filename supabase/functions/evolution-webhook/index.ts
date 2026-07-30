@@ -22,7 +22,7 @@ const _CACHE_TTL = 90_000; // 90 segundos
 const _findChatsCache = new Map<string, {
   map: Record<string, number>; alt: Record<string, string>; ts: number;
 }>();
-const _FIND_CHATS_TTL = 15_000; // 15 segundos
+const _FIND_CHATS_TTL = 5_000; // 5 segundos: dado velho decidindo leitura marcava mensagem nova como lida
 
 function getAwsClient(): AwsClient | null {
   const keyId  = Deno.env.get("R2_KEY_ID");
@@ -338,6 +338,14 @@ Deno.serve(async (req) => {
           } catch (_) {}
         }
 
+        // Guarda de recência: chats.update também dispara quando chega mensagem
+        // nova, e nesse instante o findChats ainda não contabilizou o não lido —
+        // responde 0 e o badge era zerado, fazendo a mensagem do cliente
+        // aparecer como lida sem ninguém ter aberto. Conversa com mensagem
+        // recente não é zerada por este caminho; o recibo de leitura
+        // (messages.update READ) e o sync periódico cobrem esses casos.
+        const limiteRecencia = new Date(Date.now() - 45_000).toISOString();
+
         for (const chat of chatsToProcess) {
           try {
             const jid = (chat?.id || chat?.remoteJid || "") as string;
@@ -357,6 +365,7 @@ Deno.serve(async (req) => {
               .eq("empresa_id", _eid)
               .eq("contato_telefone", phone)
               .gt("nao_lidas", 0)
+              .lt("ultima_hora", limiteRecencia)
               .select("id");
             let matched = (upd1?.length ?? 0) > 0;
 
@@ -373,6 +382,7 @@ Deno.serve(async (req) => {
                   .eq("empresa_id", _eid)
                   .eq("contato_telefone", v)
                   .gt("nao_lidas", 0)
+              .lt("ultima_hora", limiteRecencia)
                   .select("id");
                 if (updV && updV.length > 0) { matched = true; break; }
               }
@@ -385,6 +395,7 @@ Deno.serve(async (req) => {
                 .eq("empresa_id", _eid)
                 .eq("contato_lid", jid)
                 .gt("nao_lidas", 0)
+              .lt("ultima_hora", limiteRecencia)
                 .select("id");
               matched = (upd3?.length ?? 0) > 0;
             }
@@ -403,6 +414,7 @@ Deno.serve(async (req) => {
                   .eq("empresa_id", _eid)
                   .eq("contato_telefone", v)
                   .gt("nao_lidas", 0)
+              .lt("ultima_hora", limiteRecencia)
                   .select("id");
                 if (updAlt && updAlt.length > 0) { matched = true; break; }
               }
@@ -450,6 +462,7 @@ Deno.serve(async (req) => {
                         .eq("empresa_id", _eid)
                         .eq("contato_telefone", v)
                         .gt("nao_lidas", 0)
+              .lt("ultima_hora", limiteRecencia)
                         .select("id");
                       if (updApi && updApi.length > 0) { matched = true; break; }
                     }
