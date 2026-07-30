@@ -99,8 +99,8 @@ Deno.serve(async (_req) => {
       }
 
       empresaDiag.findChatsStatus = r.status;
-      // Se findChats falhar (instância desconectada, etc.), não abandona a empresa —
-      // continua com chatMapGroup vazio para que a regra dos 30 min limpe badges órfãos.
+      // Se findChats falhar (instância desconectada, etc.), segue com os mapas
+      // vazios: nada será zerado, que é o comportamento correto sem confirmação.
       // deno-lint-ignore no-explicit-any
       const rawChats: any = r.ok ? await r.json().catch(() => []) : [];
       // deno-lint-ignore no-explicit-any
@@ -220,9 +220,7 @@ Deno.serve(async (_req) => {
       empresaDiag.groupsInMap = Object.keys(chatMapGroup).length;
       empresaDiag.groupsUnreadZero = Object.values(chatMapGroup).filter(v => v === 0).length;
 
-      // Zera badges onde Evolution API confirma unreadCount = 0
-      // Para grupos travados (findChats discorda), tenta force-read via readMessage API
-      const diagGroups: { convId: string; jid: string; reason: string; ucVal: number | null; forceRead?: boolean }[] = [];
+      // Zera badges apenas onde a Evolution confirma unreadCount = 0.
       let shouldZeroCount = 0, updateRan = 0, updateSuccess = 0;
 
       for (const conv of convs) {
@@ -230,66 +228,19 @@ Deno.serve(async (_req) => {
         let shouldZero = false;
 
         if (jid.endsWith("@g.us")) {
-          // Grupo: match direto por JID
-          const inMap = jid in chatMapGroup;
-          const ucVal = inMap ? chatMapGroup[jid] : null;
-
-          if (!inMap || ucVal !== 0) {
-            // findChats não confirmou leitura — tenta force-read se a mensagem tiver
-            // mais de 3 minutos (dá tempo para a webhook processar naturalmente antes)
-            let forceRead = false;
-            let rkStatus: number | null = null;
-            try {
-              const { data: lastMsg } = await supabase.from("mensagens")
-                .select("hora, wamid")
-                .eq("conversa_id", conv.id)
-                .eq("de", "contato")
-                .not("wamid", "is", null)
-                .order("hora", { ascending: false })
-                .limit(20);
-
-              if (lastMsg && lastMsg.length > 0) {
-                const lastHora = lastMsg[0].hora;
-                const ageMs = lastHora ? Date.now() - new Date(lastHora).getTime() : 0;
-
-                // Só force-read se a mensagem mais recente tiver pelo menos 3 minutos
-                if (ageMs > 3 * 60 * 1000) {
-                  const readMsgs = lastMsg
-                    .filter((m: Record<string, string>) => m.wamid)
-                    .map((m: Record<string, string>) => ({
-                      key: { remoteJid: jid, fromMe: false, id: m.wamid },
-                    }));
-
-                  if (readMsgs.length > 0) {
-                    // Tenta marcar como lido na Evolution para sincronizar o estado
-                    const rkResp = await fetch(`${EVOLUTION_URL}/chat/readMessage/${instName}`, {
-                      method: "POST",
-                      headers: { "apikey": instKey, "Content-Type": "application/json" },
-                      body: JSON.stringify({ readMessages: readMsgs }),
-                    }).catch(() => null);
-                    forceRead = rkResp?.ok ?? false;
-                    rkStatus = rkResp?.status ?? null;
-                    if (forceRead) shouldZero = true;
-                  }
-                }
-
-                // Grupo ausente do findChats com mensagem antiga: Evolution não
-                // rastreia mais este chat (instância reconectada, grupo saído, etc.)
-                // → zera o badge pois não há forma de marcar como lido.
-                if (!inMap && !shouldZero && ageMs > 30 * 60 * 1000) {
-                  shouldZero = true;
-                }
-              } else if (!inMap) {
-                // Sem mensagens do contato mas badge >0 → badge órfão, zera.
-                shouldZero = true;
-              }
-            } catch (_) {}
-
-            diagGroups.push({ convId: conv.id, jid, reason: !inMap ? "not_in_findChats" : `unreadCount=${ucVal}`, ucVal, forceRead, rkStatus });
-            if (!shouldZero) continue;
-          } else {
-            shouldZero = true;
-          }
+          // Grupo: só zera quando a Evolution confirma que não há não lidos.
+          //
+          // Havia aqui três caminhos que zeravam sem evidência de leitura, todos
+          // removidos. O mais grave chamava /chat/readMessage para "sincronizar"
+          // o estado: isso marca as mensagens como lidas no WhatsApp de verdade,
+          // então uma mensagem de grupo com mais de 3 minutos perdia a
+          // notificação no C4OS e no celular sem ninguém ter aberto. Os outros
+          // dois zeravam por ausência no findChats ou por não achar wamid.
+          //
+          // Eram muletas de quando o casamento por JID estava quebrado. Com ele
+          // corrigido, um badge que sobra é preferível a uma mensagem escondida.
+          if (chatMapGroup[jid] === 0) shouldZero = true;
+          if (!shouldZero) continue;
 
         } else if (jid.endsWith("@lid")) {
           // Conversa onde contato_telefone é o @lid diretamente
@@ -368,7 +319,6 @@ Deno.serve(async (_req) => {
       empresaDiag.shouldZeroCount = shouldZeroCount;
       empresaDiag.updateRan = updateRan;
       empresaDiag.updateSuccess = updateSuccess;
-      empresaDiag.diagGroupsCount = diagGroups.length;
       diagReport.push(empresaDiag);
 
       // Registrado apenas quando houve limpeza: um log por empresa a cada
@@ -380,18 +330,6 @@ Deno.serve(async (_req) => {
         payload: empresaDiag,
       }).then(() => {}).catch(() => {});
 
-      // Só interessa registrar quando houve tentativa de force-read: um grupo
-      // apenas não confirmado como lido é o estado normal de quem tem mensagem
-      // pendente, e logar isso a cada minuto inundava logs_whatsapp.
-      const forceReadGroups = diagGroups.filter(g => g.forceRead);
-      if (forceReadGroups.length > 0) {
-        await supabase.from("logs_whatsapp").insert({
-          empresa_id: empresaId, tipo: "fluxo", nivel: "info", origem: "sync-badges",
-          evento: "badge-grupos-diagnostico",
-          resumo: `${forceReadGroups.length} grupo(s) marcados como lidos via force-read`,
-          payload: { instName, groups: forceReadGroups.slice(0, 20) },
-        }).then(() => {}).catch(() => {});
-      }
     } catch (e) { diagReport.push({ ...empresaDiag, caught: String(e).slice(0, 150) }); }
   }));
 
