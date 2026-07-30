@@ -889,19 +889,22 @@ Deno.serve(async (req) => {
       // intervalo entre repetições é agendado, não aguardado, porque pode
       // chegar a horas — muito além do tempo de execução da função.
       const BATCH_LIMIT = 25;
-      const { data: contatos } = await supabase.from("transmissao_contatos")
-        .select("id, nome, telefone, empresa, envios, enviado_em, tentativas")
-        .eq("campanha_id", campanha_id).eq("status", "pendente")
-        // Teto absoluto de envios por contato: alcançado o número de
-        // repetições, o contato não é mais elegível, com ou sem resposta.
-        .lt("envios", repeticoes)
-        .or(`proximo_envio_em.is.null,proximo_envio_em.lte.${new Date(nowMs).toISOString()}`)
-        // No modo contato quem já começou vem primeiro, para concluir as
-        // repetições de um contato antes de iniciar o próximo. No modo campanha
-        // a ordem é pela hora agendada, mantendo as rodadas parelhas.
-        .order("envios", { ascending: repModo !== "contato" })
-        .order("proximo_envio_em", { ascending: true, nullsFirst: true })
-        .limit(BATCH_LIMIT);
+      const buscarLote = async () => {
+        const { data } = await supabase.from("transmissao_contatos")
+          .select("id, nome, telefone, empresa, envios, enviado_em, tentativas")
+          .eq("campanha_id", campanha_id).eq("status", "pendente")
+          // Teto absoluto de envios por contato: alcançado o número de
+          // repetições, o contato não é mais elegível, com ou sem resposta.
+          .lt("envios", repeticoes)
+          .or(`proximo_envio_em.is.null,proximo_envio_em.lte.${new Date().toISOString()}`)
+          // No modo contato quem já começou vem primeiro, para concluir as
+          // repetições de um contato antes de iniciar o próximo. No modo campanha
+          // a ordem é pela hora agendada, mantendo as rodadas parelhas.
+          .order("envios", { ascending: repModo !== "contato" })
+          .order("proximo_envio_em", { ascending: true, nullsFirst: true })
+          .limit(BATCH_LIMIT);
+        return data || [];
+      };
 
       // Soma de envios já realizados (conta repetições, não contatos).
       // Um contato marcado como enviado conta no mínimo 1 mesmo com envios=0:
@@ -916,7 +919,9 @@ Deno.serve(async (req) => {
       // termina. Antes a lógica de rodadas só existia na primeira: ao concluir
       // a rodada 1 dentro da mesma execução, a campanha era marcada como
       // concluída e as rodadas seguintes nunca saíam.
-      const finalizar = async (total: number) => {
+      // Sentinela: pede ao laço principal para seguir na mesma execução.
+      const CONTINUAR = Symbol("continuar");
+      const finalizar = async (total: number): Promise<Response | typeof CONTINUAR> => {
         // Campanha cancelada durante o lote não volta para 'enviando': só
         // registra o progresso e para.
         const { data: atual } = await supabase.from("campanhas")
@@ -968,6 +973,14 @@ Deno.serve(async (req) => {
             proxima_rodada_em: proxima, enviados: total,
             updated_at: new Date().toISOString(),
           }).eq("id", campanha_id);
+
+          // Se a espera couber nesta execução, aguarda e roda a próxima rodada
+          // aqui mesmo. Depender do cron esticava um intervalo de 30s para o
+          // próximo minuto — e mais ainda quando outra campanha pegava a vaga.
+          if ((Date.now() + repIntervaloMs) < bcDeadline) {
+            await new Promise(r => setTimeout(r, repIntervaloMs));
+            return CONTINUAR;
+          }
           return json({ success: true, enviados: total, rodada_agendada: rodada + 1, em: proxima });
         }
 
@@ -980,7 +993,12 @@ Deno.serve(async (req) => {
         return json({ success: true, enviados: total, restantes: 0 });
       };
 
-      if (!contatos?.length) return await finalizar(jaEnviados);
+      let contatos = await buscarLote();
+      if (!contatos.length) {
+        const r = await finalizar(jaEnviados);
+        if (r !== CONTINUAR) return r;
+        contatos = await buscarLote();
+      }
 
       await supabase.from("campanhas")
         .update({ status: "enviando", proxima_rodada_em: null }).eq("id", campanha_id);
@@ -1150,9 +1168,13 @@ Deno.serve(async (req) => {
         return !!data && data.status !== "enviando";
       };
 
+      // Laço externo: ao esgotar o lote, reavalia. No modo campanha a rodada
+      // seguinte pode ter sido liberada dentro desta mesma execução.
+      let interrompida = false;
+      for (;;) {
       for (const contato of contatos) {
         if (Date.now() > bcDeadline) break;
-        if (await cancelada()) break;
+        if (await cancelada()) { interrompida = true; break; }
         try {
           // Reconfere o teto: o cron dispara a cada minuto e um lote longo pode
           // se sobrepor ao seguinte, que traria o mesmo contato no lote.
@@ -1230,7 +1252,7 @@ Deno.serve(async (req) => {
 
             await new Promise(r2 => setTimeout(r2, repIntervaloMs));
 
-            if (await cancelada()) break;
+            if (await cancelada()) { interrompida = true; break; }
 
             // Respondeu no meio das repetições: para de insistir.
             if (pararResposta && await respondeuDepois(String(contato.telefone), ultimoEnvio)) {
@@ -1284,8 +1306,23 @@ Deno.serve(async (req) => {
         }
       }
 
+      if (interrompida || Date.now() > bcDeadline) break;
+
+      const prox = await buscarLote();
+      if (prox.length > 0) { contatos = prox; continue; }
+
       // Só conclui quando não restar pendente nem rodada de repetição.
-      return await finalizar(enviados);
+      const fim = await finalizar(enviados);
+      if (fim !== CONTINUAR) return fim;
+      contatos = await buscarLote();
+      if (contatos.length === 0) break;
+      }
+
+      // Orçamento esgotado: o próximo ciclo do cron retoma de onde parou.
+      const restante = await finalizar(enviados);
+      return restante === CONTINUAR
+        ? json({ success: true, enviados, continua: true })
+        : restante;
     }
 
     // ────────────────────────────────────────────────────────────────────────

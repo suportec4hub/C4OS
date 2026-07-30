@@ -220,12 +220,21 @@ async function processar() {
   let campaignsTriggered = 0;
   // A função tem ~150s. Reserva-se margem para gravar os status finais.
   const tickDeadline = Date.now() + 120_000;
-  const FATIA_MS = 40_000;
+  // Campanha com repetição precisa de fatia maior que o próprio intervalo, ou a
+  // repetição nunca cabe na execução e acaba esperando o cron — o que estica um
+  // intervalo de 30s para o minuto seguinte.
+  // deno-lint-ignore no-explicit-any
+  const fatiaPara = (c: any) => {
+    const reps = Number(c?.repeticoes ?? 1);
+    if (reps <= 1) return 40_000;
+    const intervalo = Math.max(1, Number(c?.repeticao_intervalo_seg ?? 60)) * 1000;
+    return Math.min(100_000, intervalo + 45_000);
+  };
   try {
     const now = new Date().toISOString();
     const { data: dueCampaigns } = await db
       .from("campanhas")
-      .select("id, empresa_id")
+      .select("id, empresa_id, repeticoes, repeticao_intervalo_seg")
       .eq("status", "agendado")
       .lte("agendado_para", now)
       .limit(5); // máx 5 por tick para evitar timeout
@@ -238,7 +247,7 @@ async function processar() {
     // uma campanha grande e travada impedia qualquer repetição de sair.
     const { data: resumeCampaigns } = await db
       .from("campanhas")
-      .select("id, empresa_id")
+      .select("id, empresa_id, repeticoes, repeticao_intervalo_seg")
       .eq("status", "enviando")
       .order("updated_at", { ascending: true, nullsFirst: true })
       .limit(5);
@@ -278,7 +287,7 @@ async function processar() {
             action:      "broadcast",
             empresa_id:  camp.empresa_id,
             campanha_id: camp.id,
-            budget_ms:   FATIA_MS,
+            budget_ms:   fatiaPara(camp),
           }),
         });
         const result = await r.json().catch(() => ({}));
