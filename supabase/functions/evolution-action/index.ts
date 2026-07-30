@@ -914,6 +914,15 @@ Deno.serve(async (req) => {
       // a rodada 1 dentro da mesma execução, a campanha era marcada como
       // concluída e as rodadas seguintes nunca saíam.
       const finalizar = async (total: number) => {
+        // Campanha cancelada durante o lote não volta para 'enviando': só
+        // registra o progresso e para.
+        const { data: atual } = await supabase.from("campanhas")
+          .select("status").eq("id", campanha_id).maybeSingle();
+        if (atual && atual.status !== "enviando") {
+          await supabase.from("campanhas").update({ enviados: total }).eq("id", campanha_id);
+          return json({ success: true, enviados: total, interrompida: atual.status });
+        }
+
         const { count: pendentes } = await supabase.from("transmissao_contatos")
           .select("id", { count: "exact", head: true })
           .eq("campanha_id", campanha_id).eq("status", "pendente");
@@ -993,21 +1002,34 @@ Deno.serve(async (req) => {
       // "Falha ao enviar" que não distinguia número inexistente de instância
       // desconectada — o que também impedia classificar o erro como transitório.
       const sendMsg = async (nums: string[], texto: string): Promise<{ ok: boolean; err: string }> => {
-        let lastErr = "Falha ao enviar";
+        // Guarda o erro do endpoint oficial. O legado /send/text não existe na
+        // v2 e responde sempre 404 "Cannot POST /send/text"; ao guardar o erro
+        // da última tentativa, esse 404 sobrescrevia a causa real.
+        let erroReal = "";
         for (const num of nums) {
-          for (const [path, bd] of [
-            [`/message/sendText/${instName}`, JSON.stringify({ number: num, text: texto })],
-            ["/send/text", JSON.stringify({ instanceName: instName, id: instName, number: num, text: texto })],
-          ] as [string, string][]) {
-            const res = await iFetch(path, { method: "POST", body: bd }).catch(() => null);
-            if (res?.ok) return { ok: true, err: "" };
-            if (res) {
-              const d = await res.json().catch(() => null);
-              lastErr = d ? JSON.stringify(d).slice(0, 300) : `HTTP ${res.status}`;
-            }
+          const res = await iFetch(`/message/sendText/${instName}`, {
+            method: "POST", body: JSON.stringify({ number: num, text: texto }),
+          }).catch(() => null);
+          if (res?.ok) return { ok: true, err: "" };
+
+          let erro = "";
+          if (res) {
+            const d = await res.json().catch(() => null);
+            erro = d ? JSON.stringify(d).slice(0, 300) : `HTTP ${res.status}`;
+          }
+          if (!erroReal && erro) erroReal = erro;
+
+          // Rota ausente indica Evolution antiga: só nesse caso vale tentar o
+          // endpoint legado, e o erro dele não substitui o erro real.
+          if (res?.status === 404 && /Cannot (POST|find)/i.test(erro)) {
+            const alt = await iFetch("/send/text", {
+              method: "POST",
+              body: JSON.stringify({ instanceName: instName, id: instName, number: num, text: texto }),
+            }).catch(() => null);
+            if (alt?.ok) return { ok: true, err: "" };
           }
         }
-        return { ok: false, err: lastErr };
+        return { ok: false, err: erroReal || "Falha ao enviar" };
       };
 
       const getMimetype = (url: string, type: string): string => {
@@ -1105,8 +1127,17 @@ Deno.serve(async (req) => {
         } catch (_) { return false; }
       };
 
+      // O botão Cancelar muda o status no banco, mas o lote em curso seguia
+      // enviando por até ~100s. Verificado antes de cada envio.
+      const cancelada = async (): Promise<boolean> => {
+        const { data } = await supabase.from("campanhas")
+          .select("status").eq("id", campanha_id).maybeSingle();
+        return !!data && data.status !== "enviando";
+      };
+
       for (const contato of contatos) {
         if (Date.now() > bcDeadline) break;
+        if (await cancelada()) break;
         try {
           // Já respondeu desde o último envio: encerra as repetições dele.
           if (pararResposta && Number(contato.envios || 0) > 0 &&
@@ -1174,6 +1205,8 @@ Deno.serve(async (req) => {
             if (!cabeAgora) break;
 
             await new Promise(r2 => setTimeout(r2, repIntervaloMs));
+
+            if (await cancelada()) break;
 
             // Respondeu no meio das repetições: para de insistir.
             if (pararResposta && await respondeuDepois(String(contato.telefone), ultimoEnvio)) {
