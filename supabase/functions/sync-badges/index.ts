@@ -101,6 +101,11 @@ Deno.serve(async (_req) => {
       const allChats: any[] = Array.isArray(rawChats) ? rawChats : [];
       empresaDiag.findChatsTotal = allChats.length;
 
+      // As gravações de contato_lid são acumuladas e aguardadas no fim do
+      // bloco: disparadas sem await, o Deno encerrava a função antes de
+      // concluí-las e o mapeamento nunca era persistido.
+      const lidWrites: PromiseLike<unknown>[] = [];
+
       // Mapas de unreadCount por tipo de JID
       const chatMapGroup: Record<string, number> = {};
       const chatMapLid:   Record<string, number> = {};
@@ -149,17 +154,13 @@ Deno.serve(async (_req) => {
         }
       }
 
-      // Retroativamente popula contato_lid onde temos o mapeamento lid → telefone
-      // Isso corrige conversas antigas que nunca receberam o mapeamento
+      // Índice telefone → @lid para consulta direta ao processar as conversas.
+      // A gravação retroativa de contato_lid acontece só para as conversas com
+      // badge pendente: varrer todos os lidToPhone gerava um UPDATE por
+      // variante de telefone de cada chat, milhares de queries por minuto.
+      const phoneToLid: Record<string, string> = {};
       for (const [lid, phone] of Object.entries(lidToPhone)) {
-        for (const v of phoneVariants(phone)) {
-          supabase.from("conversas")
-            .update({ contato_lid: lid })
-            .eq("empresa_id", empresaId)
-            .eq("contato_telefone", v)
-            .is("contato_lid", null)
-            .then(() => {}).catch(() => {});
-        }
+        for (const v of phoneVariants(phone)) phoneToLid[v] = lid;
       }
 
       // Resolução adicional: para @lid com unreadCount=0 sem mapeamento de telefone,
@@ -202,15 +203,8 @@ Deno.serve(async (_req) => {
             if (resolved) {
               lidToPhone[lid] = resolved;
               for (const v of phoneVariants(resolved)) chatMapPhone[v] = 0;
-              // Popula contato_lid retroativamente
-              for (const v of phoneVariants(resolved)) {
-                supabase.from("conversas")
-                  .update({ contato_lid: lid })
-                  .eq("empresa_id", empresaId)
-                  .eq("contato_telefone", v)
-                  .is("contato_lid", null)
-                  .then(() => {}).catch(() => {});
-              }
+              // O índice abaixo cobre a gravação, feita por conversa adiante.
+              for (const v of phoneVariants(resolved)) phoneToLid[v] = lid;
               break;
             }
           }
@@ -316,19 +310,17 @@ Deno.serve(async (_req) => {
           if (!shouldZero && conv.contato_lid && conv.contato_lid in chatMapLid) {
             if (chatMapLid[conv.contato_lid] === 0) shouldZero = true;
           }
-          // 3. Contato_lid é null mas @lid foi cruzado com este telefone via lidToPhone
+          // 3. Contato_lid é null mas o telefone foi cruzado com um @lid
           if (!shouldZero && conv.contato_lid === null) {
-            for (const [lid, lphone] of Object.entries(lidToPhone)) {
-              if (phoneVariants(lphone).some(v => variants.includes(v)) && chatMapLid[lid] === 0) {
-                shouldZero = true;
-                // Aproveita e popula contato_lid agora que sabemos o mapeamento
-                supabase.from("conversas")
-                  .update({ contato_lid: lid })
-                  .eq("id", conv.id)
-                  .is("contato_lid", null)
-                  .then(() => {}).catch(() => {});
-                break;
-              }
+            const lid = variants.map(v => phoneToLid[v]).find(Boolean);
+            if (lid) {
+              // Grava o mapeamento mesmo que o chat ainda esteja não lido:
+              // as próximas execuções e o webhook casam direto por contato_lid.
+              lidWrites.push(supabase.from("conversas")
+                .update({ contato_lid: lid })
+                .eq("id", conv.id)
+                .is("contato_lid", null));
+              if (chatMapLid[lid] === 0) shouldZero = true;
             }
           }
 
@@ -361,6 +353,9 @@ Deno.serve(async (_req) => {
           empresaDiag.firstUpdErr = String(updErr.message).slice(0, 100);
         }
       }
+
+      // Garante que o mapeamento @lid -> telefone foi persistido.
+      if (lidWrites.length > 0) await Promise.all(lidWrites.map(p => Promise.resolve(p).catch(() => {})));
 
       empresaDiag.shouldZeroCount = shouldZeroCount;
       empresaDiag.updateRan = updateRan;
