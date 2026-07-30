@@ -908,43 +908,58 @@ Deno.serve(async (req) => {
       const jaEnviados = (enviosRows || []).reduce((s, r) =>
         s + Math.max(Number(r.envios || 0), r.status === "enviado" ? 1 : 0), 0);
 
-      if (!contatos?.length) {
-        // Nada elegível agora. Pode ser fim da campanha, uma rodada a agendar
-        // (modo campanha) ou repetições futuras já agendadas (modo contato).
+      // Decide o destino da campanha: seguir, abrir a próxima rodada ou fechar.
+      // Usada nas duas saídas — quando o lote já vem vazio e quando o lote
+      // termina. Antes a lógica de rodadas só existia na primeira: ao concluir
+      // a rodada 1 dentro da mesma execução, a campanha era marcada como
+      // concluída e as rodadas seguintes nunca saíam.
+      const finalizar = async (total: number) => {
         const { count: pendentes } = await supabase.from("transmissao_contatos")
           .select("id", { count: "exact", head: true })
           .eq("campanha_id", campanha_id).eq("status", "pendente");
 
         if ((pendentes ?? 0) > 0) {
-          // Repetições agendadas para o futuro: segue em 'enviando'.
-          return json({ success: true, enviados: jaEnviados, aguardando_repeticao: true });
+          // Há pendentes: se nenhum está vencido, são repetições agendadas para
+          // o futuro e este tick não tem trabalho a fazer.
+          const { count: vencidos } = await supabase.from("transmissao_contatos")
+            .select("id", { count: "exact", head: true })
+            .eq("campanha_id", campanha_id).eq("status", "pendente")
+            .or(`proximo_envio_em.is.null,proximo_envio_em.lte.${new Date().toISOString()}`);
+
+          await supabase.from("campanhas")
+            .update({ status: "enviando", enviados: total }).eq("id", campanha_id);
+          return json({
+            success: true, enviados: total, restantes: pendentes,
+            ...((vencidos ?? 0) === 0 ? { aguardando_repeticao: true } : {}),
+          });
         }
 
         const rodada = Number(camp.rodada_atual ?? 0) + 1;
         if (repModo === "campanha" && rodada < repeticoes) {
           // Reabre a lista para a próxima rodada, preservando quem respondeu.
+          const proxima = new Date(Date.now() + repIntervaloMs).toISOString();
           const reset = supabase.from("transmissao_contatos")
-            .update({ status: "pendente", proximo_envio_em: new Date(nowMs + repIntervaloMs).toISOString() })
+            .update({ status: "pendente", proximo_envio_em: proxima, erro_msg: null })
             .eq("campanha_id", campanha_id).eq("status", "enviado");
           if (pararResposta) reset.is("respondeu_em", null);
           await reset;
 
           await supabase.from("campanhas").update({
-            status: "enviando",
-            rodada_atual: rodada,
-            proxima_rodada_em: new Date(nowMs + repIntervaloMs).toISOString(),
-            enviados: jaEnviados,
+            status: "enviando", rodada_atual: rodada,
+            proxima_rodada_em: proxima, enviados: total,
           }).eq("id", campanha_id);
-          return json({ success: true, enviados: jaEnviados, proxima_rodada: rodada + 1 });
+          return json({ success: true, enviados: total, rodada_agendada: rodada + 1, em: proxima });
         }
 
         // Sem pendentes e sem rodada restante: fecha o status — antes retornava
         // 400 deixando a campanha presa em "enviando".
         await supabase.from("campanhas")
-          .update({ status: "concluido", enviados: jaEnviados, proxima_rodada_em: null })
+          .update({ status: "concluido", enviados: total, proxima_rodada_em: null })
           .eq("id", campanha_id);
-        return json({ success: true, enviados: jaEnviados, restantes: 0 });
-      }
+        return json({ success: true, enviados: total, restantes: 0 });
+      };
+
+      if (!contatos?.length) return await finalizar(jaEnviados);
 
       await supabase.from("campanhas")
         .update({ status: "enviando", proxima_rodada_em: null }).eq("id", campanha_id);
@@ -1177,16 +1192,8 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Só conclui quando não restar nenhum pendente; caso contrário mantém
-      // "enviando" para o próximo tick do cron continuar o lote seguinte.
-      const { count: restantes } = await supabase.from("transmissao_contatos")
-        .select("id", { count: "exact", head: true })
-        .eq("campanha_id", campanha_id).eq("status", "pendente");
-
-      await supabase.from("campanhas")
-        .update({ status: (restantes ?? 0) > 0 ? "enviando" : "concluido", enviados })
-        .eq("id", campanha_id);
-      return json({ success: true, enviados, restantes: restantes ?? 0 });
+      // Só conclui quando não restar pendente nem rodada de repetição.
+      return await finalizar(enviados);
     }
 
     // ────────────────────────────────────────────────────────────────────────
