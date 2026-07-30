@@ -892,6 +892,9 @@ Deno.serve(async (req) => {
       const { data: contatos } = await supabase.from("transmissao_contatos")
         .select("id, nome, telefone, empresa, envios, enviado_em, tentativas")
         .eq("campanha_id", campanha_id).eq("status", "pendente")
+        // Teto absoluto de envios por contato: alcançado o número de
+        // repetições, o contato não é mais elegível, com ou sem resposta.
+        .lt("envios", repeticoes)
         .or(`proximo_envio_em.is.null,proximo_envio_em.lte.${new Date(nowMs).toISOString()}`)
         // No modo contato quem já começou vem primeiro, para concluir as
         // repetições de um contato antes de iniciar o próximo. No modo campanha
@@ -923,9 +926,12 @@ Deno.serve(async (req) => {
           return json({ success: true, enviados: total, interrompida: atual.status });
         }
 
+        // Conta só quem ainda pode receber: um pendente que já bateu o teto de
+        // repetições nunca sairia da fila e a campanha ficaria em 'enviando'.
         const { count: pendentes } = await supabase.from("transmissao_contatos")
           .select("id", { count: "exact", head: true })
-          .eq("campanha_id", campanha_id).eq("status", "pendente");
+          .eq("campanha_id", campanha_id).eq("status", "pendente")
+          .lt("envios", repeticoes);
 
         if ((pendentes ?? 0) > 0) {
           // Há pendentes: se nenhum está vencido, são repetições agendadas para
@@ -933,6 +939,7 @@ Deno.serve(async (req) => {
           const { count: vencidos } = await supabase.from("transmissao_contatos")
             .select("id", { count: "exact", head: true })
             .eq("campanha_id", campanha_id).eq("status", "pendente")
+            .lt("envios", repeticoes)
             .or(`proximo_envio_em.is.null,proximo_envio_em.lte.${new Date().toISOString()}`);
 
           await supabase.from("campanhas")
@@ -949,7 +956,8 @@ Deno.serve(async (req) => {
           const proxima = new Date(Date.now() + repIntervaloMs).toISOString();
           const reset = supabase.from("transmissao_contatos")
             .update({ status: "pendente", proximo_envio_em: proxima, erro_msg: null })
-            .eq("campanha_id", campanha_id).eq("status", "enviado");
+            .eq("campanha_id", campanha_id).eq("status", "enviado")
+            .lt("envios", repeticoes);
           if (pararResposta) reset.is("respondeu_em", null);
           await reset;
 
@@ -1139,6 +1147,14 @@ Deno.serve(async (req) => {
         if (Date.now() > bcDeadline) break;
         if (await cancelada()) break;
         try {
+          // Reconfere o teto: o cron dispara a cada minuto e um lote longo pode
+          // se sobrepor ao seguinte, que traria o mesmo contato no lote.
+          if (Number(contato.envios || 0) >= repeticoes) {
+            await supabase.from("transmissao_contatos")
+              .update({ status: "enviado", proximo_envio_em: null }).eq("id", contato.id);
+            continue;
+          }
+
           // Já respondeu desde o último envio: encerra as repetições dele.
           if (pararResposta && Number(contato.envios || 0) > 0 &&
               await respondeuDepois(String(contato.telefone), contato.enviado_em as string | null)) {
