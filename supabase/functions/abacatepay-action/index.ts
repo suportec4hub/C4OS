@@ -17,7 +17,7 @@ const SUPA_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 // deploy. O trim cobre espaço ou quebra de linha colados junto, que corrompem
 // o header sem deixar rastro.
 const apiKey  = () => (Deno.env.get("ABACATEPAY_API_KEY") ?? "").trim();
-const apiBase = () => (Deno.env.get("ABACATEPAY_API_URL") ?? "https://api.abacatepay.com/v1").trim().replace(/\/$/, "");
+const apiBase = () => (Deno.env.get("ABACATEPAY_API_URL") ?? "https://api.abacatepay.com/v2").trim().replace(/\/$/, "");
 const appUrl  = () => (Deno.env.get("APP_URL") ?? "").trim().replace(/\/$/, "");
 
 // O supabase-js envia x-client-info e apikey além do authorization; permitir só
@@ -52,7 +52,10 @@ async function api(path: string, body?: unknown, method = "POST") {
   // deno-lint-ignore no-explicit-any
   let dados: any = null;
   try { dados = JSON.parse(texto); } catch { /* resposta não-JSON vira erro legível */ }
-  return { ok: r.ok, status: r.status, dados, texto: texto.slice(0, 800) };
+  // A v2 responde no formato {success, data, error} e pode recusar com HTTP 200,
+  // então o status sozinho não diz se deu certo.
+  const ok = r.ok && dados?.success !== false && !dados?.error;
+  return { ok, status: r.status, dados, texto: texto.slice(0, 800) };
 }
 
 const soDigitos = (s: unknown) => String(s ?? "").replace(/\D/g, "");
@@ -124,7 +127,7 @@ Deno.serve(async (req) => {
       return json({ error: "informe um e-mail válido para a fatura deste cliente" }, 400);
     }
 
-    const r = await api("/customer/create", {
+    const r = await api("/customers/create", {
       name:      emp.nome,
       cellphone: soDigitos(emp.telefone),
       email,
@@ -133,6 +136,8 @@ Deno.serve(async (req) => {
     if (!r.ok) {
       const dica = /invalid or inactive api key/i.test(r.texto)
         ? "A chave do AbacatePay foi recusada. Confira o secret ABACATEPAY_API_KEY: chave certa, ativa e sem espaços."
+        : /version mismatch/i.test(r.texto)
+        ? "A chave é de outra versão da API. Ajuste o secret ABACATEPAY_API_URL para a versão da sua chave (v1 ou v2)."
         : "AbacatePay recusou a criação do cliente";
       return json({ error: dica, status: r.status, resposta: r.texto }, 502);
     }
@@ -159,12 +164,12 @@ Deno.serve(async (req) => {
     const frequencia = String(body?.frequencia || cfg?.frequencia || "MULTIPLE_PAYMENTS");
     const metodos = (body?.metodos || cfg?.metodos || ["PIX"]) as string[];
 
-    const r = await api("/billing/create", {
+    const r = await api("/checkouts/create", {
       frequency: frequencia,
       methods: metodos,
-      // Preço em centavos: a API trabalha em centavos e enviar reais cobraria
-      // cem vezes menos.
-      products: [{
+      // Na v2 a lista chama items (era products na v1). Preço em centavos: a
+      // API trabalha em centavos e enviar reais cobraria cem vezes menos.
+      items: [{
         externalId: `c4os-${empresaId}`,
         name: produto,
         description: String(body?.produto_descricao || cfg?.produto_descricao || produto),
