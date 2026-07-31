@@ -201,6 +201,7 @@ export default function PageClientes({ user }) {
       valor_mensal: cfg?.valor_mensal ?? "",
       produto_nome: cfg?.produto_nome || "",
       frequencia:   cfg?.frequencia || "MONTHLY",
+      metodos:      cfg?.metodos || null,
     });
   }, []);
 
@@ -594,6 +595,15 @@ export default function PageClientes({ user }) {
                   </Select>
                 </Field>
 
+                <Field label="Forma de pagamento">
+                  <Select value={(abacate?.metodos || []).join(",") || ((abacate?.frequencia ?? "MONTHLY") === "ONE_TIME" ? "PIX" : "CARD")}
+                    onChange={v => setAbacate(p => ({...p, metodos: v.split(",")}))}>
+                    <option value="CARD">Cartão</option>
+                    <option value="PIX">PIX{(abacate?.frequencia ?? "MONTHLY") !== "ONE_TIME" ? " (exige PIX Automático habilitado)" : ""}</option>
+                    <option value="PIX,CARD">PIX e Cartão</option>
+                  </Select>
+                </Field>
+
                 <Field label="E-mail do cliente (vai na fatura)">
                   <Input type="email" value={abacate?.email_cobranca ?? ""}
                     onChange={v => setAbacate(p => ({...p, email_cobranca: v}))}
@@ -602,7 +612,13 @@ export default function PageClientes({ user }) {
 
                 <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:4}}>
                   <button type="button" disabled={!!abacateBusy}
-                    onClick={() => chamarAbacate("sync_cliente", { email: abacate?.email_cobranca || undefined })}
+                    onClick={() => chamarAbacate("sync_cliente", {
+                      email: abacate?.email_cobranca || undefined,
+                      valor: Number(abacate?.valor_mensal) || undefined,
+                      produto_nome: abacate?.produto_nome || undefined,
+                      frequencia: abacate?.frequencia || undefined,
+                      metodos: abacate?.metodos?.length ? abacate.metodos : undefined,
+                    })}
                     style={{padding:"8px 14px",borderRadius:8,fontSize:12,fontWeight:600,cursor:abacateBusy?"default":"pointer",
                       border:`1.5px solid ${abacate?.customer_id ? L.line : L.teal}`,
                       background: abacate?.customer_id ? L.surface : L.teal,
@@ -616,6 +632,7 @@ export default function PageClientes({ user }) {
                       valor: Number(abacate.valor_mensal),
                       produto_nome: abacate.produto_nome || undefined,
                       frequencia: abacate.frequencia || undefined,
+                      metodos: abacate.metodos?.length ? abacate.metodos : undefined,
                     })}
                     style={{padding:"8px 14px",borderRadius:8,fontSize:12,fontWeight:600,fontFamily:"inherit",
                       cursor:(abacateBusy || !abacate?.customer_id || !(Number(abacate?.valor_mensal)>0))?"default":"pointer",

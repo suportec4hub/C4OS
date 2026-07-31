@@ -146,9 +146,17 @@ Deno.serve(async (req) => {
     if (!customerId) return json({ error: "resposta sem id de cliente", resposta: r.texto }, 502);
 
     await db.from("empresas").update({ abacatepay_customer_id: customerId }).eq("id", empresaId);
-    await db.from("cobranca_config").upsert(
-      { empresa_id: empresaId, email_cobranca: email }, { onConflict: "empresa_id" },
-    );
+    // Guarda também o que foi preenchido na tela: antes só era salvo quando a
+    // cobrança dava certo, então uma tentativa que falhasse depois disso perdia
+    // valor, produto e ciclo digitados.
+    await db.from("cobranca_config").upsert({
+      empresa_id: empresaId,
+      email_cobranca: email,
+      ...(body?.valor ? { valor_mensal: Number(body.valor) } : {}),
+      ...(body?.produto_nome ? { produto_nome: String(body.produto_nome) } : {}),
+      ...(body?.frequencia ? { frequencia: String(body.frequencia) } : {}),
+      ...(body?.metodos ? { metodos: body.metodos } : {}),
+    }, { onConflict: "empresa_id" });
     return json({ ok: true, customer_id: customerId, email });
   }
 
@@ -166,8 +174,12 @@ Deno.serve(async (req) => {
     const produto   = String(body?.produto_nome || cfg?.produto_nome || "Mensalidade C4OS");
     const descricao = String(body?.produto_descricao || cfg?.produto_descricao || produto);
     const ciclo     = String(body?.frequencia || cfg?.frequencia || "MONTHLY");
-    const metodos   = (body?.metodos || cfg?.metodos || ["PIX"]) as string[];
     const assinatura = ciclo !== "ONE_TIME";
+    // Em assinatura, PIX significa PIX Automático (débito recorrente), que a
+    // loja precisa ter habilitado — sem isso a API recusa. Cartão é o padrão
+    // seguro para recorrência; avulsa segue em PIX.
+    const metodos = (body?.metodos || cfg?.metodos
+      || (assinatura ? ["CARD"] : ["PIX"])) as string[];
     const centavos  = Math.round(valor * 100);
 
     // Produto é recriado quando preço, nome ou ciclo mudam: o valor cobrado
@@ -215,10 +227,10 @@ Deno.serve(async (req) => {
       completionUrl: appUrl() || undefined,
     });
     if (!r.ok) {
-      return json({
-        error: assinatura ? "AbacatePay recusou a assinatura" : "AbacatePay recusou a cobrança",
-        status: r.status, resposta: r.texto,
-      }, 502);
+      const dica = /PIX Autom[áa]tico is not available/i.test(r.texto)
+        ? "Sua conta AbacatePay não tem PIX Automático habilitado. Escolha Cartão como forma de pagamento da assinatura, ou peça a liberação ao AbacatePay."
+        : assinatura ? "AbacatePay recusou a assinatura" : "AbacatePay recusou a cobrança";
+      return json({ error: dica, status: r.status, resposta: r.texto }, 502);
     }
 
     const cob = r.dados?.data ?? r.dados ?? {};
