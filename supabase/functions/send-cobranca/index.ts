@@ -10,10 +10,10 @@ const json = (data: unknown, status = 200) =>
 
 // Default messages — used when cliente has no custom message configured
 const DEFAULTS = {
-  "2d_antes": "Olá {nome}! 👋 Sua fatura de *R$ {valor}* vence em 2 dias ({data_vencimento}). Para evitar interrupções no seu acesso, efetue o pagamento até a data. Qualquer dúvida é só chamar!",
-  "vencimento": "Olá {nome}! Hoje ({data_vencimento}) é o dia de vencimento da sua fatura de *R$ {valor}*. Efetue o pagamento para manter seu acesso ativo. Obrigado! 🙏",
-  "5d_apos": "Olá {nome}! Identificamos que sua fatura de *R$ {valor}* (vencimento: {data_vencimento}) ainda está em aberto. Regularize o pagamento para evitar a suspensão do serviço. Precisando de ajuda, é só chamar!",
-  "20d_apos": "Atenção {nome}! Sua fatura de *R$ {valor}* está em atraso há 20 dias. Entre em contato urgente para regularizar a situação e evitar o cancelamento do seu plano. 📋",
+  "2d_antes": "Olá {nome}! 👋 Sua fatura de *{valor}* vence em 2 dias ({data_vencimento}). Para evitar interrupções no seu acesso, efetue o pagamento até a data.\n\n{link_pagamento}\n\nQualquer dúvida é só chamar!",
+  "vencimento": "Olá {nome}! Hoje ({data_vencimento}) é o dia de vencimento da sua fatura de *{valor}*.\n\n{link_pagamento}\n\nEfetue o pagamento para manter seu acesso ativo. Obrigado! 🙏",
+  "5d_apos": "Olá {nome}! Identificamos que sua fatura de *{valor}* (vencimento: {data_vencimento}) ainda está em aberto.\n\n{link_pagamento}\n\nRegularize o pagamento para evitar a suspensão do serviço. Precisando de ajuda, é só chamar!",
+  "20d_apos": "Atenção {nome}! Sua fatura de *{valor}* está em atraso há 20 dias.\n\n{link_pagamento}\n\nEntre em contato urgente para regularizar a situação e evitar o cancelamento do seu plano. 📋",
 };
 
 function substituir(msg: string, vars: Record<string, string>): string {
@@ -94,6 +94,7 @@ Deno.serve(async (req) => {
     .select(`
       id, empresa_id, dia_vencimento, whatsapp_cobranca, ativo,
       msg_2_dias_antes, msg_dia_vencimento, msg_5_dias_apos, msg_20_dias_apos,
+      valor_mensal, abacatepay_url, abacatepay_billing_mes,
       empresas ( nome, telefone, mrr, plano_id, status )
     `)
     .eq("ativo", true);
@@ -138,10 +139,38 @@ Deno.serve(async (req) => {
     if (alreadySent) continue; // already sent
 
     // Build message
-    const valor = emp.mrr != null
-      ? `R$ ${parseFloat(String(emp.mrr)).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`
+    // valor_mensal é o que foi acordado para a cobrança; mrr fica como reserva.
+    const valorNum = cfg.valor_mensal != null ? Number(cfg.valor_mensal)
+                   : emp.mrr != null ? Number(emp.mrr) : null;
+    const valor = valorNum != null
+      ? `R$ ${valorNum.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`
       : "—";
     const dataVenc = fmtDate(venc.year, venc.month, diaVenc);
+
+    // Link do mês. Em cobrança avulsa cada ciclo é uma cobrança nova: o link do
+    // mês anterior já foi pago e não serve. Gera na primeira mensagem do ciclo
+    // e reaproveita nas seguintes.
+    let link = "";
+    if (cfg.abacatepay_billing_mes === mesRef && cfg.abacatepay_url) {
+      link = String(cfg.abacatepay_url);
+    } else if (valorNum && valorNum > 0) {
+      try {
+        const { data: cob } = await db.functions.invoke("abacatepay-action", {
+          body: { action: "criar_cobranca", empresa_id: cfg.empresa_id, valor: valorNum },
+          headers: { Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}` },
+        });
+        if (cob?.url) {
+          link = String(cob.url);
+          await db.from("cobranca_config")
+            .update({ abacatepay_billing_mes: mesRef })
+            .eq("empresa_id", cfg.empresa_id as string);
+        }
+      } catch (e) {
+        console.error("[send-cobranca] falha ao gerar cobrança:", e);
+      }
+    }
+    // Sem link a mensagem continua saindo, apenas sem a linha de pagamento.
+    const linhaLink = link ? `💳 Pague aqui: ${link}` : "";
 
     const templateField = {
       "2d_antes":   cfg.msg_2_dias_antes,
@@ -155,6 +184,7 @@ Deno.serve(async (req) => {
       nome:           emp.nome,
       valor,
       data_vencimento: dataVenc,
+      link_pagamento:  linhaLink,
     });
 
     // Send via evolution-action (from C4HUB's instance)

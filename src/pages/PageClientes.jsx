@@ -271,6 +271,13 @@ export default function PageClientes({ user }) {
     if (error) {
       setCobrancaErr(error.message);
     } else {
+      // A lista carrega as configurações uma vez, ao montar: sem atualizar aqui,
+      // a coluna de cobrança e a próxima fatura seguiam mostrando o dia antigo
+      // até recarregar a página.
+      setCfgMap(prev => ({
+        ...prev,
+        [cobrancaEmpresa.id]: { empresa_id: cobrancaEmpresa.id, dia_vencimento: dia, ativo: cobrancaForm.ativo },
+      }));
       setCobrancaModal(false);
     }
     setCobrancaSaving(false);

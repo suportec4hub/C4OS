@@ -69,17 +69,24 @@ Deno.serve(async (req) => {
 
   const db = createClient(SUPA_URL, SUPA_KEY);
 
-  // Confere quem está chamando: a ação move dinheiro e enxerga todos os
-  // clientes, então fica restrita à equipe C4HUB.
-  const { data: userData } = await createClient(SUPA_URL, SUPA_KEY, {
-    global: { headers: { Authorization: auth } },
-  }).auth.getUser();
-  const uid = userData?.user?.id;
-  if (!uid) return json({ error: "unauthorized" }, 401);
+  // Chamada interna do próprio backend (a rotina de cobrança mensal) chega com
+  // a service role, que não representa usuário nenhum: a checagem de papel
+  // abaixo a rejeitaria. A chave é secreta, então portá-la já é a credencial.
+  const interna = auth.slice(7).trim() === SUPA_KEY;
 
-  const { data: quem } = await db.from("usuarios").select("role").eq("id", uid).maybeSingle();
-  if (!quem || !["c4hub_admin", "c4hub_vendedor"].includes(String(quem.role))) {
-    return json({ error: "somente a equipe C4HUB pode usar a integração" }, 403);
+  if (!interna) {
+    // Confere quem está chamando: a ação move dinheiro e enxerga todos os
+    // clientes, então fica restrita à equipe C4HUB.
+    const { data: userData } = await createClient(SUPA_URL, SUPA_KEY, {
+      global: { headers: { Authorization: auth } },
+    }).auth.getUser();
+    const uid = userData?.user?.id;
+    if (!uid) return json({ error: "unauthorized" }, 401);
+
+    const { data: quem } = await db.from("usuarios").select("role").eq("id", uid).maybeSingle();
+    if (!quem || !["c4hub_admin", "c4hub_vendedor"].includes(String(quem.role))) {
+      return json({ error: "somente a equipe C4HUB pode usar a integração" }, 403);
+    }
   }
 
   // deno-lint-ignore no-explicit-any
