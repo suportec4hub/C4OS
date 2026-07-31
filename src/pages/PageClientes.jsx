@@ -1,13 +1,11 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useCallback } from "react";
 import { L } from "../constants/theme";
 import { useTable, usePlanos, criarUsuario } from "../hooks/useData";
 import { supabase } from "../lib/supabase";
 import { Fade, Row, Grid, PBtn, DataTable, Tag, ScBar, IBtn, TD } from "../components/ui";
 import Modal, { Field, Input, Select, ModalFooter } from "../components/Modal";
-import ModalCobranca from "../components/ModalCobranca";
 
 const VAZIO = { nome:"", cnpj:"", segmento:"", marca:"", telefone:"", website:"", plano_id:"", status:"trial", mrr:"",
-                cob_valor:"", cob_dia:"10",
                 admin_nome:"", admin_email:"", admin_senha:"", must_change_password: false, bloqueio_msg:"" };
 
 const Checkbox = ({ checked, onChange, label }) => (
@@ -66,42 +64,12 @@ export default function PageClientes({ user }) {
   const [bloqueioMsg,     setBloqueioMsg]     = useState("");
   const [bloqueioSaving,  setBloqueioSaving]  = useState(false);
 
-  // Cobrança modal state
-  const [cobrancaModal,   setCobrancaModal]   = useState(false);
-  const [cobrancaEmpresa, setCobrancaEmpresa] = useState(null); // {id, nome, telefone, mrr}
-
-  // Billing config map: empresa_id -> { dia_vencimento, ativo }
-  const [cfgMap, setCfgMap] = useState({});
-  useEffect(() => {
-    if (!empresas.length) return;
-    supabase
-      .from("cobranca_config")
-      .select("empresa_id, dia_vencimento, ativo")
-      .in("empresa_id", empresas.map(e => e.id))
-      .then(({ data }) => {
-        if (data) setCfgMap(Object.fromEntries(data.map(r => [r.empresa_id, r])));
-      });
-  }, [empresas]);
-
-  const calcNextDue = useCallback((diaVenc) => {
-    const d = parseInt(diaVenc);
-    if (isNaN(d)) return null;
-    const today = new Date(); today.setHours(0,0,0,0);
-    let due = new Date(today.getFullYear(), today.getMonth(), d);
-    if (due <= today) due = new Date(today.getFullYear(), today.getMonth()+1, d);
-    return due.toLocaleDateString("pt-BR");
-  }, []);
 
   const pc = { Enterprise:{c:L.teal,bg:L.tealBg}, Starter:{c:L.copper,bg:L.copperBg}, "C4HUB":{c:L.green,bg:L.greenBg} };
 
   const openNew  = () => { setForm(VAZIO); setEdit(null); setErr(""); setSucc(""); setModal(true); };
   const openEdit = (e) => {
-    setForm({ ...VAZIO, ...e, plano_id: e.plano_id||"", admin_nome:"", admin_email:"", admin_senha:"", bloqueio_msg: e.bloqueio_msg||"",
-      cob_valor: "", cob_dia: String(cfgMap[e.id]?.dia_vencimento ?? "10") });
-    supabase.from("cobranca_config").select("valor_mensal, dia_vencimento").eq("empresa_id", e.id).maybeSingle()
-      .then(({ data }) => { if (data) setForm(p => ({ ...p,
-        cob_valor: data.valor_mensal != null ? String(data.valor_mensal) : "",
-        cob_dia: String(data.dia_vencimento ?? "10") })); });
+    setForm({ ...VAZIO, ...e, plano_id: e.plano_id||"", admin_nome:"", admin_email:"", admin_senha:"", bloqueio_msg: e.bloqueio_msg||"" });
     setEdit(e.id); setErr(""); setSucc(""); setModal(true);
   };
 
@@ -133,11 +101,6 @@ export default function PageClientes({ user }) {
     else refetch();
   }, [refetch]);
 
-  const openCobranca = useCallback((emp) => {
-    setCobrancaEmpresa(emp);
-    setCobrancaModal(true);
-  }, []);
-
   const save = async () => {
     if (!form.nome.trim()) { setErr("Nome da empresa é obrigatório."); return; }
     if (!edit && form.plano_id) {
@@ -146,8 +109,7 @@ export default function PageClientes({ user }) {
     }
     setSaving(true); setErr("");
 
-    const { admin_nome, admin_email, admin_senha, must_change_password, bloqueio_msg,
-            cob_valor, cob_dia, ...empresaFields } = form;
+    const { admin_nome, admin_email, admin_senha, must_change_password, bloqueio_msg, ...empresaFields } = form;
     const payload = {
       ...empresaFields,
       is_c4hub: false,
@@ -162,26 +124,6 @@ export default function PageClientes({ user }) {
 
     const { data: novaEmpresa, error } = edit ? await update(edit, payload) : await insert(payload);
     if (error) { setErr(error.message || "Erro ao salvar."); setSaving(false); return; }
-
-    // Cobrança configurada junto com o cadastro, para o cliente já nascer
-    // faturável. Só grava se algum dos campos foi preenchido, para não criar
-    // configuração vazia em quem ainda não tem contrato definido.
-    const empresaId = edit || novaEmpresa?.id;
-    const valorCob = cob_valor === "" || cob_valor == null ? null : parseFloat(cob_valor);
-    const diaCob   = parseInt(cob_dia);
-    if (empresaId && (valorCob != null || !isNaN(diaCob))) {
-      const { error: errCob } = await supabase.from("cobranca_config").upsert({
-        empresa_id: empresaId,
-        ...(valorCob != null ? { valor_mensal: valorCob } : {}),
-        ...(!isNaN(diaCob) && diaCob >= 1 && diaCob <= 28 ? { dia_vencimento: diaCob } : {}),
-      }, { onConflict: "empresa_id" });
-      if (errCob) {
-        // Empresa já foi criada: avisa sem descartar o cadastro.
-        setErr(`Empresa salva, mas a cobrança não: ${errCob.message}`);
-      } else if (!isNaN(diaCob)) {
-        setCfgMap(prev => ({ ...prev, [empresaId]: { empresa_id: empresaId, dia_vencimento: diaCob, ativo: true } }));
-      }
-    }
 
     if (!edit && form.plano_id && form.admin_email.trim()) {
       const res = await criarUsuario({
@@ -244,7 +186,7 @@ export default function PageClientes({ user }) {
       {loading ? (
         <div style={{textAlign:"center",padding:40,color:L.t4}}>Carregando clientes...</div>
       ) : (
-        <DataTable heads={["Empresa","Plano","Status","MRR","Cobrança","Próx. Fatura","Saúde","Ações"]}>
+        <DataTable heads={["Empresa","Plano","Status","MRR","Saúde","Ações"]}>
           {empresas.filter(e=>!e.is_c4hub).map(emp => {
             const pn = planoNome(emp.plano_id);
             return (
@@ -262,21 +204,6 @@ export default function PageClientes({ user }) {
                   R$ {parseFloat(emp.mrr||0).toLocaleString("pt-BR",{minimumFractionDigits:2})}
                   <div style={{fontSize:9,color:L.t4,fontWeight:400,marginTop:1}}>por mês</div>
                 </td>
-                <td style={{...TD,fontSize:11,fontFamily:"'JetBrains Mono',monospace"}}>
-                  {cfgMap[emp.id] ? (
-                    <>
-                      <span style={{color:cfgMap[emp.id].ativo?L.teal:L.t4,fontWeight:600}}>
-                        Dia {cfgMap[emp.id].dia_vencimento}
-                      </span>
-                      {!cfgMap[emp.id].ativo && <span style={{marginLeft:5,fontSize:9,color:L.t4}}>(inativo)</span>}
-                    </>
-                  ) : <span style={{color:L.t5}}>—</span>}
-                </td>
-                <td style={{...TD,fontSize:11,color:L.t3,fontFamily:"'JetBrains Mono',monospace"}}>
-                  {cfgMap[emp.id]?.dia_vencimento
-                    ? calcNextDue(cfgMap[emp.id].dia_vencimento)
-                    : emp.vencimento || "—"}
-                </td>
                 <td style={TD}>
                   <Row gap={6}>
                     <ScBar v={emp.assinatura_ativa?95:40}/>
@@ -286,7 +213,6 @@ export default function PageClientes({ user }) {
                 <td style={TD}>
                   <Row gap={5}>
                     <IBtn c={L.teal}   onClick={()=>openEdit(emp)}>✎ Editar</IBtn>
-                    <IBtn c={L.copper} onClick={()=>openCobranca(emp)}>💳 Cobrança</IBtn>
                     {emp.bloqueado
                       ? <IBtn c={L.green} onClick={()=>{ if(confirm(`Desbloquear ${emp.nome}?`)) desbloquear(emp); }} title="Desbloquear acesso">🔓 Desbloquear</IBtn>
                       : <IBtn c={L.red}   onClick={()=>openBloqueio(emp)} title="Bloquear acesso">🔒 Bloquear</IBtn>
@@ -330,15 +256,6 @@ export default function PageClientes({ user }) {
                 {/* Agrupa unidades do mesmo grupo: define para quais WhatsApps
                     os fluxos de chatbot podem transferir uma conversa. */}
                 <Field label="Marca / grupo">     <Input value={form.marca}     onChange={F("marca")}     placeholder="Ex: Vision Peças"/></Field>
-                {/* Cobrança já no cadastro: evita ter de voltar depois para o
-                    cliente começar a ser faturado. O valor é o que ele paga,
-                    distinto do MRR, que é a métrica de receita recorrente. */}
-                <Field label="Valor da cobrança (R$/mês)">
-                  <Input type="number" min="0" step="0.01" value={form.cob_valor} onChange={F("cob_valor")} placeholder="Ex: 150,00"/>
-                </Field>
-                <Field label="Dia de vencimento (1–28)">
-                  <Input type="number" min="1" max="28" value={form.cob_dia} onChange={F("cob_dia")} placeholder="10"/>
-                </Field>
                 <Field label="Status">
                   <Select value={form.status} onChange={F("status")}>
                     {["trial","ativo","inativo","cancelado"].map(s=><option key={s} value={s}>{s.charAt(0).toUpperCase()+s.slice(1)}</option>)}
@@ -418,16 +335,6 @@ export default function PageClientes({ user }) {
       )}
 
       {/* ── Modal: Configuração de Cobrança ────────────────────────────────── */}
-      {cobrancaModal && cobrancaEmpresa && (
-        <ModalCobranca
-          empresa={cobrancaEmpresa}
-          onClose={() => setCobrancaModal(false)}
-          onSaved={(dia, ativo) => setCfgMap(prev => ({
-            ...prev,
-            [cobrancaEmpresa.id]: { empresa_id: cobrancaEmpresa.id, dia_vencimento: dia, ativo },
-          }))}
-        />
-      )}
     </Fade>
   );
 }
