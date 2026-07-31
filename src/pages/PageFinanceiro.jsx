@@ -313,7 +313,7 @@ export default function PageFinanceiro({ user }) {
 
       {ehC4hub && (
         <Row gap={6} mb={14}>
-          {[["lancamentos","💰 Lançamentos"],["contratos","📄 Contratos"]].map(([id,label])=>(
+          {[["lancamentos","💰 Lançamentos"],["contratos","💳 Cobranças"]].map(([id,label])=>(
             <button key={id} onClick={()=>setAba(id)} style={{
               padding:"7px 14px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer",
               fontFamily:"inherit", border:`1.5px solid ${aba===id?L.teal:L.line}`,
@@ -754,7 +754,7 @@ function ContratosTab({ contratos, onAbrir }) {
     <div>
       <Row between mb={12}>
         <div style={{fontSize:13,fontWeight:700,color:L.t1}}>
-          Contratos ativos
+          Cobranças ativas
           <span style={{fontSize:11,fontWeight:400,color:L.t3,marginLeft:8}}>
             {contratos.length} cliente{contratos.length!==1?"s":""}
           </span>
@@ -798,7 +798,7 @@ function ContratosTab({ contratos, onAbrir }) {
 
       {contratos.length === 0 && (
         <div style={{padding:"30px 0",textAlign:"center",color:L.t3,fontSize:12,lineHeight:1.6}}>
-          Nenhum contrato configurado ainda.<br/>
+          Nenhuma cobrança configurada ainda.<br/>
           Configure valor e vencimento no cadastro do cliente.
         </div>
       )}
