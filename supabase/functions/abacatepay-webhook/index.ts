@@ -11,7 +11,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const SUPA_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPA_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const WEBHOOK_SECRET = Deno.env.get("ABACATEPAY_WEBHOOK_SECRET") ?? "";
+const WEBHOOK_SECRET = (Deno.env.get("ABACATEPAY_WEBHOOK_SECRET") ?? "").trim();
 
 const json = (data: unknown, status = 200) =>
   new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } });

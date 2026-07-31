@@ -11,7 +11,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const SUPA_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPA_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const API_KEY  = Deno.env.get("ABACATEPAY_API_KEY") ?? "";
+// trim porque segredo colado no painel costuma vir com espaço ou quebra de
+// linha no fim, e a API rejeita com "Invalid or inactive API key".
+const API_KEY  = (Deno.env.get("ABACATEPAY_API_KEY") ?? "").trim();
 const API_BASE = (Deno.env.get("ABACATEPAY_API_URL") ?? "https://api.abacatepay.com/v1").replace(/\/$/, "");
 const APP_URL  = (Deno.env.get("APP_URL") ?? "").replace(/\/$/, "");
 
@@ -125,7 +127,12 @@ Deno.serve(async (req) => {
       email,
       taxId:     soDigitos(emp.cnpj),
     });
-    if (!r.ok) return json({ error: "AbacatePay recusou a criação do cliente", status: r.status, resposta: r.texto }, 502);
+    if (!r.ok) {
+      const dica = /invalid or inactive api key/i.test(r.texto)
+        ? "A chave do AbacatePay foi recusada. Confira o secret ABACATEPAY_API_KEY: chave certa, ativa e sem espaços."
+        : "AbacatePay recusou a criação do cliente";
+      return json({ error: dica, status: r.status, resposta: r.texto }, 502);
+    }
 
     const customerId = r.dados?.data?.id ?? r.dados?.id ?? null;
     if (!customerId) return json({ error: "resposta sem id de cliente", resposta: r.texto }, 502);
