@@ -764,7 +764,7 @@ function ContratosTab({ contratos, onAbrir }) {
         </div>
       </Row>
 
-      <DataTable cols={["Cliente","Produto","Valor","Cobrança","Vencimento","Próx. fatura","Ações"]}>
+      <DataTable heads={["Cliente","Produto","Valor","Cobrança","Vencimento","Próx. fatura","Ações"]}>
         {contratos.map(c => (
           <tr key={c.empresa_id}>
             <td style={TD}>
