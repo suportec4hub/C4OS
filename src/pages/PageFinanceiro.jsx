@@ -1,8 +1,9 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend, LineChart, Line } from "recharts";
 import { L } from "../constants/theme";
 import { useTable } from "../hooks/useData";
 import { supabase } from "../lib/supabase";
+import ModalCobranca from "../components/ModalCobranca";
 import { Fade, Row, Grid, TabPills, PBtn, DataTable, Tag, IBtn, TD, Card, TT } from "../components/ui";
 import Modal, { Field, Input, Select, ModalFooter } from "../components/Modal";
 
@@ -58,6 +59,23 @@ export default function PageFinanceiro({ user }) {
   const [periodo,  setPeriodo] = useState("todos");
   const [busca,    setBusca]   = useState("");
   const [chartTab, setChartTab]= useState("fluxo"); // "fluxo" | "lucro"
+  const [aba,      setAba]     = useState("lancamentos"); // "lancamentos" | "contratos"
+  // Contratos: o que cada cliente paga por mês. Só a equipe C4HUB enxerga,
+  // porque são os dados de cobrança de todos os clientes.
+  const [contratos, setContratos] = useState([]);
+  const [contratoEmpresa, setContratoEmpresa] = useState(null);
+  const ehC4hub = String(user?.role || "").startsWith("c4hub");
+
+  const carregarContratos = useCallback(async () => {
+    if (!ehC4hub) return;
+    const { data } = await supabase
+      .from("cobranca_config")
+      .select("empresa_id, dia_vencimento, ativo, valor_mensal, produto_nome, frequencia, abacatepay_url, abacatepay_customer_id:empresa_id, empresas(nome, status, abacatepay_customer_id)")
+      .order("dia_vencimento");
+    setContratos(data || []);
+  }, [ehC4hub]);
+
+  useEffect(() => { carregarContratos(); }, [carregarContratos]);
   const [modal,  setModal]  = useState(false);
   const [edit,   setEdit]   = useState(null);
   const [form,   setForm]   = useState(VAZIO);
@@ -292,6 +310,26 @@ export default function PageFinanceiro({ user }) {
 
   return (
     <Fade>
+
+      {ehC4hub && (
+        <Row gap={6} mb={14}>
+          {[["lancamentos","💰 Lançamentos"],["contratos","📄 Contratos"]].map(([id,label])=>(
+            <button key={id} onClick={()=>setAba(id)} style={{
+              padding:"7px 14px", borderRadius:8, fontSize:12, fontWeight:600, cursor:"pointer",
+              fontFamily:"inherit", border:`1.5px solid ${aba===id?L.teal:L.line}`,
+              background: aba===id?L.teal:L.surface, color: aba===id?"#fff":L.t3,
+            }}>{label}</button>
+          ))}
+        </Row>
+      )}
+
+      {aba === "contratos" && ehC4hub ? (
+        <ContratosTab
+          contratos={contratos}
+          onAbrir={setContratoEmpresa}
+        />
+      ) : (
+      <>
 
       {/* Alerta de atrasos */}
       {cntAtras > 0 && (
@@ -682,6 +720,88 @@ export default function PageFinanceiro({ user }) {
             label={edit ? "Salvar Alterações" : "Criar Lançamento"}/>
         </Modal>
       )}
+      </>
+      )}
+
+      {contratoEmpresa && (
+        <ModalCobranca
+          empresa={contratoEmpresa}
+          onClose={() => setContratoEmpresa(null)}
+          onSaved={() => carregarContratos()}
+        />
+      )}
     </Fade>
+  );
+}
+
+// Lista o que cada cliente paga por mês, com acesso à configuração de cobrança.
+function ContratosTab({ contratos, onAbrir }) {
+  const fmt = (v) => v == null ? "—"
+    : `R$ ${Number(v).toLocaleString("pt-BR",{minimumFractionDigits:2})}`;
+
+  const proximaFatura = (dia) => {
+    const d = parseInt(dia);
+    if (isNaN(d)) return "—";
+    const hoje = new Date(); hoje.setHours(0,0,0,0);
+    let venc = new Date(hoje.getFullYear(), hoje.getMonth(), d);
+    if (venc <= hoje) venc = new Date(hoje.getFullYear(), hoje.getMonth()+1, d);
+    return venc.toLocaleDateString("pt-BR");
+  };
+
+  const total = contratos.reduce((s,c) => s + (Number(c.valor_mensal) || 0), 0);
+
+  return (
+    <div>
+      <Row between mb={12}>
+        <div style={{fontSize:13,fontWeight:700,color:L.t1}}>
+          Contratos ativos
+          <span style={{fontSize:11,fontWeight:400,color:L.t3,marginLeft:8}}>
+            {contratos.length} cliente{contratos.length!==1?"s":""}
+          </span>
+        </div>
+        <div style={{fontSize:12,color:L.green,fontWeight:700}}>
+          {fmt(total)} <span style={{color:L.t3,fontWeight:400}}>por mês</span>
+        </div>
+      </Row>
+
+      <DataTable cols={["Cliente","Produto","Valor","Cobrança","Vencimento","Próx. fatura","Ações"]}>
+        {contratos.map(c => (
+          <tr key={c.empresa_id}>
+            <td style={TD}>
+              <div style={{fontWeight:600,color:L.t1}}>{c.empresas?.nome || "—"}</div>
+              {!c.ativo && <div style={{fontSize:10,color:L.yellow}}>cobrança desativada</div>}
+            </td>
+            <td style={TD}>{c.produto_nome || "—"}</td>
+            <td style={{...TD,color:L.green,fontWeight:700}}>{fmt(c.valor_mensal)}</td>
+            <td style={TD}>
+              {c.frequencia === "ONE_TIME" ? "Avulsa" :
+               c.frequencia === "WEEKLY" ? "Semanal" :
+               c.frequencia === "SEMIANNUALLY" ? "Semestral" :
+               c.frequencia === "ANNUALLY" ? "Anual" : "Mensal"}
+            </td>
+            <td style={TD}>Dia {c.dia_vencimento}</td>
+            <td style={TD}>{proximaFatura(c.dia_vencimento)}</td>
+            <td style={TD}>
+              <Row gap={6}>
+                <IBtn c={L.copper}
+                  onClick={()=>onAbrir({ id: c.empresa_id, nome: c.empresas?.nome, telefone: null })}>
+                  💳 Configurar
+                </IBtn>
+                {c.abacatepay_url && (
+                  <IBtn c={L.teal} onClick={()=>window.open(c.abacatepay_url,"_blank")}>🔗 Link</IBtn>
+                )}
+              </Row>
+            </td>
+          </tr>
+        ))}
+      </DataTable>
+
+      {contratos.length === 0 && (
+        <div style={{padding:"30px 0",textAlign:"center",color:L.t3,fontSize:12,lineHeight:1.6}}>
+          Nenhum contrato configurado ainda.<br/>
+          Configure valor e vencimento no cadastro do cliente.
+        </div>
+      )}
+    </div>
   );
 }
