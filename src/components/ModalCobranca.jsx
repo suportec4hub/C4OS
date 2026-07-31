@@ -7,7 +7,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { supabase } from "../lib/supabase";
 import { L } from "../constants/theme";
-import Modal, { Field, Input, Select } from "./Modal";
+import Modal, { Field, Input, Select, ModalFooter } from "./Modal";
 import { Tag } from "./ui";
 
 const COBRANCA_VAZIO = {
@@ -26,6 +26,18 @@ const MSG_PLACEHOLDERS = {
   msg_5_dias_apos:    "Olá {nome}! Sua fatura de {valor} (venc. {data_vencimento}) está em aberto. Regularize para evitar suspensão.",
   msg_20_dias_apos:   "Atenção {nome}! Sua fatura de {valor} está em atraso há 20 dias. Entre em contato para evitar o cancelamento.",
 };
+
+const Textarea = ({ value, onChange, placeholder, rows = 3 }) => (
+  <textarea
+    value={value} onChange={e => onChange(e.target.value)}
+    placeholder={placeholder} rows={rows}
+    style={{
+      width:"100%", background:L.surface, border:`1.5px solid ${L.line}`, borderRadius:9,
+      padding:"9px 12px", color:L.t1, fontSize:12.5, fontFamily:"'Instrument Sans',sans-serif",
+      outline:"none", resize:"vertical", lineHeight:1.5, boxSizing:"border-box",
+    }}
+  />
+);
 
 const Checkbox = ({ checked, onChange, label }) => (
   <label style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer", marginTop:10, userSelect:"none" }}>
