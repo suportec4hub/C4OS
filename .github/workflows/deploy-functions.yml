@@ -39,6 +39,8 @@ jobs:
             meta-webhook \
             chatbot-engine \
             media-upload \
+            abacatepay-webhook \
+            abacatepay-action \
             --project-ref zexjmlthyxtunioojlga \
             --no-verify-jwt \
             --use-api

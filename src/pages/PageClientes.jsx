@@ -89,6 +89,9 @@ export default function PageClientes({ user }) {
   const [cobrancaErr,     setCobrancaErr]     = useState("");
   const [cobrancaLog,     setCobrancaLog]     = useState([]);
   const [cobrancaTab,     setCobrancaTab]     = useState("config"); // "config" | "historico"
+  const [abacate,         setAbacate]         = useState(null);  // { customer_id, billing_id, url, valor_mensal }
+  const [abacateBusy,     setAbacateBusy]     = useState("");
+  const [abacateMsg,      setAbacateMsg]      = useState(null);  // { ok, texto }
 
   // Billing config map: empresa_id -> { dia_vencimento, ativo }
   const [cfgMap, setCfgMap] = useState({});
@@ -184,7 +187,40 @@ export default function PageClientes({ user }) {
       .order("enviado_em", { ascending: false })
       .limit(20);
     setCobrancaLog(logs || []);
+
+    setAbacateMsg(null);
+    setAbacate({
+      customer_id:  emp.abacatepay_customer_id || null,
+      billing_id:   cfg?.abacatepay_billing_id || null,
+      url:          cfg?.abacatepay_url || null,
+      valor_mensal: cfg?.valor_mensal ?? "",
+      produto_nome: cfg?.produto_nome || "",
+      frequencia:   cfg?.frequencia || "MULTIPLE_PAYMENTS",
+    });
   }, []);
+
+  // Chama a integração. A resposta crua do AbacatePay é mostrada em caso de
+  // erro: a integração é nova e "falhou" não ajudaria a diagnosticar.
+  const chamarAbacate = async (action, extra = {}) => {
+    if (!cobrancaEmpresa) return;
+    setAbacateBusy(action); setAbacateMsg(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("abacatepay-action", {
+        body: { action, empresa_id: cobrancaEmpresa.id, ...extra },
+      });
+      if (error) throw new Error(error.message);
+      if (data?.error) {
+        setAbacateMsg({ ok: false, texto: `${data.error}${data.resposta ? ` — ${data.resposta}` : ""}` });
+      } else {
+        setAbacate(p => ({ ...p, ...data }));
+        setAbacateMsg({ ok: true, texto: action === "sync_cliente"
+          ? "Cliente sincronizado com o AbacatePay."
+          : "Cobrança criada. O link está abaixo." });
+      }
+    } catch (e) {
+      setAbacateMsg({ ok: false, texto: e.message });
+    } finally { setAbacateBusy(""); }
+  };
 
   const saveCobranca = async () => {
     if (!cobrancaEmpresa) return;
@@ -510,6 +546,79 @@ export default function PageClientes({ user }) {
                 onChange={v => setCobrancaForm(p=>({...p, ativo:v}))}
                 label="Cobrança automática ativa (mensagens serão enviadas automaticamente)"
               />
+
+              {/* ── AbacatePay ── */}
+              <div style={{marginTop:20,paddingTop:16,borderTop:`1px solid ${L.lineSoft}`}}>
+                <SectionLabel color={L.teal}>Cobrança automática — AbacatePay</SectionLabel>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
+                  <Field label="Valor mensal (R$)">
+                    <Input type="number" min="0" step="0.01"
+                      value={abacate?.valor_mensal ?? ""}
+                      onChange={e => setAbacate(p => ({...p, valor_mensal: e.target.value}))}
+                      placeholder="Ex: 1500.00"/>
+                  </Field>
+                  <Field label="Produto / descrição na fatura">
+                    <Input value={abacate?.produto_nome ?? ""}
+                      onChange={e => setAbacate(p => ({...p, produto_nome: e.target.value}))}
+                      placeholder="Ex: C4OS Pro, Tráfego Pago..."/>
+                  </Field>
+                </div>
+
+                <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:4}}>
+                  <button type="button" disabled={!!abacateBusy}
+                    onClick={() => chamarAbacate("sync_cliente")}
+                    style={{padding:"8px 14px",borderRadius:8,fontSize:12,fontWeight:600,cursor:abacateBusy?"default":"pointer",
+                      border:`1.5px solid ${abacate?.customer_id ? L.line : L.teal}`,
+                      background: abacate?.customer_id ? L.surface : L.teal,
+                      color: abacate?.customer_id ? L.t3 : "#fff", fontFamily:"inherit"}}>
+                    {abacateBusy === "sync_cliente" ? "Sincronizando..."
+                      : abacate?.customer_id ? "Cliente já sincronizado" : "Sincronizar cliente"}
+                  </button>
+                  <button type="button"
+                    disabled={!!abacateBusy || !abacate?.customer_id || !(Number(abacate?.valor_mensal) > 0)}
+                    onClick={() => chamarAbacate("criar_cobranca", {
+                      valor: Number(abacate.valor_mensal),
+                      produto_nome: abacate.produto_nome || undefined,
+                    })}
+                    style={{padding:"8px 14px",borderRadius:8,fontSize:12,fontWeight:600,fontFamily:"inherit",
+                      cursor:(abacateBusy || !abacate?.customer_id || !(Number(abacate?.valor_mensal)>0))?"default":"pointer",
+                      border:`1.5px solid ${L.copper}`, background:L.copper, color:"#fff",
+                      opacity:(!abacate?.customer_id || !(Number(abacate?.valor_mensal)>0))?.5:1}}>
+                    {abacateBusy === "criar_cobranca" ? "Gerando..." : "Gerar link de cobrança"}
+                  </button>
+                </div>
+
+                {!abacate?.customer_id && (
+                  <div style={{fontSize:10,color:L.t3,marginTop:8,lineHeight:1.5}}>
+                    Sincronize o cliente antes de gerar a cobrança. O AbacatePay precisa
+                    do telefone e do CNPJ/CPF preenchidos no cadastro da empresa.
+                  </div>
+                )}
+
+                {abacate?.url && (
+                  <div style={{marginTop:10,padding:"10px 12px",background:L.surface,borderRadius:8,border:`1px solid ${L.lineSoft}`}}>
+                    <div style={{fontSize:10,color:L.t3,marginBottom:4}}>Link de pagamento</div>
+                    <a href={abacate.url} target="_blank" rel="noreferrer"
+                      style={{fontSize:11,color:L.teal,wordBreak:"break-all"}}>{abacate.url}</a>
+                    <div style={{marginTop:6}}>
+                      <button type="button"
+                        onClick={() => navigator.clipboard?.writeText(abacate.url)}
+                        style={{padding:"4px 10px",borderRadius:6,fontSize:10,cursor:"pointer",
+                          border:`1px solid ${L.line}`,background:L.white,color:L.t2,fontFamily:"inherit"}}>
+                        Copiar link
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {abacateMsg && (
+                  <div style={{marginTop:10,padding:"8px 12px",borderRadius:8,fontSize:11,lineHeight:1.5,
+                    background: abacateMsg.ok ? L.greenBg : L.redBg,
+                    color: abacateMsg.ok ? L.green : L.red}}>
+                    {abacateMsg.texto}
+                  </div>
+                )}
+              </div>
 
               <div style={{marginTop:20,paddingTop:16,borderTop:`1px solid ${L.lineSoft}`}}>
                 <SectionLabel color={L.copper}>Mensagens de Cobrança</SectionLabel>
