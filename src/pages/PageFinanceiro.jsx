@@ -68,11 +68,23 @@ export default function PageFinanceiro({ user }) {
 
   const carregarContratos = useCallback(async () => {
     if (!ehC4hub) return;
+    // Parte das empresas, não da configuração: cliente recém-cadastrado ainda
+    // não tem cobrança e precisa aparecer aqui justamente para ser configurado.
     const { data } = await supabase
-      .from("cobranca_config")
-      .select("empresa_id, dia_vencimento, ativo, valor_mensal, produto_nome, frequencia, abacatepay_url, abacatepay_customer_id:empresa_id, empresas(nome, status, abacatepay_customer_id)")
-      .order("dia_vencimento");
-    setContratos(data || []);
+      .from("empresas")
+      .select("id, nome, status, is_c4hub, abacatepay_customer_id, cobranca_config(*)")
+      .order("nome");
+    const lista = (data || [])
+      .filter(e => !e.is_c4hub)
+      .map(e => {
+        const c = Array.isArray(e.cobranca_config) ? e.cobranca_config[0] : e.cobranca_config;
+        return { ...(c || {}), empresa_id: e.id, empresas: e, configurado: !!c?.valor_mensal };
+      })
+      // Sem cobrança primeiro: é o que exige ação.
+      .sort((a, b) => (a.configurado === b.configurado)
+        ? String(a.empresas.nome).localeCompare(String(b.empresas.nome))
+        : (a.configurado ? 1 : -1));
+    setContratos(lista);
   }, [ehC4hub]);
 
   useEffect(() => { carregarContratos(); }, [carregarContratos]);
@@ -754,9 +766,14 @@ function ContratosTab({ contratos, onAbrir }) {
     <div>
       <Row between mb={12}>
         <div style={{fontSize:13,fontWeight:700,color:L.t1}}>
-          Cobranças ativas
+          Cobranças
           <span style={{fontSize:11,fontWeight:400,color:L.t3,marginLeft:8}}>
-            {contratos.length} cliente{contratos.length!==1?"s":""}
+            {contratos.filter(c=>c.configurado).length} configurada{contratos.filter(c=>c.configurado).length!==1?"s":""}
+            {contratos.some(c=>!c.configurado) && (
+              <span style={{color:L.yellow,marginLeft:8}}>
+                · {contratos.filter(c=>!c.configurado).length} sem cobrança
+              </span>
+            )}
           </span>
         </div>
         <div style={{fontSize:12,color:L.green,fontWeight:700}}>
@@ -766,26 +783,40 @@ function ContratosTab({ contratos, onAbrir }) {
 
       <DataTable heads={["Cliente","Produto","Valor","Cobrança","Vencimento","Próx. fatura","Ações"]}>
         {contratos.map(c => (
-          <tr key={c.empresa_id}>
+          <tr key={c.empresa_id} style={{opacity: c.configurado ? 1 : 0.75}}>
             <td style={TD}>
               <div style={{fontWeight:600,color:L.t1}}>{c.empresas?.nome || "—"}</div>
-              {!c.ativo && <div style={{fontSize:10,color:L.yellow}}>cobrança desativada</div>}
+              {!c.configurado ? (
+                <div style={{fontSize:10,color:L.yellow}}>sem cobrança configurada</div>
+              ) : c.ativo === false ? (
+                <div style={{fontSize:10,color:L.yellow}}>cobrança desativada</div>
+              ) : null}
             </td>
-            <td style={TD}>{c.produto_nome || "—"}</td>
-            <td style={{...TD,color:L.green,fontWeight:700}}>{fmt(c.valor_mensal)}</td>
-            <td style={TD}>
-              {c.frequencia === "ONE_TIME" ? "Avulsa" :
-               c.frequencia === "WEEKLY" ? "Semanal" :
-               c.frequencia === "SEMIANNUALLY" ? "Semestral" :
-               c.frequencia === "ANNUALLY" ? "Anual" : "Mensal"}
-            </td>
-            <td style={TD}>Dia {c.dia_vencimento}</td>
-            <td style={TD}>{proximaFatura(c.dia_vencimento)}</td>
+            {c.configurado ? (
+              <>
+                <td style={TD}>{c.produto_nome || "—"}</td>
+                <td style={{...TD,color:L.green,fontWeight:700}}>{fmt(c.valor_mensal)}</td>
+                <td style={TD}>
+                  {c.frequencia === "ONE_TIME" ? "Avulsa" :
+                   c.frequencia === "WEEKLY" ? "Semanal" :
+                   c.frequencia === "SEMIANNUALLY" ? "Semestral" :
+                   c.frequencia === "ANNUALLY" ? "Anual" : "Mensal"}
+                </td>
+                <td style={TD}>Dia {c.dia_vencimento}</td>
+                <td style={TD}>{proximaFatura(c.dia_vencimento)}</td>
+              </>
+            ) : (
+              // Cliente ainda sem cobrança: as colunas de valor não têm o que
+              // mostrar, e o vazio destaca quem precisa ser configurado.
+              <td colSpan={5} style={{...TD,color:L.t4,fontSize:11.5}}>
+                Configure valor, vencimento e forma de pagamento para começar a cobrar.
+              </td>
+            )}
             <td style={TD}>
               <Row gap={6}>
-                <IBtn c={L.copper}
+                <IBtn c={c.configurado ? L.copper : L.teal}
                   onClick={()=>onAbrir({ id: c.empresa_id, nome: c.empresas?.nome, telefone: null })}>
-                  💳 Configurar
+                  {c.configurado ? "💳 Configurar" : "＋ Configurar"}
                 </IBtn>
                 {c.abacatepay_url && (
                   <IBtn c={L.teal} onClick={()=>window.open(c.abacatepay_url,"_blank")}>🔗 Link</IBtn>
@@ -798,8 +829,7 @@ function ContratosTab({ contratos, onAbrir }) {
 
       {contratos.length === 0 && (
         <div style={{padding:"30px 0",textAlign:"center",color:L.t3,fontSize:12,lineHeight:1.6}}>
-          Nenhuma cobrança configurada ainda.<br/>
-          Configure valor e vencimento no cadastro do cliente.
+          Nenhum cliente cadastrado ainda.
         </div>
       )}
     </div>
