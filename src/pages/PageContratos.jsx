@@ -25,6 +25,24 @@ export default function PageContratos({ user }) {
   const [form,   setForm]   = useState(VAZIO);
   const [enviando, setEnviando] = useState(false);
   const [visualizar, setVisualizar] = useState(null); // { url, nome }
+  const [anexando, setAnexando] = useState(null);     // id do contrato recebendo arquivo
+
+  // Anexo direto da listagem, para não precisar abrir a edição só para subir o
+  // documento — o contrato costuma ser criado antes de existir assinatura.
+  const anexarNaLista = async (contrato, file) => {
+    if (!file) return;
+    if (file.size > 20 * 1024 * 1024) { alert("Arquivo acima de 20 MB."); return; }
+    setAnexando(contrato.id);
+    const limpo = file.name.replace(/[^\w.\-]/g, "_");
+    const caminho = `${user.empresa_id}/${Date.now()}-${limpo}`;
+    const { error } = await supabase.storage.from("contratos").upload(caminho, file);
+    if (error) alert(`Falha ao enviar: ${error.message}`);
+    else {
+      await update(contrato.id, { arquivo_url: caminho, arquivo_nome: file.name });
+      refetch();
+    }
+    setAnexando(null);
+  };
 
   // Contrato assinado é documento sensível: fica em bucket privado e é aberto
   // por URL assinada de curta duração, não por link permanente.
@@ -79,7 +97,17 @@ export default function PageContratos({ user }) {
   const save = async () => {
     if (!form.titulo.trim()) { setErr("Título obrigatório."); return; }
     setSaving(true); setErr("");
-    const payload = { ...form, empresa_id: user?.empresa_id, valor: form.valor !== "" ? Number(form.valor) : null };
+    // Campo de data vazio chega como "" e o Postgres recusa: precisa ser nulo.
+    const payload = {
+      ...form,
+      empresa_id: user?.empresa_id,
+      valor:       form.valor       !== "" ? Number(form.valor) : null,
+      data_inicio: form.data_inicio || null,
+      data_fim:    form.data_fim    || null,
+      cliente_email: form.cliente_email?.trim() || null,
+      arquivo_url:  form.arquivo_url  || null,
+      arquivo_nome: form.arquivo_nome || null,
+    };
     const { error } = edit ? await update(edit, payload) : await insert(payload);
     if (error) setErr(error.message || "Erro ao salvar.");
     else { setModal(false); refetch(); }
@@ -157,8 +185,18 @@ export default function PageContratos({ user }) {
                   {c.status === "enviado"   && <IBtn c={L.teal}  onClick={() => mudarStatus(c.id, "assinado")}  title="Marcar assinado">✍</IBtn>}
                   {c.status === "assinado"  && <IBtn c={L.green} onClick={() => mudarStatus(c.id, "vigente")}   title="Ativar contrato">▶</IBtn>}
                   {c.status === "vigente"   && <IBtn c={L.t3}    onClick={() => mudarStatus(c.id, "encerrado")} title="Encerrar">⏹</IBtn>}
-                  {c.arquivo_url && (
-                    <IBtn c={L.blue} onClick={() => abrirArquivo(c)} title="Ver contrato assinado">📄</IBtn>
+                  {c.arquivo_url ? (
+                    <IBtn c={L.blue} onClick={() => abrirArquivo(c)}>📄</IBtn>
+                  ) : (
+                    <label style={{display:"inline-flex",alignItems:"center",justifyContent:"center",
+                      width:26,height:26,borderRadius:6,cursor:anexando===c.id?"default":"pointer",
+                      border:`1px solid ${L.line}`,background:L.surface,color:L.t3,fontSize:12}}
+                      title="Anexar contrato assinado">
+                      {anexando===c.id ? "…" : "📎"}
+                      <input type="file" accept=".pdf,image/*" style={{display:"none"}}
+                        disabled={anexando===c.id}
+                        onChange={e => anexarNaLista(c, e.target.files?.[0])}/>
+                    </label>
                   )}
                   <IBtn c={L.teal} onClick={() => openEdit(c)}>✎</IBtn>
                   <IBtn c={L.red}  onClick={() => { if (confirm("Excluir contrato?")) remove(c.id); }}>⊗</IBtn>
