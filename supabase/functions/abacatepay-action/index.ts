@@ -20,6 +20,8 @@ const APP_URL  = (Deno.env.get("APP_URL") ?? "").replace(/\/$/, "");
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  // Evita um preflight a cada clique nos botões de sincronizar e cobrar.
+  "Access-Control-Max-Age": "86400",
 };
 
 const json = (data: unknown, status = 200) =>
