@@ -15,10 +15,17 @@ const API_KEY  = Deno.env.get("ABACATEPAY_API_KEY") ?? "";
 const API_BASE = (Deno.env.get("ABACATEPAY_API_URL") ?? "https://api.abacatepay.com/v1").replace(/\/$/, "");
 const APP_URL  = (Deno.env.get("APP_URL") ?? "").replace(/\/$/, "");
 
+// O supabase-js envia x-client-info e apikey além do authorization; permitir só
+// parte deles fazia o navegador barrar o preflight e a chamada nem chegava aqui.
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
 const json = (data: unknown, status = 200) =>
   new Response(JSON.stringify(data), {
     status,
-    headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+    headers: { "Content-Type": "application/json", ...CORS },
   });
 
 // Chamada à API. Devolve corpo e status crus: como a integração ainda não foi
@@ -44,14 +51,7 @@ async function api(path: string, body?: unknown, method = "POST") {
 const soDigitos = (s: unknown) => String(s ?? "").replace(/\D/g, "");
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response("ok", {
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Headers": "authorization, content-type",
-      },
-    });
-  }
+  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (!API_KEY) return json({ error: "ABACATEPAY_API_KEY não configurada" }, 503);
 
   const auth = req.headers.get("authorization") || "";
