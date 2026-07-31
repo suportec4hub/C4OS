@@ -11,7 +11,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const SUPA_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPA_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const WEBHOOK_SECRET = (Deno.env.get("ABACATEPAY_WEBHOOK_SECRET") ?? "").trim();
+// Lido a cada requisição pelo mesmo motivo da chave da API: capturado no boot,
+// atualizar o secret não teria efeito nas instâncias já em execução.
+const webhookSecret = () => (Deno.env.get("ABACATEPAY_WEBHOOK_SECRET") ?? "").trim();
 
 const json = (data: unknown, status = 200) =>
   new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } });
@@ -37,14 +39,15 @@ const EVENTOS_ESTORNO = new Set([
 ]);
 
 Deno.serve(async (req) => {
-  if (!WEBHOOK_SECRET) {
+  const esperado = webhookSecret();
+  if (!esperado) {
     console.error("[abacatepay-webhook] ABACATEPAY_WEBHOOK_SECRET não configurado");
     return json({ error: "webhook não configurado" }, 503);
   }
 
   const url = new URL(req.url);
   const recebido = url.searchParams.get("webhookSecret") ?? "";
-  if (!segredoConfere(recebido, WEBHOOK_SECRET)) {
+  if (!segredoConfere(recebido, esperado)) {
     return json({ error: "unauthorized" }, 401);
   }
 

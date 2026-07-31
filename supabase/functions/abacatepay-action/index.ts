@@ -11,11 +11,14 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const SUPA_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPA_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-// trim porque segredo colado no painel costuma vir com espaço ou quebra de
-// linha no fim, e a API rejeita com "Invalid or inactive API key".
-const API_KEY  = (Deno.env.get("ABACATEPAY_API_KEY") ?? "").trim();
-const API_BASE = (Deno.env.get("ABACATEPAY_API_URL") ?? "https://api.abacatepay.com/v1").replace(/\/$/, "");
-const APP_URL  = (Deno.env.get("APP_URL") ?? "").replace(/\/$/, "");
+// Lidos a cada requisição, não no carregamento do módulo: capturados no boot,
+// uma instância já em execução seguia usando o valor antigo depois de o secret
+// ser atualizado no painel, e a chave nova só passava a valer no próximo
+// deploy. O trim cobre espaço ou quebra de linha colados junto, que corrompem
+// o header sem deixar rastro.
+const apiKey  = () => (Deno.env.get("ABACATEPAY_API_KEY") ?? "").trim();
+const apiBase = () => (Deno.env.get("ABACATEPAY_API_URL") ?? "https://api.abacatepay.com/v1").trim().replace(/\/$/, "");
+const appUrl  = () => (Deno.env.get("APP_URL") ?? "").trim().replace(/\/$/, "");
 
 // O supabase-js envia x-client-info e apikey além do authorization; permitir só
 // parte deles fazia o navegador barrar o preflight e a chamada nem chegava aqui.
@@ -36,10 +39,10 @@ const json = (data: unknown, status = 200) =>
 // exercitada contra a API de produção, o erro precisa chegar inteiro à tela em
 // vez de virar "falhou".
 async function api(path: string, body?: unknown, method = "POST") {
-  const r = await fetch(`${API_BASE}${path}`, {
+  const r = await fetch(`${apiBase()}${path}`, {
     method,
     headers: {
-      "Authorization": `Bearer ${API_KEY}`,
+      "Authorization": `Bearer ${apiKey()}`,
       "Content-Type": "application/json",
       "Accept": "application/json",
     },
@@ -56,7 +59,7 @@ const soDigitos = (s: unknown) => String(s ?? "").replace(/\D/g, "");
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
-  if (!API_KEY) return json({ error: "ABACATEPAY_API_KEY não configurada" }, 503);
+  if (!apiKey()) return json({ error: "ABACATEPAY_API_KEY não configurada" }, 503);
 
   const auth = req.headers.get("authorization") || "";
   if (!auth.startsWith("Bearer ")) return json({ error: "unauthorized" }, 401);
@@ -169,8 +172,8 @@ Deno.serve(async (req) => {
         price: Math.round(valor * 100),
       }],
       customerId: emp.abacatepay_customer_id,
-      returnUrl:     APP_URL || undefined,
-      completionUrl: APP_URL || undefined,
+      returnUrl:     appUrl() || undefined,
+      completionUrl: appUrl() || undefined,
     });
     if (!r.ok) return json({ error: "AbacatePay recusou a cobrança", status: r.status, resposta: r.texto }, 502);
 
