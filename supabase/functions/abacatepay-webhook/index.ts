@@ -82,10 +82,10 @@ Deno.serve(async (req) => {
   // Registra antes de agir. O índice único em evento_id torna o reenvio inócuo:
   // o AbacatePay reenvia quando não recebe 200, e sem isso um pagamento seria
   // creditado duas vezes.
-  const { error: insErr } = await db.from("abacatepay_eventos").insert({
+  const { data: registro, error: insErr } = await db.from("abacatepay_eventos").insert({
     evento_id: eventoId, evento, empresa_id: empresaId,
     billing_id: billingId, customer_id: customerId, valor, payload: body,
-  });
+  }).select("id").single();
   if (insErr) {
     // 23505 = violação de unicidade: já processamos este evento.
     if (String(insErr.code) === "23505") return json({ ok: true, duplicado: true });
@@ -134,12 +134,12 @@ Deno.serve(async (req) => {
     }
 
     await db.from("abacatepay_eventos").update({ processado: true })
-      .eq("evento_id", eventoId ?? "").eq("evento", evento);
+      .eq("id", registro.id);
   } catch (e) {
     console.error("[abacatepay-webhook] erro ao processar:", e);
     await db.from("abacatepay_eventos")
       .update({ erro: String(e).slice(0, 500) })
-      .eq("evento_id", eventoId ?? "");
+      .eq("id", registro.id);
     // Responde 200 mesmo assim: o evento está gravado e pode ser reprocessado,
     // e devolver erro faria o AbacatePay reenviar em laço.
   }
