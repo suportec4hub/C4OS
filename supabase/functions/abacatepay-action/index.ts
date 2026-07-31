@@ -227,8 +227,14 @@ Deno.serve(async (req) => {
       completionUrl: appUrl() || undefined,
     });
     if (!r.ok) {
-      const dica = /PIX Autom[áa]tico is not available/i.test(r.texto)
-        ? "Sua conta AbacatePay não tem PIX Automático habilitado. Escolha Cartão como forma de pagamento da assinatura, ou peça a liberação ao AbacatePay."
+      // Métodos de assinatura dependem de liberação na conta. Sem nenhum deles,
+      // o caminho que funciona é a cobrança avulsa em PIX.
+      const semMetodo = /(PIX Autom[áa]tico|CARD) is not available/i.test(r.texto);
+      const dica = semMetodo && assinatura
+        ? "Sua conta AbacatePay não tem métodos de assinatura habilitados (PIX Automático ou Cartão). "
+          + "Use Cobrança avulsa com PIX, ou peça a liberação ao AbacatePay."
+        : semMetodo
+        ? "A forma de pagamento escolhida não está habilitada na sua conta AbacatePay."
         : assinatura ? "AbacatePay recusou a assinatura" : "AbacatePay recusou a cobrança";
       return json({ error: dica, status: r.status, resposta: r.texto }, 502);
     }
