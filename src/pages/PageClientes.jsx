@@ -208,7 +208,21 @@ export default function PageClientes({ user }) {
       const { data, error } = await supabase.functions.invoke("abacatepay-action", {
         body: { action, empresa_id: cobrancaEmpresa.id, ...extra },
       });
-      if (error) throw new Error(error.message);
+      if (error) {
+        // Em resposta não-2xx o supabase-js entrega só "Edge Function returned
+        // a non-2xx status code" e guarda a resposta em error.context. Sem ler
+        // esse corpo o motivo real — chave ausente, recusa do AbacatePay — se
+        // perde e sobra uma mensagem que não diz nada.
+        let detalhe = "";
+        try {
+          const corpo = await error.context?.json?.();
+          if (corpo) detalhe = corpo.error
+            ? `${corpo.error}${corpo.resposta ? ` — ${corpo.resposta}` : ""}`
+            : JSON.stringify(corpo).slice(0, 400);
+        } catch { /* corpo ilegível: fica a mensagem original */ }
+        const status = error.context?.status ? ` (HTTP ${error.context.status})` : "";
+        throw new Error(`${detalhe || error.message}${status}`);
+      }
       if (data?.error) {
         setAbacateMsg({ ok: false, texto: `${data.error}${data.resposta ? ` — ${data.resposta}` : ""}` });
       } else {
