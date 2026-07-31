@@ -189,7 +189,12 @@ export default function PageClientes({ user }) {
     setCobrancaLog(logs || []);
 
     setAbacateMsg(null);
+    // O e-mail do administrador do cliente vive em auth.users; a função
+    // security definer é a única via de leitura pelo app.
+    const { data: emailAdmin } = await supabase.rpc("email_admin_da_empresa", { p_empresa: emp.id });
+
     setAbacate({
+      email_cobranca: cfg?.email_cobranca || emailAdmin || "",
       customer_id:  emp.abacatepay_customer_id || null,
       billing_id:   cfg?.abacatepay_billing_id || null,
       url:          cfg?.abacatepay_url || null,
@@ -578,9 +583,15 @@ export default function PageClientes({ user }) {
                   </Field>
                 </div>
 
+                <Field label="E-mail do cliente (vai na fatura)">
+                  <Input type="email" value={abacate?.email_cobranca ?? ""}
+                    onChange={v => setAbacate(p => ({...p, email_cobranca: v}))}
+                    placeholder="cliente@empresa.com.br"/>
+                </Field>
+
                 <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:4}}>
                   <button type="button" disabled={!!abacateBusy}
-                    onClick={() => chamarAbacate("sync_cliente")}
+                    onClick={() => chamarAbacate("sync_cliente", { email: abacate?.email_cobranca || undefined })}
                     style={{padding:"8px 14px",borderRadius:8,fontSize:12,fontWeight:600,cursor:abacateBusy?"default":"pointer",
                       border:`1.5px solid ${abacate?.customer_id ? L.line : L.teal}`,
                       background: abacate?.customer_id ? L.surface : L.teal,

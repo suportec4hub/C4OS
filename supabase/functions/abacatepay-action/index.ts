@@ -106,7 +106,19 @@ Deno.serve(async (req) => {
       return json({ ok: true, customer_id: emp.abacatepay_customer_id, ja_existia: true });
     }
 
-    const email = String(body?.email || "").trim();
+    // O AbacatePay exige e-mail válido ("Property 'email' should be email").
+    // Ordem: o que veio da tela, o salvo na configuração, e por fim o e-mail do
+    // administrador do cliente — que vive em auth.users e só é alcançável por
+    // função security definer.
+    let email = String(body?.email || cfg?.email_cobranca || "").trim();
+    if (!email) {
+      const { data: doAdmin } = await db.rpc("email_admin_da_empresa_interno", { p_empresa: empresaId });
+      email = String(doAdmin || "").trim();
+    }
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+      return json({ error: "informe um e-mail válido para a fatura deste cliente" }, 400);
+    }
+
     const r = await api("/customer/create", {
       name:      emp.nome,
       cellphone: soDigitos(emp.telefone),
@@ -119,7 +131,10 @@ Deno.serve(async (req) => {
     if (!customerId) return json({ error: "resposta sem id de cliente", resposta: r.texto }, 502);
 
     await db.from("empresas").update({ abacatepay_customer_id: customerId }).eq("id", empresaId);
-    return json({ ok: true, customer_id: customerId });
+    await db.from("cobranca_config").upsert(
+      { empresa_id: empresaId, email_cobranca: email }, { onConflict: "empresa_id" },
+    );
+    return json({ ok: true, customer_id: customerId, email });
   }
 
   // ── Cria a cobrança e devolve o link de pagamento ────────────────────────
