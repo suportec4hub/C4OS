@@ -554,12 +554,12 @@ export default function PageClientes({ user }) {
                   <Field label="Valor mensal (R$)">
                     <Input type="number" min="0" step="0.01"
                       value={abacate?.valor_mensal ?? ""}
-                      onChange={e => setAbacate(p => ({...p, valor_mensal: e.target.value}))}
+                      onChange={v => setAbacate(p => ({...p, valor_mensal: v}))}
                       placeholder="Ex: 1500.00"/>
                   </Field>
                   <Field label="Produto / descrição na fatura">
                     <Input value={abacate?.produto_nome ?? ""}
-                      onChange={e => setAbacate(p => ({...p, produto_nome: e.target.value}))}
+                      onChange={v => setAbacate(p => ({...p, produto_nome: v}))}
                       placeholder="Ex: C4OS Pro, Tráfego Pago..."/>
                   </Field>
                 </div>
