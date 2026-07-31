@@ -200,7 +200,7 @@ export default function PageClientes({ user }) {
       url:          cfg?.abacatepay_url || null,
       valor_mensal: cfg?.valor_mensal ?? "",
       produto_nome: cfg?.produto_nome || "",
-      frequencia:   cfg?.frequencia || "MULTIPLE_PAYMENTS",
+      frequencia:   cfg?.frequencia || "MONTHLY",
     });
   }, []);
 
@@ -583,6 +583,17 @@ export default function PageClientes({ user }) {
                   </Field>
                 </div>
 
+                <Field label="Cobrança">
+                  <Select value={abacate?.frequencia ?? "MONTHLY"}
+                    onChange={v => setAbacate(p => ({...p, frequencia: v}))}>
+                    <option value="MONTHLY">Assinatura mensal</option>
+                    <option value="WEEKLY">Assinatura semanal</option>
+                    <option value="SEMIANNUALLY">Assinatura semestral</option>
+                    <option value="ANNUALLY">Assinatura anual</option>
+                    <option value="ONE_TIME">Cobrança avulsa (uma vez)</option>
+                  </Select>
+                </Field>
+
                 <Field label="E-mail do cliente (vai na fatura)">
                   <Input type="email" value={abacate?.email_cobranca ?? ""}
                     onChange={v => setAbacate(p => ({...p, email_cobranca: v}))}
@@ -604,6 +615,7 @@ export default function PageClientes({ user }) {
                     onClick={() => chamarAbacate("criar_cobranca", {
                       valor: Number(abacate.valor_mensal),
                       produto_nome: abacate.produto_nome || undefined,
+                      frequencia: abacate.frequencia || undefined,
                     })}
                     style={{padding:"8px 14px",borderRadius:8,fontSize:12,fontWeight:600,fontFamily:"inherit",
                       cursor:(abacateBusy || !abacate?.customer_id || !(Number(abacate?.valor_mensal)>0))?"default":"pointer",

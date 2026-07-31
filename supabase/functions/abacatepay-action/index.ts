@@ -153,6 +153,9 @@ Deno.serve(async (req) => {
   }
 
   // ── Cria a cobrança e devolve o link de pagamento ────────────────────────
+  // Na v2 o item do checkout referencia um produto já cadastrado: por isso o
+  // produto é criado antes e só o id dele vai na cobrança. Assinatura exige que
+  // o produto tenha ciclo definido e aceita um único item.
   if (acao === "criar_cobranca") {
     const valor = Number(body?.valor ?? cfg?.valor_mensal ?? 0);
     if (!(valor > 0)) return json({ error: "valor mensal não configurado para este cliente" }, 400);
@@ -160,27 +163,63 @@ Deno.serve(async (req) => {
       return json({ error: "sincronize o cliente com o AbacatePay antes de gerar a cobrança" }, 400);
     }
 
-    const produto = String(body?.produto_nome || cfg?.produto_nome || "Mensalidade C4OS");
-    const frequencia = String(body?.frequencia || cfg?.frequencia || "MULTIPLE_PAYMENTS");
-    const metodos = (body?.metodos || cfg?.metodos || ["PIX"]) as string[];
+    const produto   = String(body?.produto_nome || cfg?.produto_nome || "Mensalidade C4OS");
+    const descricao = String(body?.produto_descricao || cfg?.produto_descricao || produto);
+    const ciclo     = String(body?.frequencia || cfg?.frequencia || "MONTHLY");
+    const metodos   = (body?.metodos || cfg?.metodos || ["PIX"]) as string[];
+    const assinatura = ciclo !== "ONE_TIME";
+    const centavos  = Math.round(valor * 100);
 
-    const r = await api("/checkouts/create", {
-      frequency: frequencia,
-      methods: metodos,
-      // Na v2 a lista chama items (era products na v1). Preço em centavos: a
-      // API trabalha em centavos e enviar reais cobraria cem vezes menos.
-      items: [{
-        externalId: `c4os-${empresaId}`,
+    // Produto é recriado quando preço, nome ou ciclo mudam: o valor cobrado
+    // mora no produto, então reaproveitar um antigo cobraria o preço velho.
+    const externalId = `c4os-${empresaId}-${centavos}-${ciclo}`;
+    let productId = cfg?.abacatepay_product_id ?? null;
+    const mudou = Number(cfg?.valor_mensal) !== valor
+      || String(cfg?.produto_nome ?? "") !== produto
+      || String(cfg?.frequencia ?? "") !== ciclo;
+
+    if (!productId || mudou) {
+      const rp = await api("/products/create", {
+        externalId,
         name: produto,
-        description: String(body?.produto_descricao || cfg?.produto_descricao || produto),
-        quantity: 1,
-        price: Math.round(valor * 100),
-      }],
+        description: descricao,
+        // Centavos: a API trabalha nessa unidade e enviar reais cobraria cem
+        // vezes menos.
+        price: centavos,
+        currency: "BRL",
+        ...(assinatura ? { cycle: ciclo } : {}),
+      });
+
+      productId = rp.dados?.data?.id ?? rp.dados?.id ?? null;
+
+      // externalId repetido significa que o produto já existe de uma tentativa
+      // anterior: recupera pela listagem em vez de falhar.
+      if (!productId) {
+        const rl = await api("/products/list", undefined, "GET");
+        // deno-lint-ignore no-explicit-any
+        const lista: any[] = rl.dados?.data ?? rl.dados ?? [];
+        productId = (Array.isArray(lista) ? lista : [])
+          .find((pr) => String(pr?.externalId) === externalId)?.id ?? null;
+      }
+      if (!productId) {
+        return json({ error: "AbacatePay não criou o produto", status: rp.status, resposta: rp.texto }, 502);
+      }
+    }
+
+    const rota = assinatura ? "/subscriptions/create" : "/checkouts/create";
+    const r = await api(rota, {
+      items: [{ id: productId, quantity: 1 }],
       customerId: emp.abacatepay_customer_id,
+      methods: metodos,
       returnUrl:     appUrl() || undefined,
       completionUrl: appUrl() || undefined,
     });
-    if (!r.ok) return json({ error: "AbacatePay recusou a cobrança", status: r.status, resposta: r.texto }, 502);
+    if (!r.ok) {
+      return json({
+        error: assinatura ? "AbacatePay recusou a assinatura" : "AbacatePay recusou a cobrança",
+        status: r.status, resposta: r.texto,
+      }, 502);
+    }
 
     const cob = r.dados?.data ?? r.dados ?? {};
     const billingId = cob?.id ?? null;
@@ -191,8 +230,9 @@ Deno.serve(async (req) => {
       empresa_id: empresaId,
       valor_mensal: valor,
       produto_nome: produto,
-      frequencia,
+      frequencia: ciclo,
       metodos,
+      abacatepay_product_id: productId,
       abacatepay_billing_id: billingId,
       abacatepay_url: link,
       abacatepay_sincronizado_em: new Date().toISOString(),
@@ -215,7 +255,7 @@ Deno.serve(async (req) => {
       abacatepay_billing_id: billingId,
     });
 
-    return json({ ok: true, billing_id: billingId, url: link });
+    return json({ ok: true, billing_id: billingId, url: link, product_id: productId });
   }
 
   return json({ error: `ação desconhecida: ${acao}` }, 400);
