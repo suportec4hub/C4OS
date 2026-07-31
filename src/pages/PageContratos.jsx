@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { L } from "../constants/theme";
 import { useTable } from "../hooks/useData";
 import { supabase } from "../lib/supabase";
@@ -9,7 +9,7 @@ const STATUS_C  = { rascunho: L.t4, enviado: L.blue, assinado: L.teal, vigente: 
 const STATUS_BG = { rascunho: L.surface, enviado: L.blueBg, assinado: L.tealBg, vigente: L.greenBg, encerrado: L.surface, cancelado: L.redBg };
 const TIPOS_C   = { servico: "Serviço", produto: "Produto", parceria: "Parceria", fornecedor: "Fornecedor", trabalho: "Contrato de Trabalho", locacao: "Locação" };
 
-const VAZIO = { titulo: "", cliente_nome: "", cliente_email: "", tipo: "servico", status: "rascunho", valor: "", data_inicio: "", data_fim: "", observacoes: "", arquivo_url: "", arquivo_nome: "" };
+const VAZIO = { titulo: "", cliente_nome: "", cliente_email: "", tipo: "servico", status: "rascunho", valor: "", data_inicio: "", data_fim: "", observacoes: "" };
 
 const fmtD   = (d) => d ? new Date(d + "T12:00:00").toLocaleDateString("pt-BR") : "—";
 const fmtVal = (v) => v != null && v !== "" ? Number(v).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "—";
@@ -26,47 +26,64 @@ export default function PageContratos({ user }) {
   const [enviando, setEnviando] = useState(false);
   const [visualizar, setVisualizar] = useState(null); // { url, nome }
   const [anexando, setAnexando] = useState(null);     // id do contrato recebendo arquivo
+  const [docsDe,   setDocsDe]   = useState(null);     // contrato com o painel de documentos aberto
+  const [docs,     setDocs]     = useState([]);
+  const [docsQtd,  setDocsQtd]  = useState({});       // contrato_id -> quantidade
 
-  // Anexo direto da listagem, para não precisar abrir a edição só para subir o
-  // documento — o contrato costuma ser criado antes de existir assinatura.
-  const anexarNaLista = async (contrato, file) => {
+  const carregarQtd = useCallback(async () => {
+    const { data } = await supabase.from("contrato_documentos").select("contrato_id");
+    const m = {};
+    (data || []).forEach(d => { m[d.contrato_id] = (m[d.contrato_id] || 0) + 1; });
+    setDocsQtd(m);
+  }, []);
+
+  useEffect(() => { carregarQtd(); }, [carregarQtd, contratos]);
+
+  const carregarDocs = useCallback(async (contratoId) => {
+    const { data } = await supabase.from("contrato_documentos")
+      .select("*").eq("contrato_id", contratoId).order("created_at", { ascending: false });
+    setDocs(data || []);
+  }, []);
+
+  const abrirDocs = async (c) => { setDocsDe(c); await carregarDocs(c.id); };
+
+  const anexarDoc = async (contrato, file) => {
     if (!file) return;
     if (file.size > 20 * 1024 * 1024) { alert("Arquivo acima de 20 MB."); return; }
     setAnexando(contrato.id);
     const limpo = file.name.replace(/[^\w.\-]/g, "_");
-    const caminho = `${user.empresa_id}/${Date.now()}-${limpo}`;
+    const caminho = `${user.empresa_id}/${contrato.id}/${Date.now()}-${limpo}`;
     const { error } = await supabase.storage.from("contratos").upload(caminho, file);
     if (error) alert(`Falha ao enviar: ${error.message}`);
     else {
-      await update(contrato.id, { arquivo_url: caminho, arquivo_nome: file.name });
-      refetch();
+      await supabase.from("contrato_documentos").insert({
+        contrato_id: contrato.id, empresa_id: user.empresa_id,
+        arquivo_url: caminho, arquivo_nome: file.name, tamanho: file.size,
+        enviado_por: user.id,
+      });
+      await carregarDocs(contrato.id);
+      await carregarQtd();
     }
     setAnexando(null);
   };
 
-  // Contrato assinado é documento sensível: fica em bucket privado e é aberto
-  // por URL assinada de curta duração, não por link permanente.
-  const abrirArquivo = async (contrato) => {
-    if (!contrato.arquivo_url) return;
-    const { data, error } = await supabase.storage
-      .from("contratos").createSignedUrl(contrato.arquivo_url, 300);
-    if (error || !data?.signedUrl) { alert("Não foi possível abrir o arquivo."); return; }
-    setVisualizar({ url: data.signedUrl, nome: contrato.arquivo_nome || "Contrato" });
+  const excluirDoc = async (doc) => {
+    if (!confirm(`Excluir "${doc.arquivo_nome}"?`)) return;
+    // Remove o arquivo antes do registro: sobrar arquivo sem registro é lixo
+    // invisível no bucket, e o contrário deixaria um item que não abre.
+    await supabase.storage.from("contratos").remove([doc.arquivo_url]);
+    await supabase.from("contrato_documentos").delete().eq("id", doc.id);
+    await carregarDocs(doc.contrato_id);
+    await carregarQtd();
   };
 
-  const enviarArquivo = async (file) => {
-    if (!file) return;
-    if (file.size > 20 * 1024 * 1024) { setErr("Arquivo acima de 20 MB."); return; }
-    setEnviando(true); setErr("");
-    // Caminho começa pelo empresa_id: é assim que a política de acesso do
-    // bucket identifica o dono do arquivo.
-    const limpo = file.name.replace(/[^\w.\-]/g, "_");
-    const caminho = `${user.empresa_id}/${Date.now()}-${limpo}`;
-    const { error } = await supabase.storage.from("contratos").upload(caminho, file, { upsert: false });
-    if (error) setErr(`Falha ao enviar: ${error.message}`);
-    else setForm(p => ({ ...p, arquivo_url: caminho, arquivo_nome: file.name }));
-    setEnviando(false);
+  const verDoc = async (doc) => {
+    const { data, error } = await supabase.storage
+      .from("contratos").createSignedUrl(doc.arquivo_url, 300);
+    if (error || !data?.signedUrl) { alert("Não foi possível abrir o arquivo."); return; }
+    setVisualizar({ url: data.signedUrl, nome: doc.arquivo_nome });
   };
+
   const [saving, setSaving] = useState(false);
   const [err,    setErr]    = useState("");
   const F = k => v => setForm(p => ({ ...p, [k]: v }));
@@ -105,8 +122,6 @@ export default function PageContratos({ user }) {
       data_inicio: form.data_inicio || null,
       data_fim:    form.data_fim    || null,
       cliente_email: form.cliente_email?.trim() || null,
-      arquivo_url:  form.arquivo_url  || null,
-      arquivo_nome: form.arquivo_nome || null,
     };
     const { error } = edit ? await update(edit, payload) : await insert(payload);
     if (error) setErr(error.message || "Erro ao salvar.");
@@ -185,19 +200,9 @@ export default function PageContratos({ user }) {
                   {c.status === "enviado"   && <IBtn c={L.teal}  onClick={() => mudarStatus(c.id, "assinado")}  title="Marcar assinado">✍</IBtn>}
                   {c.status === "assinado"  && <IBtn c={L.green} onClick={() => mudarStatus(c.id, "vigente")}   title="Ativar contrato">▶</IBtn>}
                   {c.status === "vigente"   && <IBtn c={L.t3}    onClick={() => mudarStatus(c.id, "encerrado")} title="Encerrar">⏹</IBtn>}
-                  {c.arquivo_url ? (
-                    <IBtn c={L.blue} onClick={() => abrirArquivo(c)}>📄</IBtn>
-                  ) : (
-                    <label style={{display:"inline-flex",alignItems:"center",justifyContent:"center",
-                      width:26,height:26,borderRadius:6,cursor:anexando===c.id?"default":"pointer",
-                      border:`1px solid ${L.line}`,background:L.surface,color:L.t3,fontSize:12}}
-                      title="Anexar contrato assinado">
-                      {anexando===c.id ? "…" : "📎"}
-                      <input type="file" accept=".pdf,image/*" style={{display:"none"}}
-                        disabled={anexando===c.id}
-                        onChange={e => anexarNaLista(c, e.target.files?.[0])}/>
-                    </label>
-                  )}
+                  <IBtn c={docsQtd[c.id] ? L.blue : L.t3} onClick={() => abrirDocs(c)}>
+                    📎{docsQtd[c.id] ? ` ${docsQtd[c.id]}` : ""}
+                  </IBtn>
                   <IBtn c={L.teal} onClick={() => openEdit(c)}>✎</IBtn>
                   <IBtn c={L.red}  onClick={() => { if (confirm("Excluir contrato?")) remove(c.id); }}>⊗</IBtn>
                 </Row>
@@ -244,27 +249,8 @@ export default function PageContratos({ user }) {
             <Field label="Data de encerramento">
               <Input type="date" value={form.data_fim || ""} onChange={F("data_fim")} />
             </Field>
-            <Field label="Contrato assinado (PDF ou imagem)" style={{ gridColumn: "1/-1" }}>
-              <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-                <label style={{padding:"7px 12px",borderRadius:8,fontSize:11.5,fontWeight:600,cursor:enviando?"default":"pointer",
-                  border:`1.5px solid ${L.line}`,background:L.surface,color:L.t2,fontFamily:"inherit"}}>
-                  {enviando ? "Enviando..." : form.arquivo_url ? "Trocar arquivo" : "Selecionar arquivo"}
-                  <input type="file" accept=".pdf,image/*" disabled={enviando} style={{display:"none"}}
-                    onChange={e => enviarArquivo(e.target.files?.[0])}/>
-                </label>
-                {form.arquivo_nome && (
-                  <span style={{fontSize:11,color:L.teal,wordBreak:"break-all"}}>📎 {form.arquivo_nome}</span>
-                )}
-                {form.arquivo_url && (
-                  <button type="button"
-                    onClick={()=>setForm(p=>({...p, arquivo_url:"", arquivo_nome:""}))}
-                    style={{padding:"4px 8px",borderRadius:6,fontSize:10,cursor:"pointer",
-                      border:`1px solid ${L.line}`,background:"transparent",color:L.red,fontFamily:"inherit"}}>
-                    remover
-                  </button>
-                )}
-              </div>
-            </Field>
+            {/* Documentos ficam no painel próprio, acessível pela listagem:
+                um contrato costuma ter mais de um arquivo. */}
             <Field label="Observações / Termos" style={{ gridColumn: "1/-1" }}>
               <Input value={form.observacoes || ""} onChange={F("observacoes")} placeholder="Condições, cláusulas especiais..." />
             </Field>
@@ -273,6 +259,43 @@ export default function PageContratos({ user }) {
           <ModalFooter onClose={() => setModal(false)} onSave={save} loading={saving} label={edit ? "Salvar Alterações" : "Criar Contrato"} />
         </Modal>
       )}
+      {docsDe && (
+        <Modal title={`Documentos — ${docsDe.titulo}`} onClose={() => setDocsDe(null)} width={620}>
+          <label style={{display:"inline-flex",alignItems:"center",gap:8,padding:"8px 14px",borderRadius:8,
+            fontSize:12,fontWeight:600,cursor:anexando?"default":"pointer",marginBottom:14,
+            border:`1.5px solid ${L.teal}`,background:L.teal,color:"#fff",fontFamily:"inherit"}}>
+            {anexando ? "Enviando..." : "+ Anexar documento"}
+            <input type="file" accept=".pdf,image/*" style={{display:"none"}} disabled={!!anexando}
+              onChange={e => { anexarDoc(docsDe, e.target.files?.[0]); e.target.value = ""; }}/>
+          </label>
+
+          {docs.length === 0 ? (
+            <div style={{padding:"26px 0",textAlign:"center",color:L.t4,fontSize:12,lineHeight:1.6}}>
+              Nenhum documento anexado.<br/>
+              Anexe o contrato assinado, aditivos ou comprovantes.
+            </div>
+          ) : (
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              {docs.map(d => (
+                <div key={d.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",
+                  background:L.surface,borderRadius:8,border:`1px solid ${L.lineSoft}`}}>
+                  <span style={{fontSize:16}}>📄</span>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:12,color:L.t1,fontWeight:600,wordBreak:"break-all"}}>{d.arquivo_nome}</div>
+                    <div style={{fontSize:10,color:L.t4}}>
+                      {new Date(d.created_at).toLocaleString("pt-BR")}
+                      {d.tamanho ? ` · ${(d.tamanho/1024/1024).toFixed(2)} MB` : ""}
+                    </div>
+                  </div>
+                  <IBtn c={L.blue} onClick={() => verDoc(d)}>👁</IBtn>
+                  <IBtn c={L.red}  onClick={() => excluirDoc(d)}>⊗</IBtn>
+                </div>
+              ))}
+            </div>
+          )}
+        </Modal>
+      )}
+
       {visualizar && (
         <Modal title={visualizar.nome} onClose={() => setVisualizar(null)} width={900}>
           {/* Exibido no próprio sistema para não precisar baixar só para conferir. */}
