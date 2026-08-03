@@ -1537,6 +1537,33 @@ async function processMessages(
       }
     }
 
+    // ── Eco da própria mensagem do bot ───────────────────────────────────────
+    // O motor do chatbot grava a mensagem no momento em que a envia, sem wamid.
+    // A Evolution devolve essa mesma mensagem como messages.upsert com
+    // fromMe=true, o que criava uma segunda linha com o texto idêntico e fazia a
+    // conversa exibir tudo duplicado. Em vez de inserir de novo, completa a
+    // linha existente com o wamid.
+    if (fromMe && texto && !isHistory) {
+      const { data: doBot } = await supabase.from("mensagens")
+        .select("id")
+        .eq("conversa_id", conv.id)
+        .eq("de", "bot")
+        .is("wamid", null)
+        .eq("texto", texto)
+        // Janela curta: mensagens iguais enviadas muito depois são envios de
+        // verdade, não o eco deste.
+        .gte("hora", new Date(Date.now() - 3 * 60 * 1000).toISOString())
+        .order("hora", { ascending: false })
+        .limit(1);
+
+      if (doBot?.length) {
+        await supabase.from("mensagens")
+          .update({ wamid: wamid || null, status: "enviado" })
+          .eq("id", doBot[0].id);
+        continue;
+      }
+    }
+
     // ── Insert message — for wamid messages the unique index (mensagens_wamid_unique)
     //    acts as a dedup mutex: when Evolution API delivers the same webhook multiple
     //    times simultaneously, only the first insert succeeds; the rest get error 23505
