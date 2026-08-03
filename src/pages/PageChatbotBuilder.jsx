@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { L } from "../constants/theme";
 import { supabase } from "../lib/supabase";
 import { Row } from "../components/ui";
+import Modal from "../components/Modal";
 import { useBreakpoint } from "../hooks/useBreakpoint";
 
 // ─── Tipos de gatilho do nó Início ──────────────────────────────────────────
@@ -1332,7 +1333,7 @@ function FluxoCard({ f, emUso, onOpen, onUsar, onToggleAtivo, onDeletar, vendedo
   );
 }
 
-function FluxoList({ fluxos, fluxoAtivoId, vendedores, onOpen, onUsar, onToggleAtivo, onDeletar, onNovo }) {
+function FluxoList({ fluxos, fluxoAtivoId, vendedores, onOpen, onUsar, onToggleAtivo, onDeletar, onNovo, onImportar }) {
   const [tab, setTab] = useState("empresa"); // "empresa" | "vendedor"
 
   const empresa  = fluxos.filter(f => !f.usuario_id);
@@ -1351,7 +1352,14 @@ function FluxoList({ fluxos, fluxoAtivoId, vendedores, onOpen, onUsar, onToggleA
             Crie fluxos de atendimento automático com arrastar e soltar
           </div>
         </div>
-        <button onClick={() => onNovo(tab)} style={btn(L.accent, "white", { fontWeight: 600 })}>+ Novo fluxo</button>
+        <Row gap={8}>
+          {onImportar && (
+            <button onClick={onImportar} style={btn(L.surface, L.t2, { fontWeight: 600, border: `1px solid ${L.line}` })}>
+              ⧉ Copiar de outra empresa
+            </button>
+          )}
+          <button onClick={() => onNovo(tab)} style={btn(L.accent, "white", { fontWeight: 600 })}>+ Novo fluxo</button>
+        </Row>
       </Row>
 
       {/* Tabs */}
@@ -1433,6 +1441,11 @@ export default function PageChatbotBuilder({ user }) {
   const [connecting,   setConnecting]   = useState(null);  // nó origem da conexão
   const [saving,       setSaving]       = useState(false);
   const [novaModal,    setNovaModal]    = useState(false);
+  // Importar fluxo de outra empresa: exclusivo do administrador C4HUB.
+  const [importModal,  setImportModal]  = useState(false);
+  const [fluxosOutros, setFluxosOutros] = useState([]);
+  const [importando,   setImportando]   = useState(false);
+  const ehC4hubAdmin = String(user?.role || "") === "c4hub_admin";
   const [novaForm,     setNovaForm]     = useState(VAZIO_FLUXO);
   const [fluxoAtivoId, setFluxoAtivoId] = useState(null);
   const [connLabel,    setConnLabel]    = useState("");     // label da conexão em criação
@@ -1521,6 +1534,31 @@ export default function PageChatbotBuilder({ user }) {
   };
 
   // ── Criar fluxo ──
+  const abrirImportacao = async () => {
+    setImportModal(true);
+    // Só nome, empresa e tamanho: o conteúdo dos nós não precisa trafegar para
+    // escolher qual copiar.
+    const { data, error } = await supabase.rpc("fluxos_de_todas_empresas");
+    if (error) { showToast(error.message, false); return; }
+    setFluxosOutros((data || []).filter(f => f.empresa_id !== user.empresa_id));
+  };
+
+  const importarFluxo = async (fluxo) => {
+    setImportando(true);
+    const { error } = await supabase.rpc("copiar_fluxo_para_empresa", {
+      p_fluxo_id: fluxo.id,
+      p_empresa_destino: user.empresa_id,
+      p_nome: `${fluxo.nome} (de ${fluxo.empresa_nome})`,
+    });
+    setImportando(false);
+    if (error) { showToast(error.message, false); return; }
+    setImportModal(false);
+    showToast("Fluxo copiado. Revise e ative quando quiser.");
+    const { data } = await supabase.from("chatbot_fluxos")
+      .select("*").eq("empresa_id", user.empresa_id).order("created_at", { ascending: false });
+    setFluxos(data || []);
+  };
+
   const criarFluxo = async () => {
     if (!novaForm.nome.trim()) return;
     const initNo = { id: "inicio", tipo: "inicio", nome: "Início",
@@ -1841,7 +1879,46 @@ export default function PageChatbotBuilder({ user }) {
             setNovaForm({ ...VAZIO_FLUXO, usuario_id: null });
             setNovaModal(tab);
           }}
+          onImportar={ehC4hubAdmin ? abrirImportacao : null}
         />
+
+        {importModal && (
+          <Modal title="Copiar fluxo de outra empresa" onClose={() => setImportModal(false)} width={640}>
+            <div style={{ fontSize: 11.5, color: L.t3, lineHeight: 1.6, marginBottom: 14 }}>
+              A cópia entra <b>desativada</b> nesta empresa. Revise os textos antes de ativar —
+              um fluxo montado para outro cliente costuma citar nomes e valores que não valem aqui.
+            </div>
+
+            {fluxosOutros.length === 0 ? (
+              <div style={{ padding: "26px 0", textAlign: "center", color: L.t4, fontSize: 12 }}>
+                Nenhum fluxo de outra empresa disponível.
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: "50vh", overflow: "auto" }}>
+                {fluxosOutros.map(f => (
+                  <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 10,
+                    padding: "10px 12px", background: L.surface, borderRadius: 8,
+                    border: `1px solid ${L.lineSoft}` }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12.5, color: L.t1, fontWeight: 600 }}>{f.nome}</div>
+                      <div style={{ fontSize: 10.5, color: L.t4 }}>
+                        {f.empresa_nome} · {f.qtd_nos} nó{f.qtd_nos !== 1 ? "s" : ""}
+                        {f.ativo ? " · ativo na origem" : ""}
+                      </div>
+                    </div>
+                    <button type="button" disabled={importando}
+                      onClick={() => importarFluxo(f)}
+                      style={{ padding: "6px 12px", borderRadius: 7, fontSize: 11, fontWeight: 600,
+                        cursor: importando ? "default" : "pointer", fontFamily: "inherit",
+                        border: `1.5px solid ${L.teal}`, background: L.teal, color: "#fff" }}>
+                      {importando ? "Copiando..." : "Copiar"}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Modal>
+        )}
         {novaModal && (
           <NovaFluxoModal
             form={novaForm}
