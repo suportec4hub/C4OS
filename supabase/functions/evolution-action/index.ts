@@ -279,7 +279,7 @@ Deno.serve(async (req) => {
           origem: "evolution-action", evento: "syncContactLids",
           resumo: `Mapeou contato_lid para ${updated} conversa(s) de ${lidContacts.length} contatos com @lid`,
           payload: { total: contacts.length, withLid: lidContacts.length, updated },
-        }).catch(() => {});
+        }).then(() => {}).catch(() => {});
 
         return json({ ok: true, total: contacts.length, withLid: lidContacts.length, updated });
       } catch (ex) {
@@ -343,7 +343,7 @@ Deno.serve(async (req) => {
             origem: "evolution-action", evento: "readMessages-ok",
             resumo: `readMessage ok ${r.status} msgs:${readMsgs.length}`,
             payload: logPayload,
-          }).catch(() => {});
+          }).then(() => {}).catch(() => {});
           return json({ ok: true });
         }
       } catch (ex) {
@@ -364,7 +364,7 @@ Deno.serve(async (req) => {
           origem: "evolution-action", evento: r2.ok ? "readMessages-fallback-ok" : "readMessages-failed",
           resumo: `readMessage fallback ${r2.status} msgs:${readMsgs.length}`,
           payload: logPayload,
-        }).catch(() => {});
+        }).then(() => {}).catch(() => {});
         return json({ ok: r2.ok });
       } catch (ex2) {
         logPayload.err2 = (ex2 as Error).message;
@@ -375,7 +375,7 @@ Deno.serve(async (req) => {
         origem: "evolution-action", evento: "readMessages-exception",
         resumo: `readMessage exception`,
         payload: logPayload,
-      }).catch(() => {});
+      }).then(() => {}).catch(() => {});
       return json({ ok: true });
     }
 
