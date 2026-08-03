@@ -304,15 +304,23 @@ Deno.serve(async (req) => {
       if (!msgs || msgs.length === 0) return json({ ok: true });
 
       const { data: conv } = await supabase.from("conversas")
-        .select("contato_telefone")
+        .select("contato_telefone, contato_lid")
         .eq("id", conversa_id)
         .single();
       if (!conv) return json({ ok: true });
 
       const phone = conv.contato_telefone as string;
+      const lid   = (conv.contato_lid as string | null) || "";
+
+      // O recibo precisa citar o mesmo identificador que o WhatsApp usa para a
+      // conversa. Nesta base a maioria dos contatos é endereçada por @lid, e
+      // mandar o recibo para telefone@s.whatsapp.net não casava com o chat:
+      // a marcação não surtia efeito e a notificação continuava no celular.
       const remoteJid = phone.endsWith("@g.us")
         ? phone
-        : phone.includes("@") ? phone : `${phone}@s.whatsapp.net`;
+        : lid.endsWith("@lid") ? lid
+        : phone.includes("@") ? phone
+        : `${phone}@s.whatsapp.net`;
 
       const readMsgs = msgs
         .filter((m: Record<string, string>) => m.wamid)
