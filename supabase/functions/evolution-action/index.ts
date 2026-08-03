@@ -322,69 +322,64 @@ Deno.serve(async (req) => {
         : phone.includes("@") ? phone
         : `${phone}@s.whatsapp.net`;
 
-      const readMsgs = msgs
-        .filter((m: Record<string, string>) => m.wamid)
-        .map((m: Record<string, string>) => ({
-          key: { remoteJid, fromMe: false, id: m.wamid },
-        }));
+      const wamids = msgs
+        .map((m: Record<string, string>) => m.wamid)
+        .filter(Boolean);
+      if (wamids.length === 0) return json({ ok: true });
 
-      if (readMsgs.length === 0) return json({ ok: true });
+      // Formato plano — é o que a Evolution v2 aceita em markMessageAsRead.
+      const planos = wamids.map((id: string) => ({ remoteJid, fromMe: false, id }));
+      // Formato aninhado — herdado da v1, mantido como alternativa.
+      const aninhados = wamids.map((id: string) => ({ key: { remoteJid, fromMe: false, id } }));
+
+      // As duas rotas antigas (/chat/readMessage e /message/readMessage) não
+      // existem nesta Evolution: respondiam "Cannot POST", 404, a cada abertura
+      // de conversa. A rota certa é markMessageAsRead. As demais candidatas
+      // ficam como alternativa para não depender de uma única suposição, e o
+      // log registra qual pegou.
+      const candidatos: { rota: string; corpo: unknown }[] = [
+        { rota: `/chat/markMessageAsRead/${instName}`, corpo: { readMessages: planos } },
+        { rota: `/chat/markMessageAsRead/${instName}`, corpo: { readMessages: aninhados } },
+        { rota: `/message/markMessageAsRead/${instName}`, corpo: { readMessages: planos } },
+        { rota: `/chat/readMessage/${instName}`, corpo: { readMessages: aninhados } },
+      ];
 
       const logPayload: Record<string, unknown> = {
-        instName, remoteJid, msgCount: readMsgs.length,
-        wamids: readMsgs.slice(0, 3).map((m: Record<string, unknown>) => (m.key as Record<string,unknown>)?.id),
-        hasInstToken: !!instToken,
+        instName, remoteJid, msgCount: wamids.length,
+        wamids: wamids.slice(0, 3), hasInstToken: !!instToken,
       };
+      const tentativas: string[] = [];
 
-      // Tenta endpoint v2 Baileys: POST /chat/readMessage/{instance}
-      try {
-        const r = await iFetch(`/chat/readMessage/${instName}`, {
-          method: "POST",
-          body: JSON.stringify({ readMessages: readMsgs }),
-        });
-        const txt = await r.text().catch(() => "");
-        logPayload.status1 = r.status;
-        logPayload.body1 = txt.slice(0, 300);
-        if (r.ok) {
-          await supabase.from("logs_whatsapp").insert({
-            empresa_id: emp.id, conversa_id, tipo: "fluxo", nivel: "info",
-            origem: "evolution-action", evento: "readMessages-ok",
-            resumo: `readMessage ok ${r.status} msgs:${readMsgs.length}`,
-            payload: logPayload,
-          }).then(() => {}).catch(() => {});
-          return json({ ok: true });
+      for (let i = 0; i < candidatos.length; i++) {
+        const c = candidatos[i];
+        try {
+          const r = await iFetch(c.rota, { method: "POST", body: JSON.stringify(c.corpo) });
+          const txt = await r.text().catch(() => "");
+          tentativas.push(`${c.rota}#${i} -> ${r.status} ${txt.slice(0, 120)}`);
+          if (r.ok) {
+            logPayload.tentativas = tentativas;
+            logPayload.rotaOk = `${c.rota}#${i}`;
+            await supabase.from("logs_whatsapp").insert({
+              empresa_id: emp.id, conversa_id, tipo: "fluxo", nivel: "info",
+              origem: "evolution-action", evento: "readMessages-ok",
+              resumo: `marcado como lido ${r.status} msgs:${wamids.length}`,
+              payload: logPayload,
+            }).then(() => {}).catch(() => {});
+            return json({ ok: true });
+          }
+        } catch (ex) {
+          tentativas.push(`${c.rota}#${i} -> exceção ${(ex as Error).message}`);
         }
-      } catch (ex) {
-        logPayload.err1 = (ex as Error).message;
       }
 
-      // Fallback: POST /message/readMessage/{instance}
-      try {
-        const r2 = await iFetch(`/message/readMessage/${instName}`, {
-          method: "POST",
-          body: JSON.stringify({ readMessages: readMsgs }),
-        });
-        const txt2 = await r2.text().catch(() => "");
-        logPayload.status2 = r2.status;
-        logPayload.body2 = txt2.slice(0, 300);
-        await supabase.from("logs_whatsapp").insert({
-          empresa_id: emp.id, conversa_id, tipo: "fluxo", nivel: r2.ok ? "info" : "error",
-          origem: "evolution-action", evento: r2.ok ? "readMessages-fallback-ok" : "readMessages-failed",
-          resumo: `readMessage fallback ${r2.status} msgs:${readMsgs.length}`,
-          payload: logPayload,
-        }).then(() => {}).catch(() => {});
-        return json({ ok: r2.ok });
-      } catch (ex2) {
-        logPayload.err2 = (ex2 as Error).message;
-      }
-
+      logPayload.tentativas = tentativas;
       await supabase.from("logs_whatsapp").insert({
         empresa_id: emp.id, conversa_id, tipo: "erro_api", nivel: "error",
-        origem: "evolution-action", evento: "readMessages-exception",
-        resumo: `readMessage exception`,
+        origem: "evolution-action", evento: "readMessages-failed",
+        resumo: `nenhuma rota de leitura aceita msgs:${wamids.length}`,
         payload: logPayload,
       }).then(() => {}).catch(() => {});
-      return json({ ok: true });
+      return json({ ok: false });
     }
 
     // Guard: bloqueia ações que precisam de instância (exceto connect que auto-cria)
