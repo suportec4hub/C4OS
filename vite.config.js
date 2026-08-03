@@ -16,8 +16,11 @@ export default defineConfig({
         background_color: '#ffffff',
         display: 'standalone',
         orientation: 'portrait-primary',
-        start_url: '/C4OS/',
-        scope: '/C4OS/',
+        // O app é servido na raiz do domínio; /C4OS/ era resquício de
+        // publicação em subpasta e fazia o navegador procurar os ícones e a
+        // página inicial num caminho inexistente.
+        start_url: '/',
+        scope: '/',
         lang: 'pt-BR',
         icons: [
           // 2. Caminhos dos ícones ajustados para a raiz
