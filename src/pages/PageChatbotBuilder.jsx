@@ -1265,7 +1265,7 @@ function NodeEditPanel({ no, onSave, onClose, onGenerateRoutes, setores = [], us
 }
 
 // ─── Fluxo List (home screen) ─────────────────────────────────────────────────
-function FluxoCard({ f, emUso, onOpen, onUsar, onToggleAtivo, onDeletar, vendedores }) {
+function FluxoCard({ f, emUso, onOpen, onUsar, onToggleAtivo, onDeletar, onCopiarPara, vendedores }) {
   const vendNome = f.usuario_id ? (vendedores.find(v => v.id === f.usuario_id)?.nome || "Vendedor") : null;
   return (
     <div style={{ background: L.white, borderRadius: 12,
@@ -1326,6 +1326,12 @@ function FluxoCard({ f, emUso, onOpen, onUsar, onToggleAtivo, onDeletar, vendedo
             { fontSize: 11, padding: "7px 11px" })}>
           {f.ativo ? "⏸" : "▶"}
         </button>
+        {onCopiarPara && (
+          <button onClick={() => onCopiarPara(f)} title="Copiar para outra empresa"
+            style={btn(L.surface, L.t3, { fontSize: 11, padding: "7px 11px", border: `1px solid ${L.line}` })}>
+            ⧉
+          </button>
+        )}
         <button onClick={() => onDeletar(f.id)}
           style={btn(L.redBg, L.red, { fontSize: 11, padding: "7px 11px" })}>✕</button>
       </Row>
@@ -1333,7 +1339,7 @@ function FluxoCard({ f, emUso, onOpen, onUsar, onToggleAtivo, onDeletar, vendedo
   );
 }
 
-function FluxoList({ fluxos, fluxoAtivoId, vendedores, onOpen, onUsar, onToggleAtivo, onDeletar, onNovo, onImportar }) {
+function FluxoList({ fluxos, fluxoAtivoId, vendedores, onOpen, onUsar, onToggleAtivo, onDeletar, onNovo, onCopiarPara }) {
   const [tab, setTab] = useState("empresa"); // "empresa" | "vendedor"
 
   const empresa  = fluxos.filter(f => !f.usuario_id);
@@ -1352,14 +1358,7 @@ function FluxoList({ fluxos, fluxoAtivoId, vendedores, onOpen, onUsar, onToggleA
             Crie fluxos de atendimento automático com arrastar e soltar
           </div>
         </div>
-        <Row gap={8}>
-          {onImportar && (
-            <button onClick={onImportar} style={btn(L.surface, L.t2, { fontWeight: 600, border: `1px solid ${L.line}` })}>
-              ⧉ Copiar de outra empresa
-            </button>
-          )}
-          <button onClick={() => onNovo(tab)} style={btn(L.accent, "white", { fontWeight: 600 })}>+ Novo fluxo</button>
-        </Row>
+        <button onClick={() => onNovo(tab)} style={btn(L.accent, "white", { fontWeight: 600 })}>+ Novo fluxo</button>
       </Row>
 
       {/* Tabs */}
@@ -1418,7 +1417,7 @@ function FluxoList({ fluxos, fluxoAtivoId, vendedores, onOpen, onUsar, onToggleA
             <FluxoCard key={f.id} f={f} emUso={fluxoAtivoId === f.id}
               vendedores={vendedores}
               onOpen={onOpen} onUsar={onUsar}
-              onToggleAtivo={onToggleAtivo} onDeletar={onDeletar} />
+              onToggleAtivo={onToggleAtivo} onDeletar={onDeletar} onCopiarPara={onCopiarPara} />
           ))}
         </div>
       )}
@@ -1441,10 +1440,12 @@ export default function PageChatbotBuilder({ user }) {
   const [connecting,   setConnecting]   = useState(null);  // nó origem da conexão
   const [saving,       setSaving]       = useState(false);
   const [novaModal,    setNovaModal]    = useState(false);
-  // Importar fluxo de outra empresa: exclusivo do administrador C4HUB.
-  const [importModal,  setImportModal]  = useState(false);
-  const [fluxosOutros, setFluxosOutros] = useState([]);
-  const [importando,   setImportando]   = useState(false);
+  // Enviar um fluxo daqui para outra empresa: exclusivo do administrador C4HUB.
+  const [copiarFluxo,  setCopiarFluxo]  = useState(null);   // fluxo escolhido
+  const [empresasDest, setEmpresasDest] = useState([]);
+  const [destinoId,    setDestinoId]    = useState("");
+  const [nomeCopia,    setNomeCopia]    = useState("");
+  const [copiando,     setCopiando]     = useState(false);
   const ehC4hubAdmin = String(user?.role || "") === "c4hub_admin";
   const [novaForm,     setNovaForm]     = useState(VAZIO_FLUXO);
   const [fluxoAtivoId, setFluxoAtivoId] = useState(null);
@@ -1534,29 +1535,28 @@ export default function PageChatbotBuilder({ user }) {
   };
 
   // ── Criar fluxo ──
-  const abrirImportacao = async () => {
-    setImportModal(true);
-    // Só nome, empresa e tamanho: o conteúdo dos nós não precisa trafegar para
-    // escolher qual copiar.
-    const { data, error } = await supabase.rpc("fluxos_de_todas_empresas");
+  const abrirCopia = async (fluxo) => {
+    setCopiarFluxo(fluxo);
+    setDestinoId("");
+    setNomeCopia(fluxo.nome);
+    const { data, error } = await supabase.rpc("empresas_para_copia_de_fluxo");
     if (error) { showToast(error.message, false); return; }
-    setFluxosOutros((data || []).filter(f => f.empresa_id !== user.empresa_id));
+    setEmpresasDest((data || []).filter(e => e.id !== user.empresa_id));
   };
 
-  const importarFluxo = async (fluxo) => {
-    setImportando(true);
+  const enviarCopia = async () => {
+    if (!copiarFluxo || !destinoId) return;
+    setCopiando(true);
     const { error } = await supabase.rpc("copiar_fluxo_para_empresa", {
-      p_fluxo_id: fluxo.id,
-      p_empresa_destino: user.empresa_id,
-      p_nome: `${fluxo.nome} (de ${fluxo.empresa_nome})`,
+      p_fluxo_id: copiarFluxo.id,
+      p_empresa_destino: destinoId,
+      p_nome: nomeCopia.trim() || copiarFluxo.nome,
     });
-    setImportando(false);
+    setCopiando(false);
     if (error) { showToast(error.message, false); return; }
-    setImportModal(false);
-    showToast("Fluxo copiado. Revise e ative quando quiser.");
-    const { data } = await supabase.from("chatbot_fluxos")
-      .select("*").eq("empresa_id", user.empresa_id).order("created_at", { ascending: false });
-    setFluxos(data || []);
+    const destino = empresasDest.find(e => e.id === destinoId);
+    setCopiarFluxo(null);
+    showToast(`Fluxo copiado para ${destino?.nome || "a empresa"}, desativado`);
   };
 
   const criarFluxo = async () => {
@@ -1879,46 +1879,52 @@ export default function PageChatbotBuilder({ user }) {
             setNovaForm({ ...VAZIO_FLUXO, usuario_id: null });
             setNovaModal(tab);
           }}
-          onImportar={ehC4hubAdmin ? abrirImportacao : null}
+          onCopiarPara={ehC4hubAdmin ? abrirCopia : null}
         />
 
-        {importModal && (
-          <Modal title="Copiar fluxo de outra empresa" onClose={() => setImportModal(false)} width={640}>
+        {copiarFluxo && (
+          <Modal title={`Copiar "${copiarFluxo.nome}" para outra empresa`}
+            onClose={() => setCopiarFluxo(null)} width={520}>
             <div style={{ fontSize: 11.5, color: L.t3, lineHeight: 1.6, marginBottom: 14 }}>
-              A cópia entra <b>desativada</b> nesta empresa. Revise os textos antes de ativar —
-              um fluxo montado para outro cliente costuma citar nomes e valores que não valem aqui.
+              A cópia entra <b>desativada</b> na empresa de destino. Revise os textos antes de
+              ativar — fluxo montado para um cliente costuma citar nomes, valores e
+              procedimentos que não valem no outro.
             </div>
 
-            {fluxosOutros.length === 0 ? (
-              <div style={{ padding: "26px 0", textAlign: "center", color: L.t4, fontSize: 12 }}>
-                Nenhum fluxo de outra empresa disponível.
-              </div>
-            ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: "50vh", overflow: "auto" }}>
-                {fluxosOutros.map(f => (
-                  <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 10,
-                    padding: "10px 12px", background: L.surface, borderRadius: 8,
-                    border: `1px solid ${L.lineSoft}` }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 12.5, color: L.t1, fontWeight: 600 }}>{f.nome}</div>
-                      <div style={{ fontSize: 10.5, color: L.t4 }}>
-                        {f.empresa_nome} · {f.qtd_nos} nó{f.qtd_nos !== 1 ? "s" : ""}
-                        {f.ativo ? " · ativo na origem" : ""}
-                      </div>
-                    </div>
-                    <button type="button" disabled={importando}
-                      onClick={() => importarFluxo(f)}
-                      style={{ padding: "6px 12px", borderRadius: 7, fontSize: 11, fontWeight: 600,
-                        cursor: importando ? "default" : "pointer", fontFamily: "inherit",
-                        border: `1.5px solid ${L.teal}`, background: L.teal, color: "#fff" }}>
-                      {importando ? "Copiando..." : "Copiar"}
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 10, fontWeight: 700, color: L.t3, textTransform: "uppercase",
+                letterSpacing: "1.2px", display: "block", marginBottom: 6 }}>Empresa de destino</label>
+              <select value={destinoId} onChange={e => setDestinoId(e.target.value)}
+                style={{ width: "100%", background: L.surface, border: `1.5px solid ${L.line}`,
+                  borderRadius: 9, padding: "9px 12px", color: L.t1, fontSize: 12.5,
+                  fontFamily: "inherit", outline: "none", cursor: "pointer" }}>
+                <option value="">— Escolha a empresa —</option>
+                {empresasDest.map(e => <option key={e.id} value={e.id}>{e.nome}</option>)}
+              </select>
+            </div>
+
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: 10, fontWeight: 700, color: L.t3, textTransform: "uppercase",
+                letterSpacing: "1.2px", display: "block", marginBottom: 6 }}>Nome do fluxo no destino</label>
+              <input value={nomeCopia} onChange={e => setNomeCopia(e.target.value)}
+                placeholder={copiarFluxo.nome}
+                style={{ width: "100%", background: L.surface, border: `1.5px solid ${L.line}`,
+                  borderRadius: 9, padding: "9px 12px", color: L.t1, fontSize: 12.5,
+                  fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+            </div>
+
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <button onClick={() => setCopiarFluxo(null)}
+                style={btn(L.surface, L.t2, { border: `1px solid ${L.line}` })}>Cancelar</button>
+              <button onClick={enviarCopia} disabled={!destinoId || copiando}
+                style={btn(destinoId ? L.accent : L.line, "white",
+                  { fontWeight: 600, cursor: destinoId && !copiando ? "pointer" : "default" })}>
+                {copiando ? "Copiando..." : "Copiar fluxo"}
+              </button>
+            </div>
           </Modal>
         )}
+
         {novaModal && (
           <NovaFluxoModal
             form={novaForm}
