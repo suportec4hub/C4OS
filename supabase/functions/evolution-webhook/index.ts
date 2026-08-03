@@ -687,13 +687,26 @@ async function executarFluxo(
   if (estado && estado.fluxo_id === fluxoId) {
     const noAtual = nos.find(n => n.id === estado!.no_atual_id);
     if (noAtual) {
-      // Only interactive nodes legitimately pause waiting for user input
+      // Só nós interativos pausam legitimamente à espera do cliente.
       const isInteractive = ["opcoes", "aguardar", "respostas", "lista"].includes(noAtual.tipo);
       if (!isInteractive) {
-        // Stuck estado at non-interactive node — clear and restart flow fresh
-        await supabase.from("conversas").update({ fluxo_estado: null }).eq("id", convId);
-        estado = null;
-        // Fall through to trigger restart below
+        // Estado parado num nó que não espera resposta significa fluxo
+        // interrompido no meio — uma queda de conexão, por exemplo.
+        //
+        // Antes daqui saía um reinício do fluxo, e era isso que fazia o menu
+        // já respondido voltar a ser perguntado. O reinício pertence ao nó
+        // Encerrar, que é quem limpa o estado ao concluir o atendimento: com
+        // o estado limpo, a mensagem seguinte dispara o fluxo do começo pelo
+        // caminho normal do gatilho.
+        console.log(`[fluxo] estado parado em "${noAtual.tipo}" (${noAtual.id}); aguardando Encerrar, sem reiniciar`);
+        await logWA(supabase, {
+          empresa_id, conversa_id: convId, tipo: "fluxo", nivel: "warn",
+          origem: "evolution-webhook", evento: "fluxo-estado-parado",
+          telefone: senderPhone,
+          resumo: `Fluxo parado no nó ${noAtual.tipo} sem chegar ao Encerrar`,
+          payload: { no_id: noAtual.id, no_tipo: noAtual.tipo, fluxo_id: fluxoId },
+        });
+        return true;
       } else {
         // Process user's response based on node type
         estado.variaveis["_ultima_msg"] = texto;
