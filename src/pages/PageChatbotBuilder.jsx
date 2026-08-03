@@ -1616,6 +1616,18 @@ export default function PageChatbotBuilder({ user }) {
   };
 
   // ── Nós ──
+  // Centro da área visível do canvas. O nó novo nascia sempre no início do
+  // fluxo, o que obrigava a arrastá-lo até onde a edição estava acontecendo.
+  const centroVisivel = useCallback(() => {
+    const el = canvasRef.current;
+    if (!el) return { x: 200, y: 150 };
+    const LARGURA_NO = 230, ALTURA_NO = 110;
+    return {
+      x: Math.max(20, el.scrollLeft + el.clientWidth  / 2 - LARGURA_NO / 2),
+      y: Math.max(20, el.scrollTop  + el.clientHeight / 2 - ALTURA_NO  / 2),
+    };
+  }, []);
+
   const addNo = (tipo) => {
     const id = `no-${Date.now()}`;
     const extraProps = (() => {
@@ -1625,14 +1637,62 @@ export default function PageChatbotBuilder({ user }) {
       if (tipo === "controle_fluxo") return { controle_tipo: "reiniciar", mensagem: "" };
       return {};
     })();
+    const centro = centroVisivel();
     setNos(p => [...p, {
       id, tipo, nome: NODE_TYPES[tipo]?.label || tipo,
-      mensagem: "", x: 160 + Math.random() * 260, y: 100 + Math.random() * 200,
+      mensagem: "",
+      // Leve deslocamento aleatório para dois nós seguidos não se sobreporem.
+      x: centro.x + (Math.random() * 60 - 30),
+      y: centro.y + (Math.random() * 60 - 30),
       opcoes: [], gatilhos: "", variavel: "",
       condicao_tipo: "contem_palavra",
       ...extraProps,
     }]);
   };
+
+  // ── Copiar e colar nó (Ctrl+C / Ctrl+V) ──
+  const copiadoRef = useRef(null);
+
+  const colarNo = useCallback(() => {
+    const origem = copiadoRef.current;
+    if (!origem) return;
+    const centro = centroVisivel();
+    const novo = {
+      ...origem,
+      id: `no-${Date.now()}`,
+      // Conexões não vêm junto: o nó colado ainda não tem para onde apontar,
+      // e herdar as ligações do original criaria fluxos duplicados sem querer.
+      x: centro.x + (Math.random() * 40 - 20),
+      y: centro.y + (Math.random() * 40 - 20),
+    };
+    setNos(p => [...p, novo]);
+    setSelectedNo(novo);
+    showToast("Nó colado");
+  }, [centroVisivel]);
+
+  useEffect(() => {
+    const onKey = (e) => {
+      // Não interfere quando o texto está sendo editado num campo.
+      const alvo = e.target;
+      const digitando = alvo && (
+        alvo.tagName === "INPUT" || alvo.tagName === "TEXTAREA" || alvo.isContentEditable
+      );
+      if (digitando) return;
+      if (!(e.ctrlKey || e.metaKey)) return;
+
+      const tecla = e.key.toLowerCase();
+      if (tecla === "c" && selectedNo) {
+        copiadoRef.current = { ...selectedNo };
+        e.preventDefault();
+        showToast(`"${selectedNo.nome}" copiado`);
+      } else if (tecla === "v" && copiadoRef.current) {
+        e.preventDefault();
+        colarNo();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedNo, colarNo]);
 
   const deleteNo = (id) => {
     setNos(p => p.filter(n => n.id !== id));
@@ -2052,7 +2112,7 @@ export default function PageChatbotBuilder({ user }) {
           {nos.length} nós · {conexoes.length} conexões
         </span>
         <span style={{ fontSize: 10, color: L.t4, fontFamily: "'JetBrains Mono',monospace" }}>
-          Clique em → no nó para iniciar uma conexão · Clique na linha para remover
+          Clique em → no nó para iniciar uma conexão · Clique na linha para remover · Ctrl+C / Ctrl+V duplica o nó selecionado
         </span>
         {connecting && (
           <span style={{ fontSize: 10, color: L.blue, fontWeight: 600, fontFamily: "'JetBrains Mono',monospace", marginLeft: "auto" }}>
