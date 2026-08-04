@@ -346,6 +346,8 @@ Deno.serve(async (req) => {
       const diag: string[] = [];
       // deno-lint-ignore no-explicit-any
       let chaves: any[] = [];
+      // deno-lint-ignore no-explicit-any
+      let chavesCruas: any[] = [];
       let jidUsado = "";
 
       // Na Evolution, offset é o TAMANHO da página (default 50) e page é o
@@ -401,6 +403,11 @@ Deno.serve(async (req) => {
 
           diag.push(`findMessages(${cand}) ${paginas}p -> ${acumuladas.length} msgs, ${escolhidas.length} chaves`);
           if (escolhidas.length > 0) {
+            // A chave crua vai para o log porque em grupo o recibo depende do
+            // participant, e não está estabelecido se o servidor aceita a
+            // forma @lid ou exige o JID de telefone. Sem ver o que a Evolution
+            // guarda, a escolha seria mais um palpite.
+            chavesCruas = escolhidas;
             chaves = escolhidas.map((k) => ({
               remoteJid: k.remoteJid,
               fromMe: false,
@@ -426,7 +433,8 @@ Deno.serve(async (req) => {
       // acima em usar a chave real.
       const logPayload: Record<string, unknown> = {
         instName, jidUsado, msgCount: chaves.length,
-        chaveExemplo: chaves[0], diag, hasInstToken: !!instToken,
+        chaveExemplo: chaves[0], chaveCrua: chavesCruas[0] ?? null,
+        diag, hasInstToken: !!instToken,
       };
 
       // O recibo vai nos dois endereçamentos do mesmo contato. A Evolution
@@ -446,6 +454,25 @@ Deno.serve(async (req) => {
           // deno-lint-ignore no-explicit-any
           keys: chaves.map((k: any) => ({ ...k, remoteJid: jidAlternativo })),
         });
+      }
+
+      // Em grupo o recibo carrega o participant, e o nosso vem como @lid. Se o
+      // servidor esperar ali o JID de telefone, o recibo é descartado — o que
+      // explicaria grupo continuar notificando enquanto conversa individual,
+      // que não tem participant, já funciona. A Evolution guarda a forma de
+      // telefone em participantAlt/participantPn quando ela existe; mandamos
+      // também essa variante em vez de escolher uma no palpite.
+      // deno-lint-ignore no-explicit-any
+      const comAlt = chavesCruas
+        // deno-lint-ignore no-explicit-any
+        .map((k: any) => {
+          const alt = k?.participantAlt || k?.participantPn || "";
+          if (!alt || alt === k?.participant) return null;
+          return { remoteJid: k.remoteJid, fromMe: false, id: k.id, participant: alt };
+        })
+        .filter(Boolean);
+      if (comAlt.length > 0) {
+        enderecos.push({ nome: `${jidUsado} (participant alternativo)`, keys: comAlt });
       }
 
       const tentativas: string[] = [];
