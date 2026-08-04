@@ -321,7 +321,7 @@ Deno.serve(async (req) => {
         .eq("de", "contato")
         .not("wamid", "is", null)
         .order("hora", { ascending: false })
-        .limit(300);
+        .limit(600);
 
       if (!msgs || msgs.length === 0) return json({ ok: true });
 
@@ -348,32 +348,58 @@ Deno.serve(async (req) => {
       let chaves: any[] = [];
       let jidUsado = "";
 
+      // Na Evolution, offset é o TAMANHO da página (default 50) e page é o
+      // número dela — limit é ignorado. Mandávamos limit:300 e recebíamos 50,
+      // então grupo movimentado ficava com a maior parte das mensagens sem
+      // marcar e o celular seguia notificando. Grupo é justamente onde o
+      // volume estoura: por isso a busca agora pagina.
+      const TAM_PAGINA = 200;
+      const MAX_PAGINAS = 3;
+
       for (const cand of jidsCandidatos) {
         if (chaves.length > 0) break;
         try {
-          const rf = await iFetch(`/chat/findMessages/${instName}`, {
-            method: "POST",
-            body: JSON.stringify({ where: { key: { remoteJid: cand } }, limit: 300 }),
-          });
-          if (!rf.ok) { diag.push(`findMessages(${cand}) -> ${rf.status}`); continue; }
           // deno-lint-ignore no-explicit-any
-          const rj: any = await rf.json().catch(() => null);
-          // A resposta ora vem como array, ora envelopada em messages.records.
-          // deno-lint-ignore no-explicit-any
-          const lista: any[] = Array.isArray(rj) ? rj
-            : Array.isArray(rj?.messages?.records) ? rj.messages.records
-            : Array.isArray(rj?.records) ? rj.records
-            : Array.isArray(rj?.messages) ? rj.messages : [];
+          const acumuladas: any[] = [];
+          let paginas = 0;
 
-          const doContato = lista
+          for (let page = 1; page <= MAX_PAGINAS; page++) {
+            const rf = await iFetch(`/chat/findMessages/${instName}`, {
+              method: "POST",
+              body: JSON.stringify({
+                where: { key: { remoteJid: cand } },
+                offset: TAM_PAGINA, page,
+              }),
+            });
+            if (!rf.ok) { diag.push(`findMessages(${cand}) p${page} -> ${rf.status}`); break; }
+            // deno-lint-ignore no-explicit-any
+            const rj: any = await rf.json().catch(() => null);
+            // A resposta ora vem como array, ora envelopada em messages.records.
+            // deno-lint-ignore no-explicit-any
+            const lista: any[] = Array.isArray(rj) ? rj
+              : Array.isArray(rj?.messages?.records) ? rj.messages.records
+              : Array.isArray(rj?.records) ? rj.records
+              : Array.isArray(rj?.messages) ? rj.messages : [];
+
+            paginas++;
+            acumuladas.push(...lista);
+            // Página incompleta significa fim do histórico.
+            if (lista.length < TAM_PAGINA) break;
+          }
+
+          // A paginação pode repetir mensagem se o histórico mudar no meio.
+          const vistos = new Set<string>();
+          const doContato = acumuladas
             .map((m) => m?.key)
-            .filter((k) => k && k.id && !k.fromMe);
-          // Prioriza as mensagens que o C4OS conhece; se nenhuma casar, usa as
-          // mais recentes do chat — o recibo da última já zera a conversa.
-          const conhecidas = doContato.filter((k) => wamids.includes(k.id));
-          const escolhidas = (conhecidas.length > 0 ? conhecidas : doContato).slice(0, 300);
+            .filter((k) => k && k.id && !k.fromMe)
+            .filter((k) => !vistos.has(k.id) && vistos.add(k.id));
 
-          diag.push(`findMessages(${cand}) -> ${lista.length} msgs, ${escolhidas.length} chaves`);
+          // Prioriza as mensagens que o C4OS conhece; se nenhuma casar, usa as
+          // do próprio chat — em grupo os ids costumam ser os mesmos.
+          const conhecidas = doContato.filter((k) => wamids.includes(k.id));
+          const escolhidas = (conhecidas.length > 0 ? conhecidas : doContato).slice(0, 600);
+
+          diag.push(`findMessages(${cand}) ${paginas}p -> ${acumuladas.length} msgs, ${escolhidas.length} chaves`);
           if (escolhidas.length > 0) {
             chaves = escolhidas.map((k) => ({
               remoteJid: k.remoteJid,
