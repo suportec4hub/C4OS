@@ -475,6 +475,43 @@ Deno.serve(async (req) => {
         enderecos.push({ nome: `${jidUsado} (participant alternativo)`, keys: comAlt });
       }
 
+      // Se a Evolution não guardar a forma de telefone do participant, ela
+      // ainda pode ser resolvida pelo mapa @lid → telefone que o próprio C4OS
+      // mantém em conversas.contato_lid. Vale a consulta: sem isso a variante
+      // dependeria de um campo que pode simplesmente não existir.
+      if (comAlt.length === 0 && jidUsado.endsWith("@g.us")) {
+        const lidsParticipantes = [...new Set(
+          // deno-lint-ignore no-explicit-any
+          chaves.map((k: any) => String(k.participant || ""))
+                .filter((p: string) => p.endsWith("@lid")),
+        )];
+        if (lidsParticipantes.length > 0) {
+          const { data: mapa } = await supabase.from("conversas")
+            .select("contato_lid, contato_telefone")
+            .eq("empresa_id", emp.id)
+            .in("contato_lid", lidsParticipantes);
+
+          const lidParaTelefone = new Map<string, string>();
+          for (const m of (mapa || [])) {
+            const tel = String(m.contato_telefone || "");
+            if (tel && !tel.includes("@")) lidParaTelefone.set(String(m.contato_lid), tel);
+          }
+
+          // deno-lint-ignore no-explicit-any
+          const comTelefone = chaves.map((k: any) => {
+            const tel = lidParaTelefone.get(String(k.participant || ""));
+            if (!tel) return null;
+            return { remoteJid: k.remoteJid, fromMe: false, id: k.id,
+                     participant: `${tel}@s.whatsapp.net` };
+          }).filter(Boolean);
+
+          diag.push(`participants @lid:${lidsParticipantes.length} resolvidos:${comTelefone.length}`);
+          if (comTelefone.length > 0) {
+            enderecos.push({ nome: `${jidUsado} (participant por telefone)`, keys: comTelefone });
+          }
+        }
+      }
+
       const tentativas: string[] = [];
       let algumOk = false;
 
