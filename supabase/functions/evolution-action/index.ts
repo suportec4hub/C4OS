@@ -312,63 +312,111 @@ Deno.serve(async (req) => {
       const phone = conv.contato_telefone as string;
       const lid   = (conv.contato_lid as string | null) || "";
 
-      // O recibo precisa citar o mesmo identificador que o WhatsApp usa para a
-      // conversa. Nesta base a maioria dos contatos é endereçada por @lid, e
-      // mandar o recibo para telefone@s.whatsapp.net não casava com o chat:
-      // a marcação não surtia efeito e a notificação continuava no celular.
-      const remoteJid = phone.endsWith("@g.us")
-        ? phone
-        : lid.endsWith("@lid") ? lid
-        : phone.includes("@") ? phone
-        : `${phone}@s.whatsapp.net`;
-
       const wamids = msgs
         .map((m: Record<string, string>) => m.wamid)
         .filter(Boolean);
       if (wamids.length === 0) return json({ ok: true });
 
-      // Formato plano — é o que a Evolution v2 aceita em markMessageAsRead.
-      const planos = wamids.map((id: string) => ({ remoteJid, fromMe: false, id }));
-      // Formato aninhado — herdado da v1, mantido como alternativa.
-      const aninhados = wamids.map((id: string) => ({ key: { remoteJid, fromMe: false, id } }));
+      // A chave do recibo precisa ser idêntica à que o WhatsApp gravou —
+      // remoteJid e, em conversa @lid, o participant. Montar a chave por
+      // dedução (telefone@s.whatsapp.net ou o @lid da conversa) fazia a
+      // Evolution responder "read: success" e nada acontecer: ela não valida
+      // a chave, só repassa ao Baileys, e o servidor descarta o recibo cuja
+      // chave não casa. Por isso a chave é buscada na própria Evolution, e
+      // só se a busca falhar é que se recorre à dedução.
+      const jidsCandidatos = [
+        phone.endsWith("@g.us") ? phone : "",
+        lid.endsWith("@lid") ? lid : "",
+        phone.includes("@") ? phone : `${phone}@s.whatsapp.net`,
+      ].filter(Boolean);
 
-      // As duas rotas antigas (/chat/readMessage e /message/readMessage) não
-      // existem nesta Evolution: respondiam "Cannot POST", 404, a cada abertura
-      // de conversa. A rota certa é markMessageAsRead. As demais candidatas
-      // ficam como alternativa para não depender de uma única suposição, e o
-      // log registra qual pegou.
-      const candidatos: { rota: string; corpo: unknown }[] = [
-        { rota: `/chat/markMessageAsRead/${instName}`, corpo: { readMessages: planos } },
-        { rota: `/chat/markMessageAsRead/${instName}`, corpo: { readMessages: aninhados } },
-        { rota: `/message/markMessageAsRead/${instName}`, corpo: { readMessages: planos } },
-        { rota: `/chat/readMessage/${instName}`, corpo: { readMessages: aninhados } },
+      const diag: string[] = [];
+      // deno-lint-ignore no-explicit-any
+      let chaves: any[] = [];
+      let jidUsado = "";
+
+      for (const cand of jidsCandidatos) {
+        if (chaves.length > 0) break;
+        try {
+          const rf = await iFetch(`/chat/findMessages/${instName}`, {
+            method: "POST",
+            body: JSON.stringify({ where: { key: { remoteJid: cand } }, limit: 40 }),
+          });
+          if (!rf.ok) { diag.push(`findMessages(${cand}) -> ${rf.status}`); continue; }
+          // deno-lint-ignore no-explicit-any
+          const rj: any = await rf.json().catch(() => null);
+          // A resposta ora vem como array, ora envelopada em messages.records.
+          // deno-lint-ignore no-explicit-any
+          const lista: any[] = Array.isArray(rj) ? rj
+            : Array.isArray(rj?.messages?.records) ? rj.messages.records
+            : Array.isArray(rj?.records) ? rj.records
+            : Array.isArray(rj?.messages) ? rj.messages : [];
+
+          const doContato = lista
+            .map((m) => m?.key)
+            .filter((k) => k && k.id && !k.fromMe);
+          // Prioriza as mensagens que o C4OS conhece; se nenhuma casar, usa as
+          // mais recentes do chat — o recibo da última já zera a conversa.
+          const conhecidas = doContato.filter((k) => wamids.includes(k.id));
+          const escolhidas = (conhecidas.length > 0 ? conhecidas : doContato).slice(0, 20);
+
+          diag.push(`findMessages(${cand}) -> ${lista.length} msgs, ${escolhidas.length} chaves`);
+          if (escolhidas.length > 0) {
+            chaves = escolhidas.map((k) => ({
+              remoteJid: k.remoteJid,
+              fromMe: false,
+              id: k.id,
+              ...(k.participant ? { participant: k.participant } : {}),
+            }));
+            jidUsado = cand;
+          }
+        } catch (ex) {
+          diag.push(`findMessages(${cand}) -> exceção ${(ex as Error).message}`);
+        }
+      }
+
+      if (chaves.length === 0) {
+        jidUsado = jidsCandidatos[0] || `${phone}@s.whatsapp.net`;
+        chaves = wamids.map((id: string) => ({ remoteJid: jidUsado, fromMe: false, id }));
+        diag.push(`sem chave real, deduzindo com ${jidUsado}`);
+      }
+
+      // markMessageAsRead é a única rota de leitura do chat controller — não
+      // existe equivalente em nível de conversa. Ela chama readMessages do
+      // Baileys com as chaves recebidas, sem validá-las: daí a insistência
+      // acima em usar a chave real.
+      const logPayload: Record<string, unknown> = {
+        instName, jidUsado, msgCount: chaves.length,
+        chaveExemplo: chaves[0], diag, hasInstToken: !!instToken,
+      };
+
+      const tentativas: string[] = [];
+      const corpos = [
+        { nome: "plano", corpo: { readMessages: chaves } },
+        // deno-lint-ignore no-explicit-any
+        { nome: "aninhado", corpo: { readMessages: chaves.map((k: any) => ({ key: k })) } },
       ];
 
-      const logPayload: Record<string, unknown> = {
-        instName, remoteJid, msgCount: wamids.length,
-        wamids: wamids.slice(0, 3), hasInstToken: !!instToken,
-      };
-      const tentativas: string[] = [];
-
-      for (let i = 0; i < candidatos.length; i++) {
-        const c = candidatos[i];
+      for (const c of corpos) {
         try {
-          const r = await iFetch(c.rota, { method: "POST", body: JSON.stringify(c.corpo) });
+          const r = await iFetch(`/chat/markMessageAsRead/${instName}`, {
+            method: "POST", body: JSON.stringify(c.corpo),
+          });
           const txt = await r.text().catch(() => "");
-          tentativas.push(`${c.rota}#${i} -> ${r.status} ${txt.slice(0, 120)}`);
+          tentativas.push(`${c.nome} -> ${r.status} ${txt.slice(0, 120)}`);
           if (r.ok) {
             logPayload.tentativas = tentativas;
-            logPayload.rotaOk = `${c.rota}#${i}`;
+            logPayload.formatoOk = c.nome;
             await supabase.from("logs_whatsapp").insert({
               empresa_id: emp.id, conversa_id, tipo: "fluxo", nivel: "info",
               origem: "evolution-action", evento: "readMessages-ok",
-              resumo: `marcado como lido ${r.status} msgs:${wamids.length}`,
+              resumo: `marcado como lido ${r.status} msgs:${chaves.length} jid:${jidUsado}`,
               payload: logPayload,
             }).then(() => {}).catch(() => {});
             return json({ ok: true });
           }
         } catch (ex) {
-          tentativas.push(`${c.rota}#${i} -> exceção ${(ex as Error).message}`);
+          tentativas.push(`${c.nome} -> exceção ${(ex as Error).message}`);
         }
       }
 
@@ -376,7 +424,7 @@ Deno.serve(async (req) => {
       await supabase.from("logs_whatsapp").insert({
         empresa_id: emp.id, conversa_id, tipo: "erro_api", nivel: "error",
         origem: "evolution-action", evento: "readMessages-failed",
-        resumo: `nenhuma rota de leitura aceita msgs:${wamids.length}`,
+        resumo: `marcação recusada msgs:${chaves.length}`,
         payload: logPayload,
       }).then(() => {}).catch(() => {});
       return json({ ok: false });
