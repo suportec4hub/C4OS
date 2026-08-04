@@ -437,80 +437,27 @@ Deno.serve(async (req) => {
         diag, hasInstToken: !!instToken,
       };
 
-      // O recibo vai nos dois endereçamentos do mesmo contato. A Evolution
-      // guarda a conversa por @lid, mas não está estabelecido qual dos dois o
-      // servidor exige no recibo — e mandar nos dois é inofensivo: o que não
-      // casar é descartado, sem efeito colateral. Isso evita mais uma rodada
-      // de tentativa e erro dependendo de teste manual a cada palpite.
-      const jidAlternativo = jidUsado.endsWith("@lid")
-        ? (phone.includes("@") ? phone : `${phone}@s.whatsapp.net`)
-        : (lid.endsWith("@lid") ? lid : "");
+      // O markMessageAsRead da Evolution remonta cada chave e só conserva
+      // remoteJid, fromMe e id, sob a condição isJidGroup(remoteJid) ||
+      // isPnUser(remoteJid). Duas consequências, ambas verificadas no código
+      // dela (whatsapp.baileys.service.ts):
+      //
+      // 1. Chave endereçada por @lid não é grupo nem PN: é descartada. Por
+      //    isso conversa individual só passou a funcionar quando o recibo
+      //    passou a ir para telefone@s.whatsapp.net — é essa a forma a usar.
+      // 2. O participant é jogado fora. Grupo depende dele para o recibo ser
+      //    atribuído, então marcar grupo como lido não tem como funcionar por
+      //    esta rota, mandando o participant de um jeito ou de outro.
+      const jidParaRecibo = jidUsado.endsWith("@g.us")
+        ? jidUsado
+        : (phone.includes("@") ? phone : `${phone}@s.whatsapp.net`);
 
       // deno-lint-ignore no-explicit-any
-      const enderecos: { nome: string; keys: any[] }[] = [{ nome: jidUsado, keys: chaves }];
-      if (jidAlternativo && jidAlternativo !== jidUsado) {
-        enderecos.push({
-          nome: jidAlternativo,
-          // deno-lint-ignore no-explicit-any
-          keys: chaves.map((k: any) => ({ ...k, remoteJid: jidAlternativo })),
-        });
-      }
-
-      // Em grupo o recibo carrega o participant, e o nosso vem como @lid. Se o
-      // servidor esperar ali o JID de telefone, o recibo é descartado — o que
-      // explicaria grupo continuar notificando enquanto conversa individual,
-      // que não tem participant, já funciona. A Evolution guarda a forma de
-      // telefone em participantAlt/participantPn quando ela existe; mandamos
-      // também essa variante em vez de escolher uma no palpite.
-      // deno-lint-ignore no-explicit-any
-      const comAlt = chavesCruas
+      const enderecos: { nome: string; keys: any[] }[] = [{
+        nome: jidParaRecibo,
         // deno-lint-ignore no-explicit-any
-        .map((k: any) => {
-          const alt = k?.participantAlt || k?.participantPn || "";
-          if (!alt || alt === k?.participant) return null;
-          return { remoteJid: k.remoteJid, fromMe: false, id: k.id, participant: alt };
-        })
-        .filter(Boolean);
-      if (comAlt.length > 0) {
-        enderecos.push({ nome: `${jidUsado} (participant alternativo)`, keys: comAlt });
-      }
-
-      // Se a Evolution não guardar a forma de telefone do participant, ela
-      // ainda pode ser resolvida pelo mapa @lid → telefone que o próprio C4OS
-      // mantém em conversas.contato_lid. Vale a consulta: sem isso a variante
-      // dependeria de um campo que pode simplesmente não existir.
-      if (comAlt.length === 0 && jidUsado.endsWith("@g.us")) {
-        const lidsParticipantes = [...new Set(
-          // deno-lint-ignore no-explicit-any
-          chaves.map((k: any) => String(k.participant || ""))
-                .filter((p: string) => p.endsWith("@lid")),
-        )];
-        if (lidsParticipantes.length > 0) {
-          const { data: mapa } = await supabase.from("conversas")
-            .select("contato_lid, contato_telefone")
-            .eq("empresa_id", emp.id)
-            .in("contato_lid", lidsParticipantes);
-
-          const lidParaTelefone = new Map<string, string>();
-          for (const m of (mapa || [])) {
-            const tel = String(m.contato_telefone || "");
-            if (tel && !tel.includes("@")) lidParaTelefone.set(String(m.contato_lid), tel);
-          }
-
-          // deno-lint-ignore no-explicit-any
-          const comTelefone = chaves.map((k: any) => {
-            const tel = lidParaTelefone.get(String(k.participant || ""));
-            if (!tel) return null;
-            return { remoteJid: k.remoteJid, fromMe: false, id: k.id,
-                     participant: `${tel}@s.whatsapp.net` };
-          }).filter(Boolean);
-
-          diag.push(`participants @lid:${lidsParticipantes.length} resolvidos:${comTelefone.length}`);
-          if (comTelefone.length > 0) {
-            enderecos.push({ nome: `${jidUsado} (participant por telefone)`, keys: comTelefone });
-          }
-        }
-      }
+        keys: chaves.map((k: any) => ({ ...k, remoteJid: jidParaRecibo })),
+      }];
 
       const tentativas: string[] = [];
       let algumOk = false;
