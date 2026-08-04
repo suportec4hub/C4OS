@@ -1,0 +1,59 @@
+Preserva o participant no recibo de leitura (markMessageAsRead).
+
+Sem isso, marcar mensagem de GRUPO como lida não tem efeito: o recibo de
+grupo precisa do participant para o servidor saber a quem creditar a
+leitura, e a API descarta esse campo antes de chamar o Baileys. A rota
+responde 'read: success' de qualquer forma, então a falha é silenciosa.
+
+O mesmo trecho também descartava chaves endereçadas por @lid, que não são
+nem isJidGroup nem isPnUser — em bases onde os chats são endereçados por
+LID, isso derrubava também o recibo de conversa individual.
+
+Testado contra: EvolutionAPI/evolution-api (branch main, ago/2026).
+Confira antes que a função markMessageAsRead do seu servidor está igual à
+de baixo; se a versão for outra, o local é o mesmo e a mudança também.
+
+--- a/src/api/dto/chat.dto.ts
++++ b/src/api/dto/chat.dto.ts
+@@ -64,6 +64,9 @@
+ class Key {
+   id: string;
+   fromMe: boolean;
+   remoteJid: string;
++  // Obrigatório no recibo de grupo: identifica de quem é a mensagem lida.
++  // Ausente aqui, o campo era perdido antes mesmo de chegar ao service.
++  participant?: string;
+ }
+ export class ReadMessageDto {
+   readMessages: Key[];
+ }
+
+--- a/src/api/integrations/channel/whatsapp/whatsapp.baileys.service.ts
++++ b/src/api/integrations/channel/whatsapp/whatsapp.baileys.service.ts
+@@ -3676,10 +3676,17 @@
+   public async markMessageAsRead(data: ReadMessageDto) {
+     try {
+       const keys: proto.IMessageKey[] = [];
+       data.readMessages.forEach((read) => {
+-        if (isJidGroup(read.remoteJid) || isPnUser(read.remoteJid)) {
+-          keys.push({ remoteJid: read.remoteJid, fromMe: read.fromMe, id: read.id });
+-        }
++        // @lid não é isJidGroup nem isPnUser: sem este terceiro caso, chat
++        // endereçado por LID tinha o recibo descartado em silêncio.
++        if (isJidGroup(read.remoteJid) || isPnUser(read.remoteJid) || read.remoteJid?.endsWith('@lid')) {
++          keys.push({
++            remoteJid: read.remoteJid,
++            fromMe: read.fromMe,
++            id: read.id,
++            // O Baileys agrupa os recibos por jid + participant; em grupo,
++            // sem participant o recibo não é atribuído a ninguém.
++            ...(read.participant ? { participant: read.participant } : {}),
++          });
++        }
+       });
+       await this.client.readMessages(keys);
+       return { message: 'Read messages', read: 'success' };
+     } catch (error) {
+       throw new InternalServerErrorException('Read messages fail', error.toString());
+     }
+   }
