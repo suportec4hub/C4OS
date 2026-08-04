@@ -1044,6 +1044,13 @@ async function processMessages(
     const resolvedPhone = participantJid
       ? participantJid.replace(/@s\.whatsapp\.net$/, "").replace(/:.*$/, "")
       : "";
+    // O telefone do próprio chat, quando ele é endereçado por @lid. Diferente
+    // do participant, que é quem falou — e em chat de grupo endereçado por
+    // @lid muda a cada mensagem.
+    const remoteJidAlt = (key.remoteJidAlt || m.remoteJidAlt || "") as string;
+    const phoneDoChat = remoteJidAlt
+      ? remoteJidAlt.replace(/@s\.whatsapp\.net$/, "").replace(/@c\.us$/, "").replace(/:.*$/, "")
+      : "";
     const rawPhone = isGroup
       ? remoteJid
       : remoteJid.replace(/@s\.whatsapp\.net$/, "").replace(/:.*$/, "");
@@ -1363,7 +1370,14 @@ async function processMessages(
     // Popula contato_lid automaticamente quando o remoteJid é @lid mas resolvemos o telefone real
     // via key.participant. Isso permite que chats.update / messages.update futuros com @lid
     // encontrem a conversa (que está salva com o telefone, não com o @lid).
-    if (!isGroup && remoteJid.endsWith("@lid") && senderPhone !== rawPhone && conv?.id) {
+    //
+    // O vínculo se apoia em remoteJidAlt, o telefone do próprio chat, e não
+    // mais no participant. isGroup só reconhece @g.us, e existe chat de grupo
+    // endereçado por @lid: ali o participant muda a cada mensagem, então o
+    // carimbo caía num contato diferente por mensagem e todos terminavam com o
+    // @lid do grupo. Uma empresa ficou com 28 telefones apontando para o mesmo
+    // @lid — e o recibo de leitura de cada um ia para a conversa errada.
+    if (!isGroup && remoteJid.endsWith("@lid") && phoneDoChat && phoneDoChat === senderPhone && conv?.id) {
       supabase.from("conversas")
         .update({ contato_lid: remoteJid })
         .eq("id", conv.id)
