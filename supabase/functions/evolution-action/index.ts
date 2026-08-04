@@ -293,16 +293,6 @@ Deno.serve(async (req) => {
       const { conversa_id } = body;
       if (!conversa_id) return json({ ok: true });
 
-      const { data: msgs } = await supabase.from("mensagens")
-        .select("wamid")
-        .eq("conversa_id", conversa_id)
-        .eq("de", "contato")
-        .not("wamid", "is", null)
-        .order("hora", { ascending: false })
-        .limit(20);
-
-      if (!msgs || msgs.length === 0) return json({ ok: true });
-
       const { data: conv } = await supabase.from("conversas")
         .select("contato_telefone, contato_lid")
         .eq("id", conversa_id)
@@ -311,6 +301,29 @@ Deno.serve(async (req) => {
 
       const phone = conv.contato_telefone as string;
       const lid   = (conv.contato_lid as string | null) || "";
+
+      // O mesmo contato pode ter mais de uma conversa na base (duplicadas por
+      // corridas de criação). Abrir uma e marcar só as mensagens dela deixava
+      // as irmãs por marcar, e a notificação do celular — que é do contato,
+      // não da conversa — continuava lá.
+      const { data: irmas } = await supabase.from("conversas")
+        .select("id")
+        .eq("empresa_id", emp.id)
+        .eq("contato_telefone", phone);
+      const convIds = (irmas?.length ? irmas.map((c: { id: string }) => c.id) : [conversa_id]);
+
+      // O WhatsApp multi-dispositivo não tem "marcar conversa inteira": só as
+      // mensagens citadas por id ficam lidas. Marcar as 20 últimas de 92
+      // deixava as antigas não lidas e o celular seguia notificando.
+      const { data: msgs } = await supabase.from("mensagens")
+        .select("wamid")
+        .in("conversa_id", convIds)
+        .eq("de", "contato")
+        .not("wamid", "is", null)
+        .order("hora", { ascending: false })
+        .limit(300);
+
+      if (!msgs || msgs.length === 0) return json({ ok: true });
 
       const wamids = msgs
         .map((m: Record<string, string>) => m.wamid)
@@ -340,7 +353,7 @@ Deno.serve(async (req) => {
         try {
           const rf = await iFetch(`/chat/findMessages/${instName}`, {
             method: "POST",
-            body: JSON.stringify({ where: { key: { remoteJid: cand } }, limit: 40 }),
+            body: JSON.stringify({ where: { key: { remoteJid: cand } }, limit: 300 }),
           });
           if (!rf.ok) { diag.push(`findMessages(${cand}) -> ${rf.status}`); continue; }
           // deno-lint-ignore no-explicit-any
@@ -358,7 +371,7 @@ Deno.serve(async (req) => {
           // Prioriza as mensagens que o C4OS conhece; se nenhuma casar, usa as
           // mais recentes do chat — o recibo da última já zera a conversa.
           const conhecidas = doContato.filter((k) => wamids.includes(k.id));
-          const escolhidas = (conhecidas.length > 0 ? conhecidas : doContato).slice(0, 20);
+          const escolhidas = (conhecidas.length > 0 ? conhecidas : doContato).slice(0, 300);
 
           diag.push(`findMessages(${cand}) -> ${lista.length} msgs, ${escolhidas.length} chaves`);
           if (escolhidas.length > 0) {
@@ -390,44 +403,51 @@ Deno.serve(async (req) => {
         chaveExemplo: chaves[0], diag, hasInstToken: !!instToken,
       };
 
-      const tentativas: string[] = [];
-      const corpos = [
-        { nome: "plano", corpo: { readMessages: chaves } },
-        // deno-lint-ignore no-explicit-any
-        { nome: "aninhado", corpo: { readMessages: chaves.map((k: any) => ({ key: k })) } },
-      ];
+      // O recibo vai nos dois endereçamentos do mesmo contato. A Evolution
+      // guarda a conversa por @lid, mas não está estabelecido qual dos dois o
+      // servidor exige no recibo — e mandar nos dois é inofensivo: o que não
+      // casar é descartado, sem efeito colateral. Isso evita mais uma rodada
+      // de tentativa e erro dependendo de teste manual a cada palpite.
+      const jidAlternativo = jidUsado.endsWith("@lid")
+        ? (phone.includes("@") ? phone : `${phone}@s.whatsapp.net`)
+        : (lid.endsWith("@lid") ? lid : "");
 
-      for (const c of corpos) {
+      // deno-lint-ignore no-explicit-any
+      const enderecos: { nome: string; keys: any[] }[] = [{ nome: jidUsado, keys: chaves }];
+      if (jidAlternativo && jidAlternativo !== jidUsado) {
+        enderecos.push({
+          nome: jidAlternativo,
+          // deno-lint-ignore no-explicit-any
+          keys: chaves.map((k: any) => ({ ...k, remoteJid: jidAlternativo })),
+        });
+      }
+
+      const tentativas: string[] = [];
+      let algumOk = false;
+
+      for (const e of enderecos) {
         try {
           const r = await iFetch(`/chat/markMessageAsRead/${instName}`, {
-            method: "POST", body: JSON.stringify(c.corpo),
+            method: "POST", body: JSON.stringify({ readMessages: e.keys }),
           });
           const txt = await r.text().catch(() => "");
-          tentativas.push(`${c.nome} -> ${r.status} ${txt.slice(0, 120)}`);
-          if (r.ok) {
-            logPayload.tentativas = tentativas;
-            logPayload.formatoOk = c.nome;
-            await supabase.from("logs_whatsapp").insert({
-              empresa_id: emp.id, conversa_id, tipo: "fluxo", nivel: "info",
-              origem: "evolution-action", evento: "readMessages-ok",
-              resumo: `marcado como lido ${r.status} msgs:${chaves.length} jid:${jidUsado}`,
-              payload: logPayload,
-            }).then(() => {}).catch(() => {});
-            return json({ ok: true });
-          }
+          tentativas.push(`${e.nome} -> ${r.status} ${txt.slice(0, 100)}`);
+          if (r.ok) algumOk = true;
         } catch (ex) {
-          tentativas.push(`${c.nome} -> exceção ${(ex as Error).message}`);
+          tentativas.push(`${e.nome} -> exceção ${(ex as Error).message}`);
         }
       }
 
       logPayload.tentativas = tentativas;
       await supabase.from("logs_whatsapp").insert({
-        empresa_id: emp.id, conversa_id, tipo: "erro_api", nivel: "error",
-        origem: "evolution-action", evento: "readMessages-failed",
-        resumo: `marcação recusada msgs:${chaves.length}`,
+        empresa_id: emp.id, conversa_id,
+        tipo: algumOk ? "fluxo" : "erro_api", nivel: algumOk ? "info" : "error",
+        origem: "evolution-action",
+        evento: algumOk ? "readMessages-ok" : "readMessages-failed",
+        resumo: `${algumOk ? "marcado como lido" : "marcação recusada"} msgs:${chaves.length} convs:${convIds.length}`,
         payload: logPayload,
       }).then(() => {}).catch(() => {});
-      return json({ ok: false });
+      return json({ ok: algumOk });
     }
 
     // Guard: bloqueia ações que precisam de instância (exceto connect que auto-cria)
