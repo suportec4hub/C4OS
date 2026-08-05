@@ -1,0 +1,13 @@
+-- Módulo de RH — registro da migração já aplicada no banco.
+-- Ver docs/rh-modulo.md para o desenho e o motivo de cada tabela.
+--
+-- Tabelas: rh_colaboradores (ficha), rh_documentos, rh_saude (ASO/PCMSO),
+-- rh_ponto, rh_avaliacoes, rh_treinamentos, rh_beneficios, rh_ocorrencias,
+-- rh_checklist. Todas isoladas por empresa.
+--
+-- Corrige também a política do rh_ferias, que era USING (true): qualquer
+-- usuário autenticado lia o RH de todas as empresas. Com CPF, salário e
+-- atestado no módulo, isolamento aqui não é detalhe.
+--
+-- Bucket 'rh' é privado, acesso só por URL assinada, arquivos na pasta da
+-- empresa — mesmo padrão do bucket de contratos.

@@ -1,229 +1,626 @@
-import { useState } from "react";
+// RH / Pessoas.
+//
+// A organização é por pessoa: a ficha do colaborador concentra documentos,
+// saúde ocupacional, benefícios, treinamentos, avaliações, ocorrências e o
+// checklist de admissão/desligamento. As abas daqui ficam só para o que é
+// transversal — os alertas, o ponto e as ausências —, porque são as perguntas
+// que o RH faz olhando a empresa inteira, não uma pessoa.
+import { useEffect, useMemo, useState } from "react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { L } from "../constants/theme";
 import { useTable } from "../hooks/useData";
 import { supabase } from "../lib/supabase";
 import { Fade, Row, Grid, TabPills, PBtn, DataTable, Tag, Av, IBtn, TD, Card, TT } from "../components/ui";
 import Modal, { Field, Input, Select, ModalFooter } from "../components/Modal";
+import FichaColaborador, { fmtData, hojeISO, diasAte, fmtMoeda } from "../components/FichaColaborador";
 
-const TIPO_LABEL = { ferias:"Férias", afastamento:"Afastamento", licenca:"Licença", folga:"Day Off", homeoffice:"Home Office" };
+const TIPO_LABEL = { ferias:"Férias", afastamento:"Afastamento", licenca:"Licença",
+  folga:"Day Off", homeoffice:"Home Office", atestado:"Atestado médico" };
 const STATUS_C   = { solicitado:L.yellow, aprovado:L.green, rejeitado:L.red, em_andamento:L.teal, concluido:L.t4 };
 const STATUS_BG  = { solicitado:L.yellowBg, aprovado:L.greenBg, rejeitado:L.redBg, em_andamento:L.tealBg, concluido:L.surface };
 
 const VAZIO_FERIAS = { usuario_id:"", tipo:"ferias", data_inicio:"", data_fim:"", status:"solicitado", observacao:"" };
 
-const fmtDate = (d) => d ? new Date(d+"T12:00:00").toLocaleDateString("pt-BR") : "—";
 const diasEntre = (ini, fim) => {
-  if (!ini||!fim) return 0;
-  return Math.round((new Date(fim)-new Date(ini))/(1000*60*60*24))+1;
+  if (!ini || !fim) return 0;
+  return Math.round((new Date(fim) - new Date(ini)) / 86400000) + 1;
 };
 
+const ABAS = ["Visão geral", "Colaboradores", "Ponto", "Férias & Afastamentos"];
+
 export default function PageRH({ user }) {
-  const { data: colaboradores, loading: loadCo } = useTable("usuarios", { empresa_id:user?.empresa_id });
-  const { data: ferias, loading:loadFer, insert:insFerias, update:updFerias, remove:remFerias, refetch:refFer } = useTable("rh_ferias", { empresa_id:user?.empresa_id });
+  const empresaId = user?.empresa_id;
+  const { data: colaboradores, loading: loadCo, refetch: refCo } = useTable("usuarios", { empresa_id: empresaId });
+  const { data: ferias, loading: loadFer, insert: insFerias, update: updFerias,
+          remove: remFerias, refetch: refFer } = useTable("rh_ferias", { empresa_id: empresaId });
 
-  const [aba,    setAba]    = useState("Colaboradores");
-  const [modal,  setModal]  = useState(false);
-  const [edit,   setEdit]   = useState(null);
-  const [form,   setForm]   = useState(VAZIO_FERIAS);
+  const [fichas, setFichas]   = useState([]);
+  const [docs, setDocs]       = useState([]);
+  const [saude, setSaude]     = useState([]);
+  const [treins, setTreins]   = useState([]);
+
+  const [aba, setAba]     = useState("Visão geral");
+  const [modal, setModal] = useState(false);
+  const [edit, setEdit]   = useState(null);
+  const [form, setForm]   = useState(VAZIO_FERIAS);
   const [saving, setSaving] = useState(false);
-  const [err,    setErr]    = useState("");
+  const [err, setErr]     = useState("");
+  const [fichaAberta, setFichaAberta] = useState(null);
 
-  const F = k => v => setForm(p=>({...p,[k]:v}));
-  const hoje = new Date().toISOString().split("T")[0];
+  const F = (k) => (v) => setForm((p) => ({ ...p, [k]: v }));
+  const hoje = hojeISO();
 
-  // KPIs
-  const ativos    = colaboradores.filter(c=>c.ativo).length;
-  const inativos  = colaboradores.filter(c=>!c.ativo).length;
-  const emFerias  = ferias.filter(f=>f.status==="em_andamento"||
-    (f.status==="aprovado"&&f.data_inicio<=hoje&&f.data_fim>=hoje)).length;
-  const pendentes = ferias.filter(f=>f.status==="solicitado").length;
+  const carregarRH = async () => {
+    if (!empresaId) return;
+    const q = (t, s) => supabase.from(t).select("*").eq("empresa_id", empresaId).then(({ data }) => s(data || []));
+    await Promise.all([
+      q("rh_colaboradores", setFichas), q("rh_documentos", setDocs),
+      q("rh_saude", setSaude), q("rh_treinamentos", setTreins),
+    ]);
+  };
+  useEffect(() => { carregarRH(); /* eslint-disable-next-line */ }, [empresaId]);
 
-  // Cargo distribution
+  const nomeUser  = (uid) => colaboradores.find((c) => c.id === uid)?.nome || "—";
+  const fichaDe   = (uid) => fichas.find((f) => f.usuario_id === uid);
+  const ativos    = colaboradores.filter((c) => c.ativo);
+
+  /* ── Alertas: é a tela que o RH abre de manhã ───────────────────────────
+     Tudo aqui é "o que vence, venceu, ou exige ação agora". Sem isso, cada
+     verificação depende de alguém lembrar de olhar. */
+  const alertas = useMemo(() => {
+    const out = [];
+    const push = (nivel, cat, quem, texto, extra) => out.push({ nivel, cat, quem, texto, extra });
+
+    docs.forEach((d) => {
+      const n = diasAte(d.data_validade);
+      if (n === null) return;
+      if (n < 0)       push("critico", "Documento", nomeUser(d.usuario_id), `${d.tipo} vencido há ${Math.abs(n)} dias`);
+      else if (n <= 30) push("aviso",  "Documento", nomeUser(d.usuario_id), `${d.tipo} vence em ${n} dias`);
+    });
+
+    saude.forEach((s) => {
+      const n = diasAte(s.data_validade);
+      if (s.resultado === "inapto") push("critico", "Saúde", nomeUser(s.usuario_id), "Exame com resultado inapto");
+      if (n === null) return;
+      if (n < 0)        push("critico", "Saúde", nomeUser(s.usuario_id), `ASO vencido há ${Math.abs(n)} dias`);
+      else if (n <= 30) push("aviso",   "Saúde", nomeUser(s.usuario_id), `ASO vence em ${n} dias`);
+    });
+
+    treins.forEach((t) => {
+      const n = diasAte(t.data_validade);
+      if (n !== null && n < 0 && t.obrigatorio)
+        push("critico", "Treinamento", nomeUser(t.usuario_id), `${t.titulo} — certificado vencido`);
+    });
+
+    ativos.forEach((c) => {
+      const f = fichaDe(c.id);
+      if (!f?.data_admissao) {
+        push("aviso", "Cadastro", c.nome, "Ficha sem data de admissão");
+        return;
+      }
+      // Contrato de experiência: 45 + 45 dias. Passar do prazo sem decidir
+      // transforma o contrato em prazo indeterminado sem ninguém perceber.
+      const dias = Math.round((new Date(hoje) - new Date(f.data_admissao)) / 86400000);
+      if (dias >= 0 && dias <= 90) {
+        const marco = dias <= 45 ? 45 : 90;
+        const faltam = marco - dias;
+        if (faltam <= 10)
+          push("aviso", "Experiência", c.nome, `Fim do período de ${marco} dias em ${faltam} dia(s)`);
+      }
+      // Férias: vencem 12 meses após o fim do período aquisitivo.
+      if (dias > 365) {
+        const teveFerias = ferias.some((x) => x.usuario_id === c.id && x.tipo === "ferias" &&
+          x.status !== "rejeitado" && new Date(x.data_inicio) > new Date(Date.now() - 365 * 86400000));
+        if (!teveFerias)
+          push("critico", "Férias", c.nome, "Sem férias registradas nos últimos 12 meses");
+      }
+      if (!f.cpf) push("aviso", "Cadastro", c.nome, "Ficha sem CPF");
+    });
+
+    ferias.filter((f) => f.status === "solicitado")
+      .forEach((f) => push("aviso", "Aprovação", nomeUser(f.usuario_id),
+        `${TIPO_LABEL[f.tipo] || f.tipo} aguardando aprovação`));
+
+    const ordem = { critico: 0, aviso: 1 };
+    return out.sort((a, b) => ordem[a.nivel] - ordem[b.nivel]);
+  }, [docs, saude, treins, fichas, colaboradores, ferias]);
+
+  const aniversariantes = useMemo(() => {
+    const mes = new Date().getMonth() + 1;
+    return ativos.map((c) => ({ c, f: fichaDe(c.id) }))
+      .filter(({ f }) => f?.data_nascimento && Number(f.data_nascimento.slice(5, 7)) === mes)
+      .sort((a, b) => a.f.data_nascimento.slice(8) - b.f.data_nascimento.slice(8));
+  }, [fichas, colaboradores]);
+
+  const aniversariosEmpresa = useMemo(() => {
+    const mes = new Date().getMonth() + 1;
+    return ativos.map((c) => ({ c, f: fichaDe(c.id) }))
+      .filter(({ f }) => f?.data_admissao && Number(f.data_admissao.slice(5, 7)) === mes
+        && new Date(f.data_admissao).getFullYear() < new Date().getFullYear())
+      .map(({ c, f }) => ({ c, f, anos: new Date().getFullYear() - new Date(f.data_admissao).getFullYear() }));
+  }, [fichas, colaboradores]);
+
+  const emFerias = ferias.filter((f) => f.status === "em_andamento" ||
+    (f.status === "aprovado" && f.data_inicio <= hoje && f.data_fim >= hoje)).length;
+  const pendentes = ferias.filter((f) => f.status === "solicitado").length;
+
+  const folha = ativos.reduce((s, c) => s + Number(fichaDe(c.id)?.salario || 0), 0);
+
   const cargos = {};
-  colaboradores.filter(c=>c.ativo).forEach(c=>{
-    const g = c.cargo||"Sem cargo";
-    cargos[g] = (cargos[g]||0)+1;
-  });
-  const pieData = Object.entries(cargos).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([name,value])=>({name,value}));
-  const PIE_COLORS = [L.teal,L.copper,L.green,L.yellow,L.red,L.blue];
-
-  const nomeUser = (uid) => colaboradores.find(c=>c.id===uid)?.nome || "—";
+  ativos.forEach((c) => { const g = c.cargo || "Sem cargo"; cargos[g] = (cargos[g] || 0) + 1; });
+  const pieData = Object.entries(cargos).sort((a, b) => b[1] - a[1]).slice(0, 6)
+    .map(([name, value]) => ({ name, value }));
+  const PIE_COLORS = [L.teal, L.copper, L.green, L.yellow, L.red, L.blue];
 
   const openNew  = () => { setForm(VAZIO_FERIAS); setEdit(null); setErr(""); setModal(true); };
-  const openEdit = (f) => { setForm({...f}); setEdit(f.id); setErr(""); setModal(true); };
+  const openEdit = (f) => { setForm({ ...f }); setEdit(f.id); setErr(""); setModal(true); };
 
   const save = async () => {
     if (!form.usuario_id) { setErr("Selecione o colaborador."); return; }
-    if (!form.data_inicio||!form.data_fim) { setErr("Datas obrigatórias."); return; }
+    if (!form.data_inicio || !form.data_fim) { setErr("Datas obrigatórias."); return; }
     if (form.data_fim < form.data_inicio) { setErr("Data fim deve ser após data início."); return; }
     setSaving(true); setErr("");
-    const payload = { ...form, empresa_id:user?.empresa_id };
-    const {error} = edit ? await updFerias(edit,payload) : await insFerias(payload);
-    if (error) setErr(error.message||"Erro ao salvar.");
+    const payload = { ...form, empresa_id: empresaId };
+    const { error } = edit ? await updFerias(edit, payload) : await insFerias(payload);
+    if (error) setErr(error.message || "Erro ao salvar.");
     else { setModal(false); refFer(); }
     setSaving(false);
   };
 
-  const aprovar  = async (f) => { await updFerias(f.id,{status:"aprovado"}); };
-  const rejeitar = async (f) => { await updFerias(f.id,{status:"rejeitado"}); };
+  const aprovar  = async (f) => { await updFerias(f.id, { status: "aprovado" }); };
+  const rejeitar = async (f) => { await updFerias(f.id, { status: "rejeitado" }); };
+
+  const KPI = ({ l, v, c, sub }) => (
+    <div style={{ background: L.white, borderRadius: 12, border: `1px solid ${L.line}`,
+      padding: "15px 18px", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+      <div style={{ fontSize: 9.5, color: L.t4, textTransform: "uppercase", letterSpacing: "1.5px",
+        marginBottom: 5, fontFamily: "'JetBrains Mono',monospace", fontWeight: 600 }}>{l}</div>
+      <div style={{ fontSize: 28, fontWeight: 700, color: c, fontFamily: "'Outfit',sans-serif" }}>{v}</div>
+      {sub && <div style={{ fontSize: 10, color: L.t4, marginTop: 2 }}>{sub}</div>}
+    </div>
+  );
 
   return (
     <Fade>
-      {/* KPIs */}
       <Grid cols={4} gap={12} mb={16} responsive>
-        {[
-          {l:"Colaboradores Ativos",   v:ativos,   c:L.green},
-          {l:"Inativos",               v:inativos, c:L.t4},
-          {l:"Em Férias / Afastamento",v:emFerias, c:L.teal},
-          {l:"Pendentes de Aprovação", v:pendentes,c:L.yellow},
-        ].map((k,i)=>(
-          <div key={i} style={{background:L.white,borderRadius:12,border:`1px solid ${L.line}`,padding:"15px 18px",boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}>
-            <div style={{fontSize:9.5,color:L.t4,textTransform:"uppercase",letterSpacing:"1.5px",marginBottom:5,fontFamily:"'JetBrains Mono',monospace",fontWeight:600}}>{k.l}</div>
-            <div style={{fontSize:28,fontWeight:700,color:k.c,fontFamily:"'Outfit',sans-serif"}}>{k.v}</div>
-          </div>
-        ))}
+        <KPI l="Colaboradores Ativos" v={ativos.length} c={L.green} />
+        <KPI l="Pendências Críticas" v={alertas.filter((a) => a.nivel === "critico").length} c={L.red}
+             sub={`${alertas.filter((a) => a.nivel === "aviso").length} avisos`} />
+        <KPI l="Em Férias / Afastamento" v={emFerias} c={L.teal} sub={`${pendentes} a aprovar`} />
+        <KPI l="Folha (salários)" v={fmtMoeda(folha)} c={L.copper} sub="colaboradores ativos" />
       </Grid>
 
-      {/* Charts */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 300px",gap:12,marginBottom:16}} className="rg-auto">
-        <Card title="Distribuição por Cargo" sub="colaboradores ativos">
-          {pieData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={160}>
-              <PieChart>
-                <Pie data={pieData} cx="50%" cy="50%" outerRadius={65} dataKey="value" paddingAngle={2}>
-                  {pieData.map((_,i)=><Cell key={i} fill={PIE_COLORS[i%6]}/>)}
-                </Pie>
-                <Tooltip contentStyle={TT} formatter={v=>[`${v} pessoa${v!==1?"s":""}`]}/>
-                <Legend iconSize={8} iconType="circle" wrapperStyle={{fontSize:10,color:L.t3}}/>
-              </PieChart>
-            </ResponsiveContainer>
-          ):(
-            <div style={{textAlign:"center",padding:40,color:L.t4,fontSize:11}}>Nenhum colaborador cadastrado</div>
-          )}
-        </Card>
-        <Card title="Resumo RH" sub="visão geral">
-          <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            {[
-              {l:"Total headcount",   v:colaboradores.length},
-              {l:"Ativos",            v:ativos},
-              {l:"Admitidos (período)",v:colaboradores.filter(c=>{const d=c.created_at?.slice(0,7);const now=new Date();const key=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;return d===key;}).length},
-              {l:"Férias este mês",   v:ferias.filter(f=>{const now=new Date();const key=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;return (f.data_inicio||"").startsWith(key);}).length},
-            ].map((r,i)=>(
-              <div key={i} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:`1px solid ${L.lineSoft}`}}>
-                <span style={{fontSize:11,color:L.t3}}>{r.l}</span>
-                <span style={{fontSize:13,fontWeight:600,color:L.t1}}>{r.v}</span>
-              </div>
-            ))}
-          </div>
-        </Card>
-      </div>
-
-      {/* Tabs */}
       <Row between mb={12}>
-        <TabPills tabs={["Colaboradores","Férias & Afastamentos"]} active={aba} onChange={setAba}/>
-        {aba==="Férias & Afastamentos"&&<PBtn onClick={openNew}>+ Registrar</PBtn>}
+        <div style={{ overflowX: "auto" }}><TabPills tabs={ABAS} active={aba} onChange={setAba} /></div>
+        {aba === "Férias & Afastamentos" && <PBtn onClick={openNew}>+ Registrar</PBtn>}
       </Row>
 
-      {/* Tab: Colaboradores */}
-      {aba==="Colaboradores"&&(
-        loadCo ? <div style={{textAlign:"center",padding:40,color:L.t4}}>Carregando...</div> : (
-          <DataTable heads={["Colaborador","Cargo","Setor","WhatsApp","Admissão","Status"]}>
-            {colaboradores.map(c=>(
-              <tr key={c.id} style={{borderBottom:`1px solid ${L.lineSoft}`}}
-                onMouseEnter={e=>e.currentTarget.style.background=L.surface}
-                onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-                <td style={TD}>
-                  <Row gap={9}>
-                    <Av name={c.nome} size={28} color={c.ativo?L.teal:L.t4}/>
-                    <div>
-                      <div style={{fontSize:12.5,fontWeight:500,color:L.t1}}>{c.nome}</div>
-                      <div style={{fontSize:10,color:L.t4}}>{c.email||"—"}</div>
-                    </div>
-                  </Row>
-                </td>
-                <td style={{...TD,color:L.t2,fontSize:12}}>{c.cargo||"—"}</td>
-                <td style={{...TD,color:L.t3,fontSize:11}}>{c.departamento||"—"}</td>
-                <td style={{...TD,color:L.t3,fontSize:11,fontFamily:"'JetBrains Mono',monospace"}}>{c.whatsapp||"—"}</td>
-                <td style={{...TD,fontSize:11,color:L.t4,fontFamily:"'JetBrains Mono',monospace"}}>{fmtDate(c.created_at?.split("T")[0])}</td>
-                <td style={TD}><Tag color={c.ativo?L.green:L.red} bg={c.ativo?L.greenBg:L.redBg}>{c.ativo?"Ativo":"Inativo"}</Tag></td>
-              </tr>
-            ))}
-            {colaboradores.length===0&&<tr><td colSpan={6} style={{...TD,textAlign:"center",color:L.t4,padding:40}}>Nenhum colaborador cadastrado.</td></tr>}
-          </DataTable>
-        )
+      {aba === "Visão geral" && (
+        <VisaoGeral alertas={alertas} aniversariantes={aniversariantes}
+          aniversariosEmpresa={aniversariosEmpresa} pieData={pieData} cores={PIE_COLORS} />
       )}
 
-      {/* Tab: Férias */}
-      {aba==="Férias & Afastamentos"&&(
-        loadFer ? <div style={{textAlign:"center",padding:40,color:L.t4}}>Carregando...</div> : (
-          <DataTable heads={["Colaborador","Tipo","Início","Fim","Dias","Status","Ações"]}>
-            {ferias.map(f=>{
-              const dias = diasEntre(f.data_inicio,f.data_fim);
+      {aba === "Colaboradores" && (
+        loadCo ? <Carregando /> : (
+          <DataTable heads={["Colaborador", "Cargo", "Contrato", "Admissão", "Salário", "Status", "Ficha"]}>
+            {colaboradores.map((c) => {
+              const f = fichaDe(c.id);
+              const completa = f && f.cpf && f.data_admissao;
               return (
-                <tr key={f.id} style={{borderBottom:`1px solid ${L.lineSoft}`}}
-                  onMouseEnter={e=>e.currentTarget.style.background=L.surface}
-                  onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-                  <td style={{...TD,fontWeight:500,color:L.t1}}>{nomeUser(f.usuario_id)}</td>
-                  <td style={TD}><Tag color={L.teal} bg={L.tealBg}>{TIPO_LABEL[f.tipo]||f.tipo}</Tag></td>
-                  <td style={{...TD,fontSize:11,fontFamily:"'JetBrains Mono',monospace"}}>{fmtDate(f.data_inicio)}</td>
-                  <td style={{...TD,fontSize:11,fontFamily:"'JetBrains Mono',monospace"}}>{fmtDate(f.data_fim)}</td>
-                  <td style={{...TD,textAlign:"center",fontWeight:600,color:L.t1}}>{dias}</td>
-                  <td style={TD}><Tag color={STATUS_C[f.status]||L.t4} bg={STATUS_BG[f.status]||L.surface}>{f.status.replace("_"," ")}</Tag></td>
+                <tr key={c.id} style={{ borderBottom: `1px solid ${L.lineSoft}` }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = L.surface}
+                  onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
                   <td style={TD}>
-                    <Row gap={4}>
-                      {f.status==="solicitado"&&<IBtn c={L.green} onClick={()=>aprovar(f)} title="Aprovar">✓</IBtn>}
-                      {f.status==="solicitado"&&<IBtn c={L.red}   onClick={()=>rejeitar(f)} title="Rejeitar">✕</IBtn>}
-                      <IBtn c={L.teal} onClick={()=>openEdit(f)}>✎</IBtn>
-                      <IBtn c={L.red}  onClick={()=>{if(confirm("Excluir registro?"))remFerias(f.id);}}>⊗</IBtn>
+                    <Row gap={9}>
+                      <Av name={c.nome} size={28} color={c.ativo ? L.teal : L.t4} />
+                      <div>
+                        <div style={{ fontSize: 12.5, fontWeight: 500, color: L.t1 }}>{c.nome}</div>
+                        <div style={{ fontSize: 10, color: L.t4 }}>{c.email || c.whatsapp || "—"}</div>
+                      </div>
+                    </Row>
+                  </td>
+                  <td style={{ ...TD, color: L.t2, fontSize: 12 }}>{c.cargo || "—"}</td>
+                  <td style={{ ...TD, fontSize: 11, color: L.t3 }}>{(f?.tipo_contrato || "—").toUpperCase()}</td>
+                  <td style={{ ...TD, fontSize: 11, color: L.t3, fontFamily: "'JetBrains Mono',monospace" }}>{fmtData(f?.data_admissao)}</td>
+                  <td style={{ ...TD, fontSize: 11.5, color: L.t2 }}>{fmtMoeda(f?.salario)}</td>
+                  <td style={TD}>
+                    <Tag color={c.ativo ? L.green : L.red} bg={c.ativo ? L.greenBg : L.redBg}>
+                      {c.ativo ? "Ativo" : "Inativo"}
+                    </Tag>
+                  </td>
+                  <td style={TD}>
+                    <Row gap={5}>
+                      {!completa && <Tag color={L.yellow} bg={L.yellowBg}>incompleta</Tag>}
+                      <IBtn c={L.teal} onClick={() => setFichaAberta(c)}>☰</IBtn>
                     </Row>
                   </td>
                 </tr>
               );
             })}
-            {ferias.length===0&&<tr><td colSpan={7} style={{...TD,textAlign:"center",color:L.t4,padding:40}}>Nenhum registro. Clique em '+ Registrar' para adicionar.</td></tr>}
+            {colaboradores.length === 0 && (
+              <tr><td colSpan={7} style={{ ...TD, textAlign: "center", color: L.t4, padding: 40 }}>
+                Nenhum colaborador cadastrado.</td></tr>
+            )}
           </DataTable>
         )
       )}
 
-      {modal&&(
-        <Modal title={edit?"Editar Registro":"Novo Registro de Férias / Afastamento"} onClose={()=>setModal(false)} width={480}>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 14px"}}>
-            <Field label="Colaborador *" style={{gridColumn:"1/-1"}}>
+      {aba === "Ponto" && <AbaPonto user={user} colaboradores={ativos} />}
+
+      {aba === "Férias & Afastamentos" && (
+        loadFer ? <Carregando /> : (
+          <DataTable heads={["Colaborador", "Tipo", "Início", "Fim", "Dias", "Status", "Ações"]}>
+            {ferias.map((f) => (
+              <tr key={f.id} style={{ borderBottom: `1px solid ${L.lineSoft}` }}
+                onMouseEnter={(e) => e.currentTarget.style.background = L.surface}
+                onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
+                <td style={{ ...TD, fontWeight: 500, color: L.t1 }}>{nomeUser(f.usuario_id)}</td>
+                <td style={TD}><Tag color={L.teal} bg={L.tealBg}>{TIPO_LABEL[f.tipo] || f.tipo}</Tag></td>
+                <td style={{ ...TD, fontSize: 11, fontFamily: "'JetBrains Mono',monospace" }}>{fmtData(f.data_inicio)}</td>
+                <td style={{ ...TD, fontSize: 11, fontFamily: "'JetBrains Mono',monospace" }}>{fmtData(f.data_fim)}</td>
+                <td style={{ ...TD, textAlign: "center", fontWeight: 600, color: L.t1 }}>{diasEntre(f.data_inicio, f.data_fim)}</td>
+                <td style={TD}><Tag color={STATUS_C[f.status] || L.t4} bg={STATUS_BG[f.status] || L.surface}>
+                  {String(f.status).replace("_", " ")}</Tag></td>
+                <td style={TD}>
+                  <Row gap={4}>
+                    {f.status === "solicitado" && <IBtn c={L.green} onClick={() => aprovar(f)} title="Aprovar">✓</IBtn>}
+                    {f.status === "solicitado" && <IBtn c={L.red} onClick={() => rejeitar(f)} title="Rejeitar">✕</IBtn>}
+                    <IBtn c={L.teal} onClick={() => openEdit(f)}>✎</IBtn>
+                    <IBtn c={L.red} onClick={() => { if (confirm("Excluir registro?")) remFerias(f.id); }}>⊗</IBtn>
+                  </Row>
+                </td>
+              </tr>
+            ))}
+            {ferias.length === 0 && (
+              <tr><td colSpan={7} style={{ ...TD, textAlign: "center", color: L.t4, padding: 40 }}>
+                Nenhum registro. Clique em '+ Registrar' para adicionar.</td></tr>
+            )}
+          </DataTable>
+        )
+      )}
+
+      {modal && (
+        <Modal title={edit ? "Editar Registro" : "Novo Registro de Férias / Afastamento"}
+          onClose={() => setModal(false)} width={480}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px" }}>
+            <div style={{ gridColumn: "1/-1" }}><Field label="Colaborador *">
               <Select value={form.usuario_id} onChange={F("usuario_id")}>
                 <option value="">Selecionar colaborador...</option>
-                {colaboradores.filter(c=>c.ativo).map(c=><option key={c.id} value={c.id}>{c.nome} — {c.cargo||"Sem cargo"}</option>)}
+                {ativos.map((c) => <option key={c.id} value={c.id}>{c.nome} — {c.cargo || "Sem cargo"}</option>)}
               </Select>
-            </Field>
+            </Field></div>
             <Field label="Tipo">
               <Select value={form.tipo} onChange={F("tipo")}>
-                {Object.entries(TIPO_LABEL).map(([v,l])=><option key={v} value={v}>{l}</option>)}
+                {Object.entries(TIPO_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
               </Select>
             </Field>
             <Field label="Status">
               <Select value={form.status} onChange={F("status")}>
-                {["solicitado","aprovado","rejeitado","em_andamento","concluido"].map(s=><option key={s} value={s}>{s.replace("_"," ")}</option>)}
+                {["solicitado", "aprovado", "rejeitado", "em_andamento", "concluido"]
+                  .map((s) => <option key={s} value={s}>{s.replace("_", " ")}</option>)}
               </Select>
             </Field>
-            <Field label="Data Início *">
-              <Input value={form.data_inicio||""} onChange={F("data_inicio")} type="date"/>
-            </Field>
-            <Field label="Data Fim *">
-              <Input value={form.data_fim||""} onChange={F("data_fim")} type="date"/>
-            </Field>
-            {form.data_inicio&&form.data_fim&&form.data_fim>=form.data_inicio&&(
-              <div style={{gridColumn:"1/-1",padding:"8px 12px",background:L.tealBg,borderRadius:8,fontSize:12,color:L.teal,marginBottom:4}}>
-                Duração: {diasEntre(form.data_inicio,form.data_fim)} dia(s) corridos
+            <Field label="Data Início *"><Input value={form.data_inicio || ""} onChange={F("data_inicio")} type="date" /></Field>
+            <Field label="Data Fim *"><Input value={form.data_fim || ""} onChange={F("data_fim")} type="date" /></Field>
+            {form.data_inicio && form.data_fim && form.data_fim >= form.data_inicio && (
+              <div style={{ gridColumn: "1/-1", padding: "8px 12px", background: L.tealBg,
+                borderRadius: 8, fontSize: 12, color: L.teal, marginBottom: 4 }}>
+                Duração: {diasEntre(form.data_inicio, form.data_fim)} dia(s) corridos
               </div>
             )}
-            <Field label="Observação" style={{gridColumn:"1/-1"}}>
-              <Input value={form.observacao||""} onChange={F("observacao")} placeholder="Motivo ou observações..."/>
-            </Field>
+            <div style={{ gridColumn: "1/-1" }}><Field label="Observação">
+              <Input value={form.observacao || ""} onChange={F("observacao")} placeholder="Motivo ou observações..." />
+            </Field></div>
           </div>
-          {err&&<div style={{padding:"8px 12px",background:L.redBg,borderRadius:8,fontSize:12,color:L.red,marginTop:4}}>{err}</div>}
-          <ModalFooter onClose={()=>setModal(false)} onSave={save} loading={saving} label={edit?"Salvar Alterações":"Registrar"}/>
+          {err && <div style={{ padding: "8px 12px", background: L.redBg, borderRadius: 8,
+            fontSize: 12, color: L.red, marginTop: 4 }}>{err}</div>}
+          <ModalFooter onClose={() => setModal(false)} onSave={save} loading={saving}
+            label={edit ? "Salvar Alterações" : "Registrar"} />
         </Modal>
       )}
+
+      {fichaAberta && (
+        <FichaColaborador user={user} colaborador={fichaAberta}
+          onClose={() => { setFichaAberta(null); carregarRH(); }}
+          onSalvou={() => { carregarRH(); refCo(); }} />
+      )}
     </Fade>
+  );
+}
+
+function Carregando() {
+  return <div style={{ textAlign: "center", padding: 40, color: L.t4 }}>Carregando...</div>;
+}
+
+/* ───────────────────────────── Visão geral ───────────────────────────── */
+
+function VisaoGeral({ alertas, aniversariantes, aniversariosEmpresa, pieData, cores }) {
+  const [filtro, setFiltro] = useState("todos");
+  const lista = filtro === "todos" ? alertas : alertas.filter((a) => a.nivel === filtro);
+
+  return (
+    <>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 12 }} className="rg-auto">
+        <Card title="Pendências e vencimentos" sub="o que exige ação">
+          <Row gap={6} mb={10}>
+            {[["todos", "Todos"], ["critico", "Críticos"], ["aviso", "Avisos"]].map(([v, l]) => (
+              <button key={v} onClick={() => setFiltro(v)} style={{
+                padding: "4px 10px", borderRadius: 20, cursor: "pointer", fontSize: 11,
+                border: `1px solid ${filtro === v ? L.teal : L.line}`,
+                background: filtro === v ? L.tealBg : "transparent",
+                color: filtro === v ? L.teal : L.t3,
+              }}>{l}</button>
+            ))}
+          </Row>
+          {lista.length === 0 ? (
+            <div style={{ textAlign: "center", padding: 30, color: L.t4, fontSize: 12 }}>
+              Nada pendente. Documentos, exames e prazos estão em dia.
+            </div>
+          ) : (
+            <div style={{ maxHeight: 340, overflowY: "auto" }}>
+              {lista.map((a, i) => (
+                <div key={i} style={{ display: "flex", gap: 10, alignItems: "center",
+                  padding: "9px 4px", borderBottom: `1px solid ${L.lineSoft}` }}>
+                  <div style={{ width: 6, height: 6, borderRadius: "50%", flexShrink: 0,
+                    background: a.nivel === "critico" ? L.red : L.yellow }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12.5, color: L.t1 }}>{a.quem}</div>
+                    <div style={{ fontSize: 11, color: L.t3 }}>{a.texto}</div>
+                  </div>
+                  <Tag color={L.t3} bg={L.surface}>{a.cat}</Tag>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <Card title="Aniversariantes do mês" sub="datas de nascimento">
+            {aniversariantes.length === 0
+              ? <div style={{ fontSize: 11.5, color: L.t4, padding: 8 }}>Nenhum neste mês.</div>
+              : aniversariantes.map(({ c, f }) => (
+                <Row between key={c.id} mb={6}>
+                  <Row gap={7}>
+                    <Av name={c.nome} size={22} color={L.copper} />
+                    <span style={{ fontSize: 12, color: L.t2 }}>{c.nome}</span>
+                  </Row>
+                  <span style={{ fontSize: 11, color: L.t4, fontFamily: "'JetBrains Mono',monospace" }}>
+                    {f.data_nascimento.slice(8)}/{f.data_nascimento.slice(5, 7)}
+                  </span>
+                </Row>
+              ))}
+          </Card>
+
+          <Card title="Aniversários de empresa" sub="tempo de casa">
+            {aniversariosEmpresa.length === 0
+              ? <div style={{ fontSize: 11.5, color: L.t4, padding: 8 }}>Nenhum neste mês.</div>
+              : aniversariosEmpresa.map(({ c, anos }) => (
+                <Row between key={c.id} mb={6}>
+                  <Row gap={7}>
+                    <Av name={c.nome} size={22} color={L.teal} />
+                    <span style={{ fontSize: 12, color: L.t2 }}>{c.nome}</span>
+                  </Row>
+                  <Tag color={L.teal} bg={L.tealBg}>{anos} ano{anos > 1 ? "s" : ""}</Tag>
+                </Row>
+              ))}
+          </Card>
+        </div>
+      </div>
+
+      <div style={{ marginTop: 12 }}>
+        <Card title="Distribuição por cargo" sub="colaboradores ativos">
+          {pieData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={180}>
+              <PieChart>
+                <Pie data={pieData} cx="50%" cy="50%" outerRadius={70} dataKey="value" paddingAngle={2}>
+                  {pieData.map((_, i) => <Cell key={i} fill={cores[i % 6]} />)}
+                </Pie>
+                <Tooltip contentStyle={TT} formatter={(v) => [`${v} pessoa${v !== 1 ? "s" : ""}`]} />
+                <Legend iconSize={8} iconType="circle" wrapperStyle={{ fontSize: 10, color: L.t3 }} />
+              </PieChart>
+            </ResponsiveContainer>
+          ) : (
+            <div style={{ textAlign: "center", padding: 40, color: L.t4, fontSize: 11 }}>
+              Nenhum colaborador cadastrado
+            </div>
+          )}
+        </Card>
+      </div>
+    </>
+  );
+}
+
+/* ─────────────────────────── Ponto e banco de horas ─────────────────────────── */
+
+const minutos = (t) => {
+  if (!t) return null;
+  const [h, m] = t.split(":").map(Number);
+  return h * 60 + m;
+};
+
+// Trabalhado = (saída − entrada) − intervalo de almoço. Registro incompleto
+// devolve null em vez de zero: zero seria lido como falta, e falta e registro
+// pela metade são coisas diferentes.
+export const horasTrabalhadas = (r) => {
+  const ent = minutos(r.entrada), sai = minutos(r.saida);
+  if (ent == null || sai == null) return null;
+  let total = sai - ent;
+  const sa = minutos(r.saida_almoco), va = minutos(r.volta_almoco);
+  if (sa != null && va != null && va > sa) total -= (va - sa);
+  return total / 60;
+};
+
+const hhmm = (h) => {
+  if (h == null) return "—";
+  const sinal = h < 0 ? "-" : "";
+  const abs = Math.abs(h);
+  return `${sinal}${String(Math.floor(abs)).padStart(2, "0")}:${String(Math.round((abs % 1) * 60)).padStart(2, "0")}`;
+};
+
+function AbaPonto({ user, colaboradores }) {
+  const empresaId = user?.empresa_id;
+  const [mes, setMes]   = useState(new Date().toISOString().slice(0, 7));
+  const [quem, setQuem] = useState("");
+  const [regs, setRegs] = useState([]);
+  const [carregando, setCarregando] = useState(true);
+  const [modal, setModal] = useState(false);
+  const [form, setForm] = useState({});
+  const [editando, setEditando] = useState(null);
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState("");
+
+  const carregar = async () => {
+    if (!empresaId) return;
+    setCarregando(true);
+    const ini = `${mes}-01`;
+    const fim = new Date(new Date(ini).getFullYear(), new Date(ini).getMonth() + 1, 0)
+      .toISOString().slice(0, 10);
+    let q = supabase.from("rh_ponto").select("*").eq("empresa_id", empresaId)
+      .gte("data", ini).lte("data", fim).order("data", { ascending: false });
+    if (quem) q = q.eq("usuario_id", quem);
+    const { data } = await q;
+    setRegs(data || []);
+    setCarregando(false);
+  };
+  useEffect(() => { carregar(); /* eslint-disable-next-line */ }, [mes, quem, empresaId]);
+
+  const nome = (uid) => colaboradores.find((c) => c.id === uid)?.nome || "—";
+
+  // Saldo do banco de horas: soma das diferenças entre trabalhado e previsto.
+  const saldo = regs.reduce((s, r) => {
+    const t = horasTrabalhadas(r);
+    if (t == null) return s;
+    return s + (t - Number(r.horas_previstas ?? 8));
+  }, 0);
+
+  const abrir = (r = null) => {
+    setEditando(r?.id || null);
+    setForm(r ? { ...r } : { data: hojeISO(), usuario_id: quem || "", horas_previstas: 8 });
+    setErro(""); setModal(true);
+  };
+
+  const salvar = async () => {
+    if (!form.usuario_id) { setErro("Selecione o colaborador."); return; }
+    if (!form.data) { setErro("Informe a data."); return; }
+    setSalvando(true); setErro("");
+    const payload = { ...form, empresa_id: empresaId };
+    delete payload.id; delete payload.created_at;
+    Object.keys(payload).forEach((k) => { if (payload[k] === "") payload[k] = null; });
+    // upsert pela chave (usuario_id, data): lançar duas vezes o mesmo dia
+    // corrigiria o registro em vez de duplicá-lo.
+    const { error } = editando
+      ? await supabase.from("rh_ponto").update(payload).eq("id", editando)
+      : await supabase.from("rh_ponto").upsert(payload, { onConflict: "usuario_id,data" });
+    setSalvando(false);
+    if (error) { setErro(error.message); return; }
+    setModal(false); carregar();
+  };
+
+  const excluir = async (r) => {
+    if (!confirm("Excluir este registro de ponto?")) return;
+    await supabase.from("rh_ponto").delete().eq("id", r.id);
+    carregar();
+  };
+
+  const P = (k) => (v) => setForm((p) => ({ ...p, [k]: v }));
+
+  return (
+    <>
+      <Row between mb={12}>
+        <Row gap={8}>
+          <input type="month" value={mes} onChange={(e) => setMes(e.target.value)}
+            style={{ padding: "7px 10px", borderRadius: 8, border: `1px solid ${L.line}`,
+              background: L.white, color: L.t1, fontSize: 12 }} />
+          <select value={quem} onChange={(e) => setQuem(e.target.value)}
+            style={{ padding: "7px 10px", borderRadius: 8, border: `1px solid ${L.line}`,
+              background: L.white, color: L.t1, fontSize: 12 }}>
+            <option value="">Todos os colaboradores</option>
+            {colaboradores.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+          </select>
+          <Tag color={saldo >= 0 ? L.green : L.red} bg={saldo >= 0 ? L.greenBg : L.redBg}>
+            banco de horas {saldo >= 0 ? "+" : ""}{hhmm(saldo)}
+          </Tag>
+        </Row>
+        <PBtn onClick={() => abrir()}>+ Lançar ponto</PBtn>
+      </Row>
+
+      {carregando ? <Carregando /> : (
+        <DataTable heads={["Data", "Colaborador", "Entrada", "Almoço", "Saída", "Trabalhado", "Saldo", "Ações"]}>
+          {regs.map((r) => {
+            const t = horasTrabalhadas(r);
+            const dif = t == null ? null : t - Number(r.horas_previstas ?? 8);
+            return (
+              <tr key={r.id} style={{ borderBottom: `1px solid ${L.lineSoft}` }}
+                onMouseEnter={(e) => e.currentTarget.style.background = L.surface}
+                onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
+                <td style={{ ...TD, fontSize: 11.5, fontFamily: "'JetBrains Mono',monospace" }}>{fmtData(r.data)}</td>
+                <td style={{ ...TD, fontSize: 12, color: L.t1 }}>{nome(r.usuario_id)}</td>
+                <td style={{ ...TD, fontSize: 11.5 }}>{r.entrada?.slice(0, 5) || "—"}</td>
+                <td style={{ ...TD, fontSize: 11.5, color: L.t3 }}>
+                  {r.saida_almoco ? `${r.saida_almoco.slice(0, 5)}–${r.volta_almoco?.slice(0, 5) || "?"}` : "—"}
+                </td>
+                <td style={{ ...TD, fontSize: 11.5 }}>{r.saida?.slice(0, 5) || "—"}</td>
+                <td style={{ ...TD, fontSize: 11.5, fontWeight: 600, color: L.t1 }}>{hhmm(t)}</td>
+                <td style={TD}>
+                  {dif == null ? <span style={{ fontSize: 11, color: L.t4 }}>incompleto</span> : (
+                    <Tag color={dif >= 0 ? L.green : L.red} bg={dif >= 0 ? L.greenBg : L.redBg}>
+                      {dif >= 0 ? "+" : ""}{hhmm(dif)}
+                    </Tag>
+                  )}
+                </td>
+                <td style={TD}>
+                  <Row gap={4}>
+                    <IBtn c={L.teal} onClick={() => abrir(r)}>✎</IBtn>
+                    <IBtn c={L.red} onClick={() => excluir(r)}>⊗</IBtn>
+                  </Row>
+                </td>
+              </tr>
+            );
+          })}
+          {regs.length === 0 && (
+            <tr><td colSpan={8} style={{ ...TD, textAlign: "center", color: L.t4, padding: 40 }}>
+              Nenhum ponto lançado neste mês.</td></tr>
+          )}
+        </DataTable>
+      )}
+
+      {modal && (
+        <Modal title={editando ? "Editar ponto" : "Lançar ponto"} onClose={() => setModal(false)} width={470}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px" }}>
+            <div style={{ gridColumn: "1/-1" }}><Field label="Colaborador *">
+              <Select value={form.usuario_id || ""} onChange={P("usuario_id")}>
+                <option value="">Selecionar...</option>
+                {colaboradores.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+              </Select>
+            </Field></div>
+            <Field label="Data *"><Input type="date" value={form.data || ""} onChange={P("data")} /></Field>
+            <Field label="Horas previstas"><Input type="number" step="0.5" value={form.horas_previstas ?? 8} onChange={P("horas_previstas")} /></Field>
+            <Field label="Entrada"><Input type="time" value={form.entrada || ""} onChange={P("entrada")} /></Field>
+            <Field label="Saída p/ almoço"><Input type="time" value={form.saida_almoco || ""} onChange={P("saida_almoco")} /></Field>
+            <Field label="Volta do almoço"><Input type="time" value={form.volta_almoco || ""} onChange={P("volta_almoco")} /></Field>
+            <Field label="Saída"><Input type="time" value={form.saida || ""} onChange={P("saida")} /></Field>
+            <div style={{ gridColumn: "1/-1" }}><Field label="Abono">
+              <Select value={form.abono || ""} onChange={P("abono")}>
+                <option value="">Sem abono</option>
+                {["Atestado", "Falta justificada", "Falta injustificada", "Feriado", "Folga", "Férias"]
+                  .map((a) => <option key={a} value={a}>{a}</option>)}
+              </Select>
+            </Field></div>
+            <div style={{ gridColumn: "1/-1" }}><Field label="Observação">
+              <Input value={form.observacao || ""} onChange={P("observacao")} />
+            </Field></div>
+          </div>
+          {form.entrada && form.saida && (
+            <div style={{ padding: "8px 12px", background: L.tealBg, borderRadius: 8,
+              fontSize: 12, color: L.teal, marginTop: 6 }}>
+              Trabalhado: {hhmm(horasTrabalhadas(form))} · previsto {hhmm(Number(form.horas_previstas ?? 8))}
+            </div>
+          )}
+          {erro && <div style={{ padding: "8px 12px", background: L.redBg, borderRadius: 8,
+            fontSize: 12, color: L.red, marginTop: 6 }}>{erro}</div>}
+          <ModalFooter onClose={() => setModal(false)} onSave={salvar} loading={salvando} />
+        </Modal>
+      )}
+    </>
   );
 }
