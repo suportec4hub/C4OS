@@ -954,7 +954,7 @@ function AbaPonto({ user, colaboradores, fichas = [] }) {
     <Row between mb={12}>
       <Row gap={8}>
         <Tag color={eletronico ? L.teal : L.t3} bg={eletronico ? L.tealBg : L.surface}>
-          {eletronico ? "modo eletrônico — registro imutável" : "modo gestão — lançamento editável"}
+          {eletronico ? "registro definitivo — não pode ser alterado" : "registro corrigível — o RH pode ajustar"}
         </Tag>
       </Row>
       <button onClick={() => setConfigAberta(true)} style={{ padding: "6px 12px", borderRadius: 8,

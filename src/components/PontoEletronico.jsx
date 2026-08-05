@@ -69,23 +69,34 @@ export function ConfigPonto({ empresaId, config, onSalvou, onClose }) {
 
   return (
     <Modal title="Configuração do ponto" onClose={onClose} width={540}>
+      {/* Os nomes anteriores ("Gestão" e "Eletrônico") davam a entender que a
+          batida automática só existia num dos modos, e que dependia de
+          certificado. Ela existe nos dois e não depende de nada: a diferença
+          entre os modos é só se o registro pode ser corrigido depois. */}
+      <div style={{ padding: "9px 12px", borderRadius: 8, background: L.tealBg,
+        color: L.teal, fontSize: 11.5, lineHeight: 1.6, marginBottom: 12 }}>
+        Nos <b>dois modos</b> o colaborador bate o próprio ponto pelo celular ou pelo
+        computador, com data, hora e localização puxadas do aparelho. A escolha abaixo
+        muda apenas <b>o que acontece depois</b> da batida.
+      </div>
+
       <Field label="Modo de registro">
         <Select value={form.modo_ponto} onChange={C("modo_ponto")}>
-          <option value="gestao">Gestão — lançamento editável pelo RH</option>
-          <option value="eletronico">Eletrônico — registro imutável (Portaria 671)</option>
+          <option value="gestao">Corrigível — o RH pode ajustar os horários depois</option>
+          <option value="eletronico">Definitivo — registro não pode ser alterado (Portaria 671)</option>
         </Select>
       </Field>
 
       <div style={{ padding: "10px 12px", borderRadius: 8, fontSize: 11.5, lineHeight: 1.6,
         background: eletronico ? L.tealBg : L.surface, color: eletronico ? L.teal : L.t3, marginBottom: 12 }}>
         {eletronico ? (
-          <>No modo eletrônico o registro não pode ser editado nem excluído, nem pelo RH.
+          <>Depois de batido, o registro não pode ser editado nem excluído — nem pelo RH.
           Cada marcação gera comprovante para o trabalhador e recebe NSR sequencial encadeado
-          por hash. Correção de erro entra como novo registro.</>
+          por hash. Esquecimento se corrige com um lançamento novo, justificado, e o
+          original permanece.</>
         ) : (
-          <>No modo gestão o RH lança e ajusta os horários livremente. Serve para
-          acompanhamento interno, home office e prestadores — não tem valor de registro
-          eletrônico de ponto.</>
+          <>O RH pode ajustar e apagar horários depois da batida. Mais prático no dia a dia,
+          mas o registro não serve como prova de jornada, justamente por ser editável.</>
         )}
       </div>
 
@@ -103,10 +114,10 @@ export function ConfigPonto({ empresaId, config, onSalvou, onClose }) {
 
           <div style={{ padding: "10px 12px", borderRadius: 8, background: L.yellowBg,
             color: L.yellow, fontSize: 11.5, lineHeight: 1.6 }}>
-            <b>Antes de usar como registro legal:</b> falta a assinatura digital qualificada
-            ICP-Brasil e a validação do leiaute do AFD contra o arquivo oficial do MTE. Sem
-            isso o sistema garante imutabilidade, NSR, cadeia de integridade e comprovante,
-            mas não substitui um REP homologado.
+            <b>Funciona normalmente sem certificado digital</b> — a batida, o comprovante e a
+            imutabilidade não dependem dele. O certificado ICP-Brasil (e a conferência do
+            leiaute do AFD) só é necessário para o arquivo ser aceito por um auditor fiscal
+            do trabalho. Até lá, use como registro interno.
           </div>
         </>
       )}
