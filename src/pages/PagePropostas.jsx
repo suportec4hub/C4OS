@@ -199,13 +199,13 @@ export default function PagePropostas({ user }) {
             <div style={{ fontSize: 11, fontWeight: 700, color: L.t2, marginBottom: 8, textTransform: "uppercase", letterSpacing: "1px", fontFamily: "'JetBrains Mono',monospace" }}>
               Itens da Proposta
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 70px 110px 32px", gap: 6, marginBottom: 4 }}>
+            <div className="rg-keep" style={{ display: "grid", gridTemplateColumns: "1fr 70px 110px 32px", gap: 6, marginBottom: 4 }}>
               {["Descrição", "Qtd", "Valor unit.", ""].map((h, i) => (
                 <div key={i} style={{ fontSize: 9, color: L.t4, textTransform: "uppercase", letterSpacing: "1px", fontWeight: 600, fontFamily: "'JetBrains Mono',monospace" }}>{h}</div>
               ))}
             </div>
             {itens.map((item, i) => (
-              <div key={i} style={{ display: "grid", gridTemplateColumns: "1fr 70px 110px 32px", gap: 6, marginBottom: 6 }}>
+              <div className="rg-keep" key={i} style={{ display: "grid", gridTemplateColumns: "1fr 70px 110px 32px", gap: 6, marginBottom: 6 }}>
                 <input value={item.descricao} onChange={e => updItem(i, "descricao", e.target.value)}
                   placeholder="Nome do produto / serviço..." style={inputStyle} />
                 <input type="number" min={0} value={item.qtd} onChange={e => updItem(i, "qtd", e.target.value)}

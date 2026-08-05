@@ -175,6 +175,14 @@ export const globalCSS = `
   @keyframes shrinkBar{from{width:100%}to{width:0%}}
   /* ── Responsive grid ── */
   .rg-auto{display:grid}
+  /* Mantém o layout de colunas definido no componente e só empilha no celular.
+     Diferente de .rg-auto, que também força 2 colunas no tablet — o que quebra
+     linhas de itens do tipo "1fr 70px 110px". */
+  .rg-keep{display:grid}
+  /* Nada pode empurrar a página para os lados: no celular isso vira scroll
+     horizontal do documento inteiro, e o usuário perde a referência. */
+  html,body{max-width:100%;overflow-x:hidden}
+  img,video,canvas,svg{max-width:100%}
   .sidebar-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:14;animation:in .15s ease}
   .sidebar-drawer{animation:slideIn .22s ease}
   /* Form grid (2 cols → 1 col on mobile) */
@@ -193,6 +201,16 @@ export const globalCSS = `
     .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
     .table-scroll table{min-width:480px}
     .stack-mobile{flex-direction:column!important;align-items:stretch!important;gap:8px!important}
+    .rg-keep{grid-template-columns:1fr!important}
+    /* Linhas com vários controles cabem quebrando, em vez de vazar para fora
+       da tela — é o caso das barras de filtro acima das tabelas. */
+    .c4-row{flex-wrap:wrap}
+    .c4-row > *{min-width:0}
+    /* Dentro da tabela não: ali a rolagem horizontal já resolve, e quebrar
+       linha só empilharia os botões de ação e engordaria a linha. */
+    .table-scroll .c4-row{flex-wrap:nowrap}
+    /* Rótulo comprido em célula estreita: prefere quebrar a estourar. */
+    .table-scroll td{word-break:break-word}
     .wrap-mobile{flex-wrap:wrap!important}
     .modal-box{
       position:fixed!important;inset:0!important;width:100%!important;max-width:100%!important;
@@ -223,6 +241,8 @@ export const globalCSS = `
     .hide-tablet{display:none!important}
     .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
     .table-scroll table{min-width:580px}
+    .c4-row{flex-wrap:wrap}
+    .table-scroll .c4-row{flex-wrap:nowrap}
     .modal-box{width:min(520px,calc(100vw - 48px))!important;max-height:90dvh!important;overflow-y:auto!important}
     input,select,textarea{font-size:max(16px,1em)!important}
   }

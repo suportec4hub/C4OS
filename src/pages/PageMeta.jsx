@@ -507,7 +507,7 @@ export default function PageMeta({ user }) {
                 {/* Registrar venda */}
                 <div style={{background:L.white,borderRadius:10,padding:"20px 22px",border:`1px solid ${L.line}`,marginBottom:20}}>
                   <div style={{fontSize:14,fontWeight:700,color:L.t1,marginBottom:16}}>Registrar Venda Realizada</div>
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 160px 1fr",gap:12,marginBottom:12}}>
+                  <div className="rg-keep" style={{display:"grid",gridTemplateColumns:"1fr 160px 1fr",gap:12,marginBottom:12}}>
                     <div>
                       <label style={labelS}>Vendedor</label>
                       <select value={fVenda.usuario_id} onChange={e=>setFVenda(p=>({...p,usuario_id:e.target.value}))}

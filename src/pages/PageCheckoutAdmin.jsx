@@ -198,7 +198,7 @@ function TabConteudo({ config, setConfig, onSave, saving, saved }) {
           {(c.steps ?? DEFAULT_CONFIG.steps).map((s, i) => (
             <div key={i} style={{ padding: "16px 18px", border: `1px solid ${L.line}`, borderRadius: 10, background: L.surface }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: L.accent, marginBottom: 12, fontFamily: "'JetBrains Mono',monospace" }}>Passo {s.n}</div>
-              <div style={{ display: "grid", gridTemplateColumns: "80px 1fr", gap: 12, marginBottom: 12 }}>
+              <div className="rg-keep" style={{ display: "grid", gridTemplateColumns: "80px 1fr", gap: 12, marginBottom: 12 }}>
                 <Field label="Ícone" value={s.icon ?? ""} onChange={v => setStep(i, "icon", v)} />
                 <Field label="Título" value={s.title ?? ""} onChange={v => setStep(i, "title", v)} />
               </div>
@@ -215,7 +215,7 @@ function TabConteudo({ config, setConfig, onSave, saving, saved }) {
           {Object.entries(c.planos ?? DEFAULT_CONFIG.planos).map(([k, p]) => (
             <div key={k} style={{ padding: "16px 18px", border: `1px solid ${L.line}`, borderRadius: 10, background: L.surface }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: L.t4, textTransform: "uppercase", letterSpacing: "1px", marginBottom: 12, fontFamily: "'JetBrains Mono',monospace" }}>{k}</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 120px", gap: 12 }}>
+              <div className="rg-keep" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 120px", gap: 12 }}>
                 <Field label="Nome do Plano" value={p.nome ?? ""} onChange={v => setPlano(k, "nome", v)} />
                 <Field label="Usuários" value={p.usuarios ?? ""} onChange={v => setPlano(k, "usuarios", v)} />
                 <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>

@@ -44,17 +44,21 @@ export function Grid({cols,gap,mb,children,responsive}) {
   );
 }
 
-export function Row({children,gap,between,justify,mb,mt}) {
+export function Row({children,gap,between,justify,mb,mt,className}) {
   return (
-    <div style={{display:"flex",alignItems:"center",gap:gap||8,justifyContent:between?"space-between":justify||"flex-start",marginBottom:mb||0,marginTop:mt||0}}>
+    <div className={["c4-row",className].filter(Boolean).join(" ")}
+      style={{display:"flex",alignItems:"center",gap:gap||8,justifyContent:between?"space-between":justify||"flex-start",marginBottom:mb||0,marginTop:mt||0}}>
       {children}
     </div>
   );
 }
 
+// overflowX, e não overflow:hidden: o estilo inline vence a classe, então o
+// .table-scroll{overflow-x:auto} do tema nunca chegava a valer. A tabela era
+// cortada no celular, sem como rolar até as últimas colunas.
 export function DataTable({heads,children}) {
   return (
-    <div className="table-scroll" style={{background:L.white,borderRadius:12,border:`1px solid ${L.line}`,overflow:"hidden",boxShadow:"0 2px 8px rgba(0,0,0,0.05)"}}>
+    <div className="table-scroll" style={{background:L.white,borderRadius:12,border:`1px solid ${L.line}`,overflowX:"auto",WebkitOverflowScrolling:"touch",boxShadow:"0 2px 8px rgba(0,0,0,0.05)"}}>
       <table style={{width:"100%",borderCollapse:"collapse"}}>
         <thead>
           <tr style={{background:L.surface,borderBottom:`2px solid ${L.line}`}}>
@@ -149,11 +153,13 @@ export function IBtn({children,c,onClick}) {
 
 export function TabPills({tabs,active,onChange}) {
   return (
-    <div style={{display:"flex",gap:4,background:L.surface,padding:4,borderRadius:9,border:`1px solid ${L.line}`}}>
+    // maxWidth + overflowX: cinco ou oito abas não cabem num celular, e sem
+    // isso as últimas ficavam inalcançáveis fora da tela.
+    <div style={{display:"flex",gap:4,background:L.surface,padding:4,borderRadius:9,border:`1px solid ${L.line}`,maxWidth:"100%",overflowX:"auto",WebkitOverflowScrolling:"touch",scrollbarWidth:"none"}}>
       {tabs.map(t => {
         const on = active===t;
         return (
-          <button key={t} onClick={()=>onChange(t)} style={{padding:"6px 14px",borderRadius:7,fontSize:12,fontWeight:on?600:400,cursor:"pointer",fontFamily:"inherit",background:on?L.white:L.surface,color:on?L.teal:L.t3,border:"none",transition:"all .12s",boxShadow:on?"0 1px 3px rgba(0,0,0,0.07)":"none"}}>
+          <button key={t} onClick={()=>onChange(t)} style={{padding:"6px 14px",borderRadius:7,fontSize:12,fontWeight:on?600:400,cursor:"pointer",fontFamily:"inherit",background:on?L.white:L.surface,color:on?L.teal:L.t3,border:"none",transition:"all .12s",boxShadow:on?"0 1px 3px rgba(0,0,0,0.07)":"none",whiteSpace:"nowrap",flexShrink:0}}>
             {t}
           </button>
         );
