@@ -168,17 +168,6 @@ function TabConteudo({ config, setConfig, onSave, saving, saved }) {
     return { ...prev, planos };
   });
 
-  const Field = ({ label, value, onChange, multiline = false, mono = false }) => (
-    <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <span style={{ fontSize: 12, fontWeight: 600, color: L.t3 }}>{label}</span>
-      {multiline
-        ? <textarea value={value} onChange={e => onChange(e.target.value)} rows={3}
-            style={{ border: `1px solid ${L.line}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, color: L.t1, background: L.surface, fontFamily: mono ? "'JetBrains Mono',monospace" : "inherit", outline: "none", resize: "vertical", lineHeight: 1.6 }} />
-        : <input value={value} onChange={e => onChange(e.target.value)}
-            style={{ border: `1px solid ${L.line}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, color: L.t1, background: L.surface, fontFamily: mono ? "'JetBrains Mono',monospace" : "inherit", outline: "none" }} />
-      }
-    </label>
-  );
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
@@ -257,6 +246,22 @@ function TabConteudo({ config, setConfig, onSave, saving, saved }) {
 }
 
 /* ─── Página principal ──────────────────────────────────────────── */
+// Fora do componente de propósito: declarado dentro, era recriado a cada
+// tecla e remontava o input, que perdia o foco a cada caractere.
+function Field({ label, value, onChange, multiline = false, mono = false }) {
+  return (
+    <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <span style={{ fontSize: 12, fontWeight: 600, color: L.t3 }}>{label}</span>
+      {multiline
+        ? <textarea value={value} onChange={e => onChange(e.target.value)} rows={3}
+            style={{ border: `1px solid ${L.line}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, color: L.t1, background: L.surface, fontFamily: mono ? "'JetBrains Mono',monospace" : "inherit", outline: "none", resize: "vertical", lineHeight: 1.6 }} />
+        : <input value={value} onChange={e => onChange(e.target.value)}
+            style={{ border: `1px solid ${L.line}`, borderRadius: 8, padding: "8px 10px", fontSize: 13, color: L.t1, background: L.surface, fontFamily: mono ? "'JetBrains Mono',monospace" : "inherit", outline: "none" }} />
+      }
+    </label>
+  );
+}
+
 export default function PageCheckoutAdmin({ user }) {
   const [tab,     setTab]     = useState("links");
   const [config,  setConfig]  = useState(null);

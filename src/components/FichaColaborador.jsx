@@ -211,17 +211,21 @@ export default function FichaColaborador({ user, colaborador, onClose, onSalvou 
 
 /* ─────────────────────────── Dados cadastrais ─────────────────────────── */
 
+// G e Titulo ficam no escopo do módulo de propósito. Definidos dentro do
+// componente, cada tecla digitada criava um tipo novo de componente: o React
+// desmontava e remontava a árvore, e o input perdia o foco a cada caractere.
+const G = ({ children, cols = 3 }) => (
+  <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols},1fr)`, gap: "0 14px" }}>{children}</div>
+);
+
+const Titulo = ({ children }) => (
+  <div style={{ fontSize: 10, letterSpacing: "1.2px", textTransform: "uppercase",
+    color: L.t4, fontWeight: 600, margin: "14px 0 8px" }}>{children}</div>
+);
+
 function AbaDados({ ficha, D, erro, onSalvar }) {
   const [salvando, setSalvando] = useState(false);
   const salvar = async () => { setSalvando(true); await onSalvar(); setSalvando(false); };
-
-  const G = ({ children, cols = 3 }) => (
-    <div style={{ display: "grid", gridTemplateColumns: `repeat(${cols},1fr)`, gap: "0 14px" }}>{children}</div>
-  );
-  const Titulo = ({ children }) => (
-    <div style={{ fontSize: 10, letterSpacing: "1.2px", textTransform: "uppercase",
-      color: L.t4, fontWeight: 600, margin: "14px 0 8px" }}>{children}</div>
-  );
 
   return (
     <>
@@ -785,47 +789,7 @@ function AbaChecklist({ itens, empresaId, uid, recarregar }) {
 
   const porFluxo = (f) => itens.filter((i) => i.fluxo === f);
 
-  const Bloco = ({ fluxo, titulo }) => {
-    const lista = porFluxo(fluxo);
-    const feitos = lista.filter((i) => i.concluido).length;
-    if (lista.length === 0) {
-      return (
-        <div style={{ padding: 14, border: `1px dashed ${L.line}`, borderRadius: 10, marginBottom: 12 }}>
-          <Row between>
-            <span style={{ fontSize: 12, color: L.t3 }}>{titulo} — nenhum checklist iniciado</span>
-            <PBtn onClick={() => criarFluxo(fluxo)}>{criando ? "..." : "Iniciar"}</PBtn>
-          </Row>
-        </div>
-      );
-    }
-    return (
-      <div style={{ marginBottom: 16 }}>
-        <Row between mb={8}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: L.t1 }}>
-            {titulo} — {feitos}/{lista.length}
-          </span>
-          <IBtn c={L.red} onClick={() => excluirFluxo(fluxo)}>⊗</IBtn>
-        </Row>
-        <div style={{ height: 4, background: L.surface, borderRadius: 4, marginBottom: 10 }}>
-          <div style={{ height: "100%", width: `${(feitos / lista.length) * 100}%`,
-            background: feitos === lista.length ? L.green : L.teal, borderRadius: 4 }} />
-        </div>
-        {lista.map((it) => (
-          <div key={it.id} onClick={() => alternar(it)}
-            style={{ display: "flex", alignItems: "center", gap: 9, padding: "7px 4px", cursor: "pointer" }}>
-            <div style={{ width: 16, height: 16, borderRadius: 5, flexShrink: 0,
-              border: `1px solid ${it.concluido ? L.green : L.line}`,
-              background: it.concluido ? L.green : "transparent",
-              color: "#fff", fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              {it.concluido ? "✓" : ""}
-            </div>
-            <span style={{ fontSize: 12.5, color: it.concluido ? L.t4 : L.t1,
-              textDecoration: it.concluido ? "line-through" : "none" }}>{it.item}</span>
-          </div>
-        ))}
-      </div>
-    );
-  };
+  const comuns = { criando, criarFluxo, alternar, excluirFluxo };
 
   return (
     <>
@@ -833,8 +797,53 @@ function AbaChecklist({ itens, empresaId, uid, recarregar }) {
         Roteiro do que precisa ser feito na entrada e na saída. O exame demissional costuma ser
         o item esquecido, e é o que gera passivo.
       </div>
-      <Bloco fluxo="admissao" titulo="Admissão" />
-      <Bloco fluxo="desligamento" titulo="Desligamento" />
+      <BlocoChecklist fluxo="admissao" titulo="Admissão" lista={porFluxo("admissao")} {...comuns} />
+      <BlocoChecklist fluxo="desligamento" titulo="Desligamento" lista={porFluxo("desligamento")} {...comuns} />
     </>
+  );
+}
+
+// Fora do componente pai pelo mesmo motivo de G e Titulo: componente declarado
+// dentro do render é recriado a cada estado e remonta a árvore inteira.
+function BlocoChecklist({ fluxo, titulo, lista, criando, criarFluxo, alternar, excluirFluxo }) {
+  const feitos = lista.filter((i) => i.concluido).length;
+
+  if (lista.length === 0) {
+    return (
+      <div style={{ padding: 14, border: `1px dashed ${L.line}`, borderRadius: 10, marginBottom: 12 }}>
+        <Row between>
+          <span style={{ fontSize: 12, color: L.t3 }}>{titulo} — nenhum checklist iniciado</span>
+          <PBtn onClick={() => criarFluxo(fluxo)}>{criando ? "..." : "Iniciar"}</PBtn>
+        </Row>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <Row between mb={8}>
+        <span style={{ fontSize: 12, fontWeight: 600, color: L.t1 }}>
+          {titulo} — {feitos}/{lista.length}
+        </span>
+        <IBtn c={L.red} onClick={() => excluirFluxo(fluxo)}>⊗</IBtn>
+      </Row>
+      <div style={{ height: 4, background: L.surface, borderRadius: 4, marginBottom: 10 }}>
+        <div style={{ height: "100%", width: `${(feitos / lista.length) * 100}%`,
+          background: feitos === lista.length ? L.green : L.teal, borderRadius: 4 }} />
+      </div>
+      {lista.map((it) => (
+        <div key={it.id} onClick={() => alternar(it)}
+          style={{ display: "flex", alignItems: "center", gap: 9, padding: "7px 4px", cursor: "pointer" }}>
+          <div style={{ width: 16, height: 16, borderRadius: 5, flexShrink: 0,
+            border: `1px solid ${it.concluido ? L.green : L.line}`,
+            background: it.concluido ? L.green : "transparent",
+            color: "#fff", fontSize: 11, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            {it.concluido ? "✓" : ""}
+          </div>
+          <span style={{ fontSize: 12.5, color: it.concluido ? L.t4 : L.t1,
+            textDecoration: it.concluido ? "line-through" : "none" }}>{it.item}</span>
+        </div>
+      ))}
+    </div>
   );
 }

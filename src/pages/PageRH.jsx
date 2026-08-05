@@ -170,16 +170,6 @@ export default function PageRH({ user }) {
   const aprovar  = async (f) => { await updFerias(f.id, { status: "aprovado" }); };
   const rejeitar = async (f) => { await updFerias(f.id, { status: "rejeitado" }); };
 
-  const KPI = ({ l, v, c, sub }) => (
-    <div style={{ background: L.white, borderRadius: 12, border: `1px solid ${L.line}`,
-      padding: "15px 18px", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
-      <div style={{ fontSize: 9.5, color: L.t4, textTransform: "uppercase", letterSpacing: "1.5px",
-        marginBottom: 5, fontFamily: "'JetBrains Mono',monospace", fontWeight: 600 }}>{l}</div>
-      <div style={{ fontSize: 28, fontWeight: 700, color: c, fontFamily: "'Outfit',sans-serif" }}>{v}</div>
-      {sub && <div style={{ fontSize: 10, color: L.t4, marginTop: 2 }}>{sub}</div>}
-    </div>
-  );
-
   return (
     <Fade>
       <Grid cols={4} gap={12} mb={16} responsive>
@@ -325,6 +315,20 @@ export default function PageRH({ user }) {
           onSalvou={() => { carregarRH(); refCo(); }} />
       )}
     </Fade>
+  );
+}
+
+// Fora do componente: declarado dentro, seria recriado a cada render e
+// remontaria a árvore — o mesmo defeito que fazia o input perder o foco.
+function KPI({ l, v, c, sub }) {
+  return (
+    <div style={{ background: L.white, borderRadius: 12, border: `1px solid ${L.line}`,
+      padding: "15px 18px", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+      <div style={{ fontSize: 9.5, color: L.t4, textTransform: "uppercase", letterSpacing: "1.5px",
+        marginBottom: 5, fontFamily: "'JetBrains Mono',monospace", fontWeight: 600 }}>{l}</div>
+      <div style={{ fontSize: 28, fontWeight: 700, color: c, fontFamily: "'Outfit',sans-serif" }}>{v}</div>
+      {sub && <div style={{ fontSize: 10, color: L.t4, marginTop: 2 }}>{sub}</div>}
+    </div>
   );
 }
 
