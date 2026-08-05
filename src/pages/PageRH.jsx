@@ -13,6 +13,7 @@ import { supabase } from "../lib/supabase";
 import { Fade, Row, Grid, TabPills, PBtn, DataTable, Tag, Av, IBtn, TD, Card } from "../components/ui";
 import Modal, { Field, Input, Select, ModalFooter } from "../components/Modal";
 import FichaColaborador, { fmtData, hojeISO, diasAte, fmtMoeda } from "../components/FichaColaborador";
+import PontoEletronico, { ConfigPonto } from "../components/PontoEletronico";
 
 const TIPO_LABEL = { ferias:"Férias", afastamento:"Afastamento", licenca:"Licença",
   folga:"Day Off", homeoffice:"Home Office", atestado:"Atestado médico" };
@@ -252,7 +253,7 @@ export default function PageRH({ user }) {
 
       {aba === "Aniversários" && <AbaAniversarios colaboradores={ativos} fichas={fichas} />}
 
-      {aba === "Ponto" && <AbaPonto user={user} colaboradores={ativos} />}
+      {aba === "Ponto" && <AbaPonto user={user} colaboradores={ativos} fichas={fichas} />}
 
       {aba === "Férias & Afastamentos" && (
         loadFer ? <Carregando /> : (
@@ -857,8 +858,25 @@ function ModalMarcacoes({ registro, nome, onClose }) {
   );
 }
 
-function AbaPonto({ user, colaboradores }) {
+function AbaPonto({ user, colaboradores, fichas = [] }) {
   const empresaId = user?.empresa_id;
+  // O modo vale por empresa: uma pode usar o registro eletrônico e outra o
+  // lançamento de gestão, sem que uma escolha atropele a outra.
+  const [config, setConfig] = useState(null);
+  const [configAberta, setConfigAberta] = useState(false);
+
+  const fichaDe = (uid) => fichas.find((f) => f.usuario_id === uid);
+  const registraPonto = (uid) => fichaDe(uid)?.registra_ponto !== false;
+  // Só quem bate ponto entra nas listas: sócio e diretoria isentos não devem
+  // aparecer como quem esqueceu de marcar.
+  const batemPonto = colaboradores.filter((c) => registraPonto(c.id));
+
+  const carregarConfig = async () => {
+    if (!empresaId) return;
+    const { data } = await supabase.from("rh_config").select("*").eq("empresa_id", empresaId).maybeSingle();
+    setConfig(data || { empresa_id: empresaId, modo_ponto: "gestao" });
+  };
+  useEffect(() => { carregarConfig(); /* eslint-disable-next-line */ }, [empresaId]);
   // hojeISO() em vez de toISOString(): à noite, no fuso do Brasil, o mês
   // padrão podia pular para o seguinte no último dia do mês.
   const [mes, setMes]   = useState(hojeISO().slice(0, 7));
@@ -930,9 +948,56 @@ function AbaPonto({ user, colaboradores }) {
 
   const P = (k) => (v) => setForm((p) => ({ ...p, [k]: v }));
 
+  const eletronico = config?.modo_ponto === "eletronico";
+
+  const barraModo = (
+    <Row between mb={12}>
+      <Row gap={8}>
+        <Tag color={eletronico ? L.teal : L.t3} bg={eletronico ? L.tealBg : L.surface}>
+          {eletronico ? "modo eletrônico — registro imutável" : "modo gestão — lançamento editável"}
+        </Tag>
+      </Row>
+      <button onClick={() => setConfigAberta(true)} style={{ padding: "6px 12px", borderRadius: 8,
+        cursor: "pointer", fontSize: 11.5, border: `1px solid ${L.line}`,
+        background: "transparent", color: L.t2 }}>
+        Configurar modo
+      </button>
+    </Row>
+  );
+
+  if (config === null) return <Carregando />;
+
+  if (eletronico) {
+    return (
+      <>
+        {barraModo}
+        <PontoEletronico user={user} empresaId={empresaId} config={config}
+          colaboradores={colaboradores} fichas={fichas} />
+        {configAberta && (
+          <ConfigPonto empresaId={empresaId} config={config}
+            onSalvou={carregarConfig} onClose={() => setConfigAberta(false)} />
+        )}
+      </>
+    );
+  }
+
   return (
     <>
-      <BaterPonto user={user} empresaId={empresaId} onRegistrou={carregar} />
+      {barraModo}
+      {configAberta && (
+        <ConfigPonto empresaId={empresaId} config={config}
+          onSalvou={carregarConfig} onClose={() => setConfigAberta(false)} />
+      )}
+      {registraPonto(user?.id)
+        ? <BaterPonto user={user} empresaId={empresaId} onRegistrou={carregar} />
+        : (
+          <div style={{ background: L.surface, border: `1px solid ${L.line}`, borderRadius: 12,
+            padding: "12px 16px", marginBottom: 14, fontSize: 11.5, color: L.t3 }}>
+            Você está isento de marcação de ponto
+            {fichaDe(user?.id)?.motivo_isencao ? ` — ${fichaDe(user.id).motivo_isencao}` : ""}.
+            Continua podendo lançar e conferir o ponto da equipe.
+          </div>
+        )}
 
       <Row between mb={12}>
         <Row gap={8}>
@@ -943,7 +1008,7 @@ function AbaPonto({ user, colaboradores }) {
             style={{ padding: "7px 10px", borderRadius: 8, border: `1px solid ${L.line}`,
               background: L.white, color: L.t1, fontSize: 12 }}>
             <option value="">Todos os colaboradores</option>
-            {colaboradores.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+            {batemPonto.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
           </select>
           <Tag color={saldo >= 0 ? L.green : L.red} bg={saldo >= 0 ? L.greenBg : L.redBg}>
             banco de horas {saldo >= 0 ? "+" : ""}{hhmm(saldo)}
@@ -999,7 +1064,7 @@ function AbaPonto({ user, colaboradores }) {
             <div style={{ gridColumn: "1/-1" }}><Field label="Colaborador *">
               <Select value={form.usuario_id || ""} onChange={P("usuario_id")}>
                 <option value="">Selecionar...</option>
-                {colaboradores.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
+                {batemPonto.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
               </Select>
             </Field></div>
             <Field label="Data *"><Input type="date" value={form.data || ""} onChange={P("data")} /></Field>

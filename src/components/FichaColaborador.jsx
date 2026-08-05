@@ -332,6 +332,25 @@ function AbaDados({ ficha, D, preencher, erro, onSalvar }) {
         <Field label="Conta"><Input value={ficha.conta} onChange={D("conta")} /></Field>
       </G>
 
+      <Titulo>Marcação de ponto</Titulo>
+      <G cols={2}>
+        <Field label="Registra ponto?">
+          <Select value={ficha.registra_ponto === false ? "false" : "true"}
+            onChange={(v) => D("registra_ponto")(v === "true")}>
+            <option value="true">Sim — bate ponto</option>
+            <option value="false">Não — isento</option>
+          </Select>
+        </Field>
+        <Field label="Motivo da isenção">
+          <Input value={ficha.motivo_isencao} onChange={D("motivo_isencao")}
+            placeholder="Cargo de gestão, sócio, diretoria..." />
+        </Field>
+      </G>
+      <div style={{ fontSize: 10.5, color: L.t4, marginBottom: 12 }}>
+        Quem é isento não aparece nas listas de ponto nem conta como faltante — é o caso
+        de sócios, diretoria e cargos de gestão.
+      </div>
+
       <Titulo>Desligamento</Titulo>
       <G cols={2}>
         <Field label="Data de desligamento"><Input type="date" value={ficha.data_desligamento || ""} onChange={D("data_desligamento")} /></Field>
