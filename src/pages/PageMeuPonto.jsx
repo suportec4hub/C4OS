@@ -19,6 +19,12 @@ const SEQUENCIA = [
   { campo: "saida",        rotulo: "Saída" },
 ];
 
+// Depois das quatro batidas o dia continua: sai para o banco, volta, faz hora
+// extra. Travar em quatro deixava o colaborador sem botão — foi o que
+// aconteceu no primeiro uso, com um dia já preenchido pelo RH.
+const proximaBatida = (feitas) =>
+  SEQUENCIA[feitas] || { campo: "saida", rotulo: `Marcação extra ${feitas - 3}`, extra: true };
+
 const horaAgora = () => {
   const d = new Date();
   const p = (n) => String(n).padStart(2, "0");
@@ -116,12 +122,12 @@ export default function PageMeuPonto({ user }) {
     [registros],
   );
 
-  const proxima = eletronico
-    ? SEQUENCIA[registrosHoje.length] || null
-    : SEQUENCIA.find((s) => !regHoje?.[s.campo]) || null;
+  const feitasHoje = eletronico
+    ? registrosHoje.length
+    : SEQUENCIA.filter((s) => regHoje?.[s.campo]).length;
+  const proxima = proximaBatida(feitasHoje);
 
   const bater = async () => {
-    if (!proxima) return;
     setOcupado(true); setMsg(null);
     const loc = await pegarLocalizacao();
 
@@ -146,7 +152,7 @@ export default function PageMeuPonto({ user }) {
     if (!error) {
       await supabase.from("rh_ponto_marcacoes").insert({
         empresa_id: empresaId, usuario_id: user.id, data: hoje,
-        tipo: proxima.campo, hora, ...(loc || {}),
+        tipo: proxima.extra ? "extra" : proxima.campo, hora, ...(loc || {}),
       });
     }
     setOcupado(false);
@@ -194,7 +200,7 @@ export default function PageMeuPonto({ user }) {
               {new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" })}
             </div>
             <div style={{ fontSize: 30, fontWeight: 700, color: L.t1, fontFamily: "'Outfit',sans-serif" }}>
-              {proxima ? proxima.rotulo : "Jornada completa"}
+              {proxima.extra ? "Jornada completa" : proxima.rotulo}
             </div>
             <div style={{ fontSize: 11.5, color: L.t4, marginTop: 2 }}>
               {eletronico
@@ -202,15 +208,19 @@ export default function PageMeuPonto({ user }) {
                 : "O RH pode ajustar este registro depois"}
             </div>
           </div>
-          {proxima ? (
+          <div style={{ textAlign: "right" }}>
             <button onClick={ocupado ? undefined : bater} disabled={ocupado} style={{
               padding: "16px 30px", borderRadius: 12, border: "none", cursor: ocupado ? "default" : "pointer",
               background: ocupado ? L.surface : L.accent, color: ocupado ? L.t4 : "#fff",
               fontSize: 15, fontWeight: 700, fontFamily: "'Outfit',sans-serif",
-            }}>{ocupado ? "Registrando..." : "Bater ponto"}</button>
-          ) : (
-            <Tag color={L.green} bg={L.greenBg}>tudo registrado hoje</Tag>
-          )}
+            }}>{ocupado ? "Registrando..." : proxima.extra ? "Registrar marcação extra" : "Bater ponto"}</button>
+            {proxima.extra && (
+              <div style={{ fontSize: 10.5, color: L.t4, marginTop: 6, maxWidth: 200 }}>
+                As quatro batidas do dia já estão registradas. Use se precisar marcar
+                uma saída ou retorno a mais.
+              </div>
+            )}
+          </div>
         </Row>
 
         <Row gap={10} mt={18}>
@@ -241,6 +251,21 @@ export default function PageMeuPonto({ user }) {
             );
           })}
         </Row>
+
+        {(() => {
+          const extras = eletronico ? registrosHoje.slice(4) : marcs.filter((m) => m.tipo === "extra");
+          if (extras.length === 0) return null;
+          return (
+            <Row gap={8} mt={12}>
+              <span style={{ fontSize: 10.5, color: L.t4 }}>Marcações extras:</span>
+              {extras.map((e, i) => (
+                <Tag key={i} color={L.copper} bg={L.copperBg}>
+                  {eletronico ? soHora(e.data_hora_marcacao) : String(e.hora).slice(0, 5)}
+                </Tag>
+              ))}
+            </Row>
+          );
+        })()}
 
         {msg && (
           <div style={{ marginTop: 14, padding: "9px 12px", borderRadius: 8, fontSize: 12,

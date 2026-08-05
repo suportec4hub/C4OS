@@ -688,7 +688,10 @@ const SEQUENCIA = [
   { campo: "saida",        rotulo: "Saída" },
 ];
 
-const proximaBatida = (reg) => SEQUENCIA.find((s) => !reg?.[s.campo]) || null;
+// Sem trava em quatro: depois delas o dia continua, e o botao precisa
+// continuar existindo — travar deixava o colaborador sem como registrar.
+const proximaBatida = (reg) => SEQUENCIA.find((s) => !reg?.[s.campo])
+  || { campo: "saida", rotulo: "marcação extra", extra: true };
 
 const horaAgora = () => {
   const d = new Date();
@@ -736,7 +739,6 @@ function BaterPonto({ user, empresaId, onRegistrou }) {
   const proxima = proximaBatida(regHoje);
 
   const bater = async () => {
-    if (!proxima) return;
     setOcupado(true); setMsg("");
     const hora = horaAgora();
     const loc = await pegarLocalizacao();
@@ -750,7 +752,7 @@ function BaterPonto({ user, empresaId, onRegistrou }) {
 
     const { error: e2 } = await supabase.from("rh_ponto_marcacoes").insert({
       empresa_id: empresaId, usuario_id: user.id, data: hoje,
-      tipo: proxima.campo, hora, ...(loc || {}),
+      tipo: proxima.extra ? "extra" : proxima.campo, hora, ...(loc || {}),
     });
     if (e2) setMsg(e2.message);
     else setMsg(loc
@@ -796,13 +798,9 @@ function BaterPonto({ user, empresaId, onRegistrou }) {
           </Row>
         </div>
         <div style={{ textAlign: "right" }}>
-          {proxima ? (
-            <PBtn onClick={ocupado ? undefined : bater}>
-              {ocupado ? "Registrando..." : `Bater ${proxima.rotulo.toLowerCase()}`}
-            </PBtn>
-          ) : (
-            <Tag color={L.green} bg={L.greenBg}>jornada completa</Tag>
-          )}
+          <PBtn onClick={ocupado ? undefined : bater}>
+            {ocupado ? "Registrando..." : `Bater ${proxima.rotulo.toLowerCase()}`}
+          </PBtn>
         </div>
       </Row>
       {msg && (

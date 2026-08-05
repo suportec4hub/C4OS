@@ -234,7 +234,9 @@ export default function PontoEletronico({ user, empresaId, config, empresa, cola
 
   const meusHoje = registros.filter((r) => r.usuario_id === user?.id &&
     new Date(r.data_hora_marcacao).toDateString() === new Date().toDateString());
-  const proximo = TIPOS[meusHoje.length] || null;
+  // Sem trava em quatro: o dia pode ter saida e retorno a mais.
+  const proximo = TIPOS[meusHoje.length]
+    || { campo: 'extra', rotulo: `Marcacao extra ${meusHoje.length - 3}`, extra: true };
 
   const bater = async () => {
     setOcupado(true); setMsg("");
@@ -328,11 +330,9 @@ export default function PontoEletronico({ user, empresaId, config, empresa, cola
             </Row>
           </div>
           <div>
-            {proximo
-              ? <PBtn onClick={ocupado ? undefined : bater}>
-                  {ocupado ? "Registrando..." : `Registrar ${proximo.rotulo.toLowerCase()}`}
-                </PBtn>
-              : <Tag color={L.green} bg={L.greenBg}>jornada completa</Tag>}
+            <PBtn onClick={ocupado ? undefined : bater}>
+              {ocupado ? "Registrando..." : `Registrar ${proximo.rotulo.toLowerCase()}`}
+            </PBtn>
           </div>
         </Row>
         {msg && <div style={{ marginTop: 10, padding: "7px 11px", borderRadius: 8,
