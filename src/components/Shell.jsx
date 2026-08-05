@@ -95,7 +95,7 @@ const ADMIN_ITEMS = [
   {id:"notificacoes",  label:"Notificações",   ico:"🔔", g:"c4hub"},
 ];
 
-import { hasFullAccess, hasPageAccess } from "../lib/auth";
+import { hasFullAccess, hasPageAccess, podeGerirRH } from "../lib/auth";
 
 // Visível somente para c4hub_admin
 const STRICT_ADMIN_ONLY = new Set(["logs","users","planos","checkout","notificacoes"]);
@@ -157,6 +157,10 @@ export default function Shell({user,onLogout,onProfileUpdate,theme,toggleTheme})
     if (STRICT_ADMIN_ONLY.has(item.id)) return isC4HubAdmin;
     if (C4HUB_TEAM_ONLY.has(item.id))  return isC4HubTeam;
     if (item.c4hubOnly && !isAdmin) return false;
+    // O RH exibe salário, CPF e atestado da equipe: quem não administra RH não
+    // veria dado nenhum ali, então o menu também não aparece. A regra que vale
+    // é a do banco; esta só evita mostrar uma tela vazia.
+    if (item.id === "rh") return podeGerirRH(user);
     return hasPageAccess(user, item.id);
   });
   const groups   = [...new Set(navItems.map(n => n.g))];

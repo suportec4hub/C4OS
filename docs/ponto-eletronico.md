@@ -114,7 +114,7 @@ Com o Meu Ponto aberto a todos, a política antiga ("toda a empresa lê tudo")
 deixaria qualquer vendedor consultar salário, CPF e atestado dos colegas pela
 API — mesmo sem tela para isso. As regras passaram a ser por papel:
 
-| | Gestão de RH (`client_admin`, `c4hub_admin`, perfil `full` ou `rh`) | Colaborador |
+| | Gestão de RH (ver abaixo) | Colaborador |
 |---|---|---|
 | Ficha, documentos, saúde, benefícios, avaliações, ocorrências, férias | lê e escreve de toda a empresa | lê apenas as próprias |
 | Ponto e marcações | lê, lança, ajusta e apaga de toda a empresa | lê as próprias e registra a própria batida |
@@ -122,3 +122,21 @@ API — mesmo sem tela para isso. As regras passaram a ser por papel:
 | Modo do ponto | altera | apenas lê (a tela precisa saber como se comportar) |
 
 Tudo isso vale no banco, via RLS — não é só a tela que esconde.
+
+## Quem administra o RH
+
+Definido pela função `rh_pode_gerir()`, a partir do cadastro da equipe:
+
+- **Admin C4HUB** (`role = 'c4hub_admin'`)
+- **Perfil de acesso "RH / Pessoas"** (`perfil_acesso = 'rh'`)
+- **Cargos de RH**: Gerente de RH, Analista de RH, Recrutamento, DP
+- **C-Level e diretoria**: CEO, COO, CFO, CTO, CMO, Diretor, Co-Founder, Sócio,
+  Presidente, VP
+
+Não basta ter acesso total ao CRM: "Admin Empresa" e "T.I (Acesso Total)" **não**
+enxergam dados de RH quando o cargo não é C-Level. É proposital — acesso amplo ao
+sistema não deveria implicar acesso a salário e atestado dos colegas. Quem
+precisar recebe o perfil "RH / Pessoas" ou um cargo da lista.
+
+O menu RH / Pessoas segue a mesma regra e some para quem não administra, para não
+abrir uma tela que viria vazia. A regra que de fato protege o dado é a do banco.

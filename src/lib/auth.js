@@ -66,3 +66,24 @@ const GROUP_LABELS = {
 export function getAccessLabel(user) {
   return GROUP_LABELS[getCargoGroup(user)] || "Vendas";
 }
+
+// Quem administra o RH. Espelha a função rh_pode_gerir() do banco — é lá que a
+// regra vale de verdade; aqui serve só para o menu não mostrar uma tela que
+// viria vazia.
+const CARGOS_RH = ["gerente de rh","analista de rh","recrutamento","departamento pessoal","recursos humanos"];
+const CARGOS_CLEVEL = ["ceo","coo","cfo","cto","cmo","cso","cpo","vp","presidente",
+  "diretor","diretora","co-founder","cofounder","founder","socio","socia"];
+
+const semAcento = (t) => (t || "").toLowerCase()
+  .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+export function podeGerirRH(user) {
+  if (!user) return false;
+  if (user.role === "c4hub_admin") return true;
+  if (user.perfil_acesso === "rh") return true;
+  const cargo = semAcento(user.cargo);
+  if (!cargo) return false;
+  if (cargo === "dp") return true;
+  if (CARGOS_RH.some((c) => cargo.includes(c))) return true;
+  return CARGOS_CLEVEL.some((c) => cargo === c || cargo.startsWith(c + " ") || cargo.includes(c));
+}
