@@ -26,7 +26,18 @@ const diasEntre = (ini, fim) => {
   return Math.round((new Date(fim) - new Date(ini)) / 86400000) + 1;
 };
 
-const ABAS = ["Visão geral", "Colaboradores", "Ponto", "Férias & Afastamentos"];
+const ABAS = ["Visão geral", "Colaboradores", "Aniversários", "Ponto", "Férias & Afastamentos"];
+
+const MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+  "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+
+// Idade (ou tempo de casa) que a pessoa completa na data deste ano — não a
+// idade atual. É o número que se diz no parabéns.
+const completaAnos = (dataISO, ano = new Date().getFullYear()) =>
+  dataISO ? ano - Number(dataISO.slice(0, 4)) : null;
+
+const diaDe = (dataISO) => Number(dataISO.slice(8, 10));
+const mesDe = (dataISO) => Number(dataISO.slice(5, 7));
 
 export default function PageRH({ user }) {
   const empresaId = user?.empresa_id;
@@ -239,6 +250,8 @@ export default function PageRH({ user }) {
         )
       )}
 
+      {aba === "Aniversários" && <AbaAniversarios colaboradores={ativos} fichas={fichas} />}
+
       {aba === "Ponto" && <AbaPonto user={user} colaboradores={ativos} />}
 
       {aba === "Férias & Afastamentos" && (
@@ -332,6 +345,153 @@ function KPI({ l, v, c, sub }) {
         marginBottom: 5, fontFamily: "'JetBrains Mono',monospace", fontWeight: 600 }}>{l}</div>
       <div style={{ fontSize: 28, fontWeight: 700, color: c, fontFamily: "'Outfit',sans-serif" }}>{v}</div>
       {sub && <div style={{ fontSize: 10, color: L.t4, marginTop: 2 }}>{sub}</div>}
+    </div>
+  );
+}
+
+/* ───────────────────────────── Aniversários ─────────────────────────────
+   Alimentado pela data de nascimento e pela data de admissão da ficha. Quem
+   não tiver a data preenchida simplesmente não aparece — e a Visão geral já
+   avisa que a ficha está incompleta, então a ausência não fica invisível. */
+
+function AbaAniversarios({ colaboradores, fichas }) {
+  const agora = new Date();
+  const [mes, setMes] = useState(agora.getMonth() + 1);
+  const hojeDia = agora.getDate();
+  const hojeMes = agora.getMonth() + 1;
+
+  const fichaDe = (uid) => fichas.find((f) => f.usuario_id === uid);
+
+  // Uma lista só para os dois tipos: o cartão é o mesmo, muda a origem da
+  // data e o texto. Assim "do dia" e "do mês" saem do mesmo lugar.
+  const eventos = useMemo(() => {
+    const out = [];
+    colaboradores.forEach((c) => {
+      const f = fichaDe(c.id);
+      if (f?.data_nascimento && mesDe(f.data_nascimento) === mes) {
+        out.push({ tipo: "nascimento", c, data: f.data_nascimento,
+          dia: diaDe(f.data_nascimento), anos: completaAnos(f.data_nascimento) });
+      }
+      // Tempo de casa só conta a partir do primeiro ano completo: quem foi
+      // admitido neste ano ainda não tem aniversário de empresa.
+      if (f?.data_admissao && mesDe(f.data_admissao) === mes) {
+        const anos = completaAnos(f.data_admissao);
+        if (anos >= 1) {
+          out.push({ tipo: "empresa", c, data: f.data_admissao,
+            dia: diaDe(f.data_admissao), anos });
+        }
+      }
+    });
+    return out.sort((a, b) => a.dia - b.dia);
+  }, [colaboradores, fichas, mes]);
+
+  const doDia = eventos.filter((e) => e.dia === hojeDia && mes === hojeMes);
+  const semData = colaboradores.filter((c) => !fichaDe(c.id)?.data_nascimento).length;
+
+  return (
+    <>
+      <Row between mb={12}>
+        <Row gap={8}>
+          <select value={mes} onChange={(e) => setMes(Number(e.target.value))}
+            style={{ padding: "7px 10px", borderRadius: 8, border: `1px solid ${L.line}`,
+              background: L.white, color: L.t1, fontSize: 12 }}>
+            {MESES.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+          </select>
+          <Tag color={L.copper} bg={L.copperBg}>
+            {eventos.filter((e) => e.tipo === "nascimento").length} aniversário(s)
+          </Tag>
+          <Tag color={L.teal} bg={L.tealBg}>
+            {eventos.filter((e) => e.tipo === "empresa").length} de casa
+          </Tag>
+        </Row>
+        {mes !== hojeMes && (
+          <button onClick={() => setMes(hojeMes)} style={{
+            padding: "5px 12px", borderRadius: 20, cursor: "pointer", fontSize: 11,
+            border: `1px solid ${L.line}`, background: "transparent", color: L.t3 }}>
+            Voltar para {MESES[hojeMes - 1]}
+          </button>
+        )}
+      </Row>
+
+      {/* Hoje em destaque: é a informação com prazo de validade de um dia. */}
+      <div style={{ background: doDia.length ? L.copperBg : L.surface, borderRadius: 12,
+        border: `1px solid ${doDia.length ? L.copper : L.line}`, padding: "14px 16px", marginBottom: 16 }}>
+        <div style={{ fontSize: 10, letterSpacing: "1.4px", textTransform: "uppercase",
+          color: doDia.length ? L.copper : L.t4, fontWeight: 700, marginBottom: doDia.length ? 10 : 0,
+          fontFamily: "'JetBrains Mono',monospace" }}>
+          Hoje — {hojeDia} de {MESES[hojeMes - 1]}
+        </div>
+        {doDia.length === 0 ? (
+          <div style={{ fontSize: 12, color: L.t4 }}>Ninguém faz aniversário hoje.</div>
+        ) : (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+            {doDia.map((e, i) => <CartaoAniversario key={i} ev={e} destaque />)}
+          </div>
+        )}
+      </div>
+
+      <div style={{ fontSize: 10, letterSpacing: "1.4px", textTransform: "uppercase",
+        color: L.t4, fontWeight: 600, marginBottom: 10, fontFamily: "'JetBrains Mono',monospace" }}>
+        {MESES[mes - 1]} — mês inteiro
+      </div>
+
+      {eventos.length === 0 ? (
+        <div style={{ textAlign: "center", padding: 40, color: L.t4, fontSize: 12 }}>
+          Nenhum aniversário em {MESES[mes - 1]}.
+          {semData > 0 && ` ${semData} colaborador(es) sem data de nascimento na ficha.`}
+        </div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 10 }}>
+          {eventos.map((e, i) => (
+            <CartaoAniversario key={i} ev={e} passou={mes === hojeMes && e.dia < hojeDia}
+              hoje={mes === hojeMes && e.dia === hojeDia} />
+          ))}
+        </div>
+      )}
+
+      {semData > 0 && eventos.length > 0 && (
+        <div style={{ marginTop: 14, fontSize: 11, color: L.t4 }}>
+          {semData} colaborador(es) sem data de nascimento na ficha — não aparecem aqui.
+        </div>
+      )}
+    </>
+  );
+}
+
+function CartaoAniversario({ ev, destaque, passou, hoje }) {
+  const { c, tipo, dia, anos } = ev;
+  const cor = tipo === "nascimento" ? L.copper : L.teal;
+
+  // Mensagem pronta abre o WhatsApp com o texto já escrito: o parabéns é a
+  // ação que segue o aviso, e o número já está no cadastro.
+  const numero = String(c.whatsapp || "").replace(/\D/g, "");
+  const texto = tipo === "nascimento"
+    ? `Parabéns, ${(c.nome || "").split(" ")[0]}! Toda a equipe deseja um feliz aniversário. 🎉`
+    : `Parabéns pelos ${anos} ano${anos > 1 ? "s" : ""} de casa, ${(c.nome || "").split(" ")[0]}! Obrigado por fazer parte do time. 🎉`;
+  const link = numero ? `https://wa.me/${numero.length <= 11 ? "55" + numero : numero}?text=${encodeURIComponent(texto)}` : null;
+
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", gap: 11, padding: "11px 13px",
+      background: destaque ? L.white : L.white, borderRadius: 10,
+      border: `1px solid ${hoje || destaque ? cor : L.line}`,
+      opacity: passou ? 0.55 : 1,
+    }}>
+      <Av name={c.nome} size={destaque ? 40 : 34} color={cor} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 12.5, fontWeight: 600, color: L.t1, whiteSpace: "nowrap",
+          overflow: "hidden", textOverflow: "ellipsis" }}>{c.nome}</div>
+        <div style={{ fontSize: 11, color: L.t4 }}>
+          {tipo === "nascimento"
+            ? `dia ${dia} · faz ${anos} anos`
+            : `dia ${dia} · ${anos} ano${anos > 1 ? "s" : ""} de casa`}
+        </div>
+        <div style={{ fontSize: 10.5, color: L.t4, marginTop: 1 }}>{c.cargo || "—"}</div>
+      </div>
+      {link && (
+        <a href={link} target="_blank" rel="noopener noreferrer" title="Parabenizar no WhatsApp"
+          style={{ textDecoration: "none", fontSize: 15, color: cor, padding: "4px 6px" }}>🎉</a>
+      )}
     </div>
   );
 }
