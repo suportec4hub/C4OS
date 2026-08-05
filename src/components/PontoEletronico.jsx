@@ -49,7 +49,7 @@ function pegarLocalizacao() {
 
 /* ─────────────────────────── Configuração do modo ─────────────────────────── */
 
-export function ConfigPonto({ empresaId, config, onSalvou, onClose }) {
+export function ConfigPonto({ empresaId, config, empresa, onSalvou, onClose }) {
   const [form, setForm] = useState(config || { modo_ponto: "gestao" });
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState("");
@@ -102,15 +102,33 @@ export function ConfigPonto({ empresaId, config, onSalvou, onClose }) {
 
       {eletronico && (
         <>
+          {/* Só leitura: o dado é o do cadastro da empresa. Reproduzir aqui um
+              campo editável criaria uma segunda fonte para o mesmo dado, e a
+              divergência apareceria no comprovante. */}
           <div style={{ fontSize: 10, letterSpacing: "1.2px", textTransform: "uppercase",
             color: L.t4, fontWeight: 600, margin: "6px 0 8px" }}>
-            Identificação do empregador — obrigatória no comprovante e no AFD
+            Identificação do empregador — vem do cadastro da empresa
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 14px" }}>
-            <Field label="CNPJ"><Input value={form.cnpj || ""} onChange={C("cnpj")} placeholder="00.000.000/0000-00" /></Field>
-            <Field label="CEI / CAEPF"><Input value={form.cei || ""} onChange={C("cei")} /></Field>
+          <div style={{ background: L.surface, borderRadius: 8, padding: "10px 12px", marginBottom: 12 }}>
+            <Row between mb={4}>
+              <span style={{ fontSize: 11, color: L.t4 }}>Razão social</span>
+              <span style={{ fontSize: 12, color: empresa?.nome ? L.t1 : L.yellow }}>
+                {empresa?.nome || "não preenchida"}
+              </span>
+            </Row>
+            <Row between>
+              <span style={{ fontSize: 11, color: L.t4 }}>CNPJ</span>
+              <span style={{ fontSize: 12, color: empresa?.cnpj ? L.t1 : L.yellow,
+                fontFamily: "'JetBrains Mono',monospace" }}>
+                {empresa?.cnpj || "não preenchido"}
+              </span>
+            </Row>
+            {!empresa?.cnpj && (
+              <div style={{ fontSize: 10.5, color: L.yellow, marginTop: 8 }}>
+                Preencha o CNPJ em Minha Empresa — ele aparece no comprovante do trabalhador.
+              </div>
+            )}
           </div>
-          <Field label="Razão social"><Input value={form.razao_social || ""} onChange={C("razao_social")} /></Field>
 
           <div style={{ padding: "10px 12px", borderRadius: 8, background: L.yellowBg,
             color: L.yellow, fontSize: 11.5, lineHeight: 1.6 }}>
@@ -133,9 +151,8 @@ export function ConfigPonto({ empresaId, config, onSalvou, onClose }) {
 
 export function Comprovante({ registro, empresa, colaborador, onClose }) {
   const linhas = [
-    ["Empregador", empresa?.razao_social || "—"],
+    ["Empregador", empresa?.nome || "—"],
     ["CNPJ", empresa?.cnpj || "—"],
-    ["CEI / CAEPF", empresa?.cei || "—"],
     ["Trabalhador", colaborador?.nome || "—"],
     ["CPF", registro.cpf],
     ["Data e hora da marcação", dtBR(registro.data_hora_marcacao)],
@@ -188,7 +205,7 @@ export function Comprovante({ registro, empresa, colaborador, onClose }) {
 
 /* ─────────────────────────── Painel do modo eletrônico ─────────────────────────── */
 
-export default function PontoEletronico({ user, empresaId, config, colaboradores, fichas = [] }) {
+export default function PontoEletronico({ user, empresaId, config, empresa, colaboradores, fichas = [] }) {
   const [registros, setRegistros] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [ocupado, setOcupado] = useState(false);
@@ -257,7 +274,7 @@ export default function PontoEletronico({ user, empresaId, config, colaboradores
     };
     const ordenados = [...registros].sort((a, b) => a.nsr - b.nsr);
     const linhas = [];
-    linhas.push(`${p(0, 9)}1${p(config?.cnpj, 14)}${p(config?.cei, 12)}${txt(config?.razao_social, 150)}`);
+    linhas.push(`${p(0, 9)}1${p(empresa?.cnpj, 14)}${txt(empresa?.nome, 150)}`);
     ordenados.forEach((r) => {
       linhas.push(`${p(r.nsr, 9)}7${dt(r.data_hora_marcacao)}${p(r.cpf, 11)}${dt(r.data_hora_gravacao)}${r.offline ? "1" : "0"}${txt(r.hash, 64)}`);
     });
@@ -397,7 +414,7 @@ export default function PontoEletronico({ user, empresaId, config, colaboradores
       )}
 
       {comprovante && (
-        <Comprovante registro={comprovante} empresa={config}
+        <Comprovante registro={comprovante} empresa={empresa}
           colaborador={colaboradores.find((c) => c.id === comprovante.usuario_id)}
           onClose={() => setComprovante(null)} />
       )}

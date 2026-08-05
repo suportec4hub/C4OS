@@ -867,6 +867,15 @@ function AbaPonto({ user, colaboradores, fichas = [] }) {
 
   const fichaDe = (uid) => fichas.find((f) => f.usuario_id === uid);
   const registraPonto = (uid) => fichaDe(uid)?.registra_ponto !== false;
+  // Razão social e CNPJ vêm do cadastro da empresa, não de uma cópia local:
+  // duas fontes para o mesmo dado divergem, e a divergência apareceria no
+  // comprovante do trabalhador.
+  const [empresa, setEmpresa] = useState(null);
+  useEffect(() => {
+    if (!empresaId) return;
+    supabase.from("empresas").select("nome, cnpj").eq("id", empresaId).maybeSingle()
+      .then(({ data }) => setEmpresa(data || null));
+  }, [empresaId]);
   // Só quem bate ponto entra nas listas: sócio e diretoria isentos não devem
   // aparecer como quem esqueceu de marcar.
   const batemPonto = colaboradores.filter((c) => registraPonto(c.id));
@@ -972,9 +981,9 @@ function AbaPonto({ user, colaboradores, fichas = [] }) {
       <>
         {barraModo}
         <PontoEletronico user={user} empresaId={empresaId} config={config}
-          colaboradores={colaboradores} fichas={fichas} />
+          empresa={empresa} colaboradores={colaboradores} fichas={fichas} />
         {configAberta && (
-          <ConfigPonto empresaId={empresaId} config={config}
+          <ConfigPonto empresaId={empresaId} config={config} empresa={empresa}
             onSalvou={carregarConfig} onClose={() => setConfigAberta(false)} />
         )}
       </>
@@ -985,7 +994,7 @@ function AbaPonto({ user, colaboradores, fichas = [] }) {
     <>
       {barraModo}
       {configAberta && (
-        <ConfigPonto empresaId={empresaId} config={config}
+        <ConfigPonto empresaId={empresaId} config={config} empresa={empresa}
           onSalvou={carregarConfig} onClose={() => setConfigAberta(false)} />
       )}
       {registraPonto(user?.id)

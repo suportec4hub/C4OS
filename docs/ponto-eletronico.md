@@ -30,7 +30,7 @@ Registro imutável, com NSR sequencial e cadeia de hash.
 | NSR sequencial por empregador | Calculado no banco, com lock por empresa |
 | Integridade verificável | Cadeia SHA-256: cada registro inclui o hash do anterior |
 | Comprovante ao trabalhador a cada marcação | Exibido na hora e disponível para download depois |
-| Identificação de empregador e trabalhador | CNPJ, CEI, razão social e CPF |
+| Identificação de empregador e trabalhador | Razão social e CNPJ vêm do cadastro da empresa; CPF vem da ficha |
 | Marcação sem restrição ou bloqueio | Sem aprovação prévia; localização negada não impede |
 | Localização da marcação | Latitude, longitude e precisão |
 
