@@ -79,8 +79,11 @@ const semAcento = (t) => (t || "").toLowerCase()
 
 export function podeGerirRH(user) {
   if (!user) return false;
-  if (user.role === "c4hub_admin") return true;
-  if (user.perfil_acesso === "rh") return true;
+  // Admin Empresa e T.I (Acesso Total) administram o RH: o primeiro é o dono
+  // da conta do cliente, e sem ele os donos cadastrados com cargo "Admin"
+  // ficariam sem o módulo que vão usar.
+  if (user.role === "c4hub_admin" || user.role === "client_admin") return true;
+  if (user.perfil_acesso === "rh" || user.perfil_acesso === "full") return true;
   const cargo = semAcento(user.cargo);
   if (!cargo) return false;
   if (cargo === "dp") return true;

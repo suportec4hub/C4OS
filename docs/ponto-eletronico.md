@@ -128,15 +128,17 @@ Tudo isso vale no banco, via RLS — não é só a tela que esconde.
 Definido pela função `rh_pode_gerir()`, a partir do cadastro da equipe:
 
 - **Admin C4HUB** (`role = 'c4hub_admin'`)
-- **Perfil de acesso "RH / Pessoas"** (`perfil_acesso = 'rh'`)
+- **Admin Empresa** (`role = 'client_admin'`)
+- **Perfil "RH / Pessoas"** (`perfil_acesso = 'rh'`)
+- **Perfil "T.I (Acesso Total)"** (`perfil_acesso = 'full'`)
 - **Cargos de RH**: Gerente de RH, Analista de RH, Recrutamento, DP
 - **C-Level e diretoria**: CEO, COO, CFO, CTO, CMO, Diretor, Co-Founder, Sócio,
   Presidente, VP
 
-Não basta ter acesso total ao CRM: "Admin Empresa" e "T.I (Acesso Total)" **não**
-enxergam dados de RH quando o cargo não é C-Level. É proposital — acesso amplo ao
-sistema não deveria implicar acesso a salário e atestado dos colegas. Quem
-precisar recebe o perfil "RH / Pessoas" ou um cargo da lista.
+**Administrar RH nunca é administrar o RH de todas as empresas.** Toda política
+filtra por `empresa_id = rh_minha_empresa()` antes de checar o papel, então cada
+pessoa — inclusive Admin Empresa e Admin C4HUB — só alcança a própria empresa.
+Não existe visão entre empresas no módulo de RH.
 
 O menu RH / Pessoas segue a mesma regra e some para quem não administra, para não
 abrir uma tela que viria vazia. A regra que de fato protege o dado é a do banco.
