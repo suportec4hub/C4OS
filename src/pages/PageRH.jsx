@@ -676,9 +676,192 @@ const hhmm = (h) => {
   return `${sinal}${String(Math.floor(abs)).padStart(2, "0")}:${String(Math.round((abs % 1) * 60)).padStart(2, "0")}`;
 };
 
+/* ─────────────────────── Marcação de ponto com localização ───────────────────────
+   A ordem das batidas é fixa; a próxima é sempre o primeiro campo vazio. Isso
+   evita pedir ao colaborador que escolha o tipo — ele só confirma. */
+
+const SEQUENCIA = [
+  { campo: "entrada",      rotulo: "Entrada" },
+  { campo: "saida_almoco", rotulo: "Saída para almoço" },
+  { campo: "volta_almoco", rotulo: "Volta do almoço" },
+  { campo: "saida",        rotulo: "Saída" },
+];
+
+const proximaBatida = (reg) => SEQUENCIA.find((s) => !reg?.[s.campo]) || null;
+
+const horaAgora = () => {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+};
+
+// Promessa em cima da geolocalização do navegador. Recusa e indisponibilidade
+// resolvem para null em vez de rejeitar: sem localização o ponto ainda é
+// registrado, apenas sem a coordenada — bloquear a batida por causa de uma
+// permissão negada deixaria o colaborador sem poder marcar.
+function pegarLocalizacao() {
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) return resolve(null);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({
+        latitude: Number(pos.coords.latitude.toFixed(7)),
+        longitude: Number(pos.coords.longitude.toFixed(7)),
+        precisao_m: Math.round(pos.coords.accuracy),
+      }),
+      () => resolve(null),
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 },
+    );
+  });
+}
+
+function BaterPonto({ user, empresaId, onRegistrou }) {
+  const [regHoje, setRegHoje] = useState(null);
+  const [marcs, setMarcs]     = useState([]);
+  const [ocupado, setOcupado] = useState(false);
+  const [msg, setMsg]         = useState("");
+  const hoje = hojeISO();
+
+  const carregarHoje = async () => {
+    if (!user?.id) return;
+    const [{ data: p }, { data: m }] = await Promise.all([
+      supabase.from("rh_ponto").select("*").eq("usuario_id", user.id).eq("data", hoje).maybeSingle(),
+      supabase.from("rh_ponto_marcacoes").select("*").eq("usuario_id", user.id).eq("data", hoje).order("hora"),
+    ]);
+    setRegHoje(p || null);
+    setMarcs(m || []);
+  };
+  useEffect(() => { carregarHoje(); /* eslint-disable-next-line */ }, [user?.id]);
+
+  const proxima = proximaBatida(regHoje);
+
+  const bater = async () => {
+    if (!proxima) return;
+    setOcupado(true); setMsg("");
+    const hora = horaAgora();
+    const loc = await pegarLocalizacao();
+
+    const { error: e1 } = await supabase.from("rh_ponto")
+      .upsert({ empresa_id: empresaId, usuario_id: user.id, data: hoje,
+                [proxima.campo]: hora, horas_previstas: regHoje?.horas_previstas ?? 8 },
+              { onConflict: "usuario_id,data" });
+
+    if (e1) { setMsg(e1.message); setOcupado(false); return; }
+
+    const { error: e2 } = await supabase.from("rh_ponto_marcacoes").insert({
+      empresa_id: empresaId, usuario_id: user.id, data: hoje,
+      tipo: proxima.campo, hora, ...(loc || {}),
+    });
+    if (e2) setMsg(e2.message);
+    else setMsg(loc
+      ? `${proxima.rotulo} registrada às ${hora.slice(0, 5)} — localização capturada (±${loc.precisao_m} m).`
+      : `${proxima.rotulo} registrada às ${hora.slice(0, 5)} — sem localização (permissão negada ou GPS indisponível).`);
+
+    await carregarHoje();
+    onRegistrou?.();
+    setOcupado(false);
+  };
+
+  return (
+    <div style={{ background: L.white, border: `1px solid ${L.line}`, borderRadius: 12,
+      padding: "14px 16px", marginBottom: 14 }}>
+      <Row between>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 10, letterSpacing: "1.4px", textTransform: "uppercase",
+            color: L.t4, fontWeight: 700, marginBottom: 8, fontFamily: "'JetBrains Mono',monospace" }}>
+            Meu ponto de hoje
+          </div>
+          <Row gap={8}>
+            {SEQUENCIA.map((s) => {
+              const h = regHoje?.[s.campo];
+              const m = marcs.find((x) => x.tipo === s.campo);
+              return (
+                <div key={s.campo} style={{ padding: "6px 10px", borderRadius: 8,
+                  border: `1px solid ${h ? L.green : L.line}`,
+                  background: h ? L.greenBg : "transparent", minWidth: 96 }}>
+                  <div style={{ fontSize: 9.5, color: L.t4, textTransform: "uppercase",
+                    letterSpacing: ".6px" }}>{s.rotulo}</div>
+                  <Row gap={5}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: h ? L.green : L.t4,
+                      fontFamily: "'JetBrains Mono',monospace" }}>{h ? h.slice(0, 5) : "--:--"}</span>
+                    {m?.latitude != null && (
+                      <a href={`https://www.google.com/maps?q=${m.latitude},${m.longitude}`}
+                        target="_blank" rel="noopener noreferrer" title={`±${m.precisao_m} m`}
+                        style={{ fontSize: 11, textDecoration: "none" }}>📍</a>
+                    )}
+                  </Row>
+                </div>
+              );
+            })}
+          </Row>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          {proxima ? (
+            <PBtn onClick={ocupado ? undefined : bater}>
+              {ocupado ? "Registrando..." : `Bater ${proxima.rotulo.toLowerCase()}`}
+            </PBtn>
+          ) : (
+            <Tag color={L.green} bg={L.greenBg}>jornada completa</Tag>
+          )}
+        </div>
+      </Row>
+      {msg && (
+        <div style={{ marginTop: 10, padding: "7px 11px", borderRadius: 8, fontSize: 11.5,
+          background: L.tealBg, color: L.teal }}>{msg}</div>
+      )}
+    </div>
+  );
+}
+
+function ModalMarcacoes({ registro, nome, onClose }) {
+  const [marcs, setMarcs] = useState(null);
+  useEffect(() => {
+    supabase.from("rh_ponto_marcacoes").select("*")
+      .eq("usuario_id", registro.usuario_id).eq("data", registro.data).order("hora")
+      .then(({ data }) => setMarcs(data || []));
+  }, [registro]);
+
+  const rotulo = (t) => SEQUENCIA.find((s) => s.campo === t)?.rotulo || t;
+
+  return (
+    <Modal title={`Marcações — ${nome}, ${fmtData(registro.data)}`} onClose={onClose} width={520}>
+      {marcs === null && <div style={{ padding: 30, textAlign: "center", color: L.t4 }}>Carregando...</div>}
+      {marcs?.length === 0 && (
+        <div style={{ padding: 24, textAlign: "center", color: L.t4, fontSize: 12 }}>
+          Nenhuma marcação com localização neste dia — o registro foi lançado manualmente pelo RH.
+        </div>
+      )}
+      {marcs?.map((m) => (
+        <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 10,
+          padding: "10px 4px", borderBottom: `1px solid ${L.lineSoft}` }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 12.5, color: L.t1, fontWeight: 500 }}>{rotulo(m.tipo)}</div>
+            <div style={{ fontSize: 11, color: L.t4 }}>
+              {m.hora?.slice(0, 5)}
+              {m.latitude != null
+                ? ` · ${m.latitude}, ${m.longitude} (±${m.precisao_m} m)`
+                : " · sem localização"}
+            </div>
+          </div>
+          {m.latitude != null && (
+            <a href={`https://www.google.com/maps?q=${m.latitude},${m.longitude}`}
+              target="_blank" rel="noopener noreferrer"
+              style={{ fontSize: 11.5, color: L.teal, textDecoration: "none" }}>ver no mapa ↗</a>
+          )}
+        </div>
+      ))}
+      <div style={{ marginTop: 12, fontSize: 10.5, color: L.t4 }}>
+        A marcação guarda o que foi batido na hora. Ajustes feitos pelo RH alteram o resumo do dia,
+        não este registro.
+      </div>
+    </Modal>
+  );
+}
+
 function AbaPonto({ user, colaboradores }) {
   const empresaId = user?.empresa_id;
-  const [mes, setMes]   = useState(new Date().toISOString().slice(0, 7));
+  // hojeISO() em vez de toISOString(): à noite, no fuso do Brasil, o mês
+  // padrão podia pular para o seguinte no último dia do mês.
+  const [mes, setMes]   = useState(hojeISO().slice(0, 7));
   const [quem, setQuem] = useState("");
   const [regs, setRegs] = useState([]);
   const [carregando, setCarregando] = useState(true);
@@ -687,13 +870,17 @@ function AbaPonto({ user, colaboradores }) {
   const [editando, setEditando] = useState(null);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState("");
+  const [verMarcacoes, setVerMarcacoes] = useState(null);
 
   const carregar = async () => {
     if (!empresaId) return;
     setCarregando(true);
+    // Último dia do mês via Date.UTC. Com new Date("2026-08-01") a data é lida
+    // como UTC mas getMonth() responde no fuso local: em UTC-3 o fim do mês
+    // caía em 31/07, antes do início, e a consulta não retornava nada.
+    const [ano, m] = mes.split("-").map(Number);
     const ini = `${mes}-01`;
-    const fim = new Date(new Date(ini).getFullYear(), new Date(ini).getMonth() + 1, 0)
-      .toISOString().slice(0, 10);
+    const fim = new Date(Date.UTC(ano, m, 0)).toISOString().slice(0, 10);
     let q = supabase.from("rh_ponto").select("*").eq("empresa_id", empresaId)
       .gte("data", ini).lte("data", fim).order("data", { ascending: false });
     if (quem) q = q.eq("usuario_id", quem);
@@ -745,6 +932,8 @@ function AbaPonto({ user, colaboradores }) {
 
   return (
     <>
+      <BaterPonto user={user} empresaId={empresaId} onRegistrou={carregar} />
+
       <Row between mb={12}>
         <Row gap={8}>
           <input type="month" value={mes} onChange={(e) => setMes(e.target.value)}
@@ -789,6 +978,7 @@ function AbaPonto({ user, colaboradores }) {
                 </td>
                 <td style={TD}>
                   <Row gap={4}>
+                    <IBtn c={L.t3} onClick={() => setVerMarcacoes(r)} title="Marcações e localização">📍</IBtn>
                     <IBtn c={L.teal} onClick={() => abrir(r)}>✎</IBtn>
                     <IBtn c={L.red} onClick={() => excluir(r)}>⊗</IBtn>
                   </Row>
@@ -839,6 +1029,11 @@ function AbaPonto({ user, colaboradores }) {
             fontSize: 12, color: L.red, marginTop: 6 }}>{erro}</div>}
           <ModalFooter onClose={() => setModal(false)} onSave={salvar} loading={salvando} />
         </Modal>
+      )}
+
+      {verMarcacoes && (
+        <ModalMarcacoes registro={verMarcacoes} nome={nome(verMarcacoes.usuario_id)}
+          onClose={() => setVerMarcacoes(null)} />
       )}
     </>
   );

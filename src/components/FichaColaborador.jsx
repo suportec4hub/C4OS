@@ -25,7 +25,14 @@ const Textarea = ({ value, onChange, placeholder, rows = 3 }) => (
 );
 
 export const fmtData = (d) => (d ? new Date(d + "T12:00:00").toLocaleDateString("pt-BR") : "—");
-export const hojeISO = () => new Date().toISOString().slice(0, 10);
+// Data de hoje no fuso de quem está usando. Com toISOString(), a partir das
+// 21h no horário de Brasília a data virava a de amanhã — o ponto lançado à
+// noite ia parar no dia seguinte.
+export const hojeISO = () => {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+};
 
 export const fmtMoeda = (v) =>
   v == null || v === "" ? "—"
