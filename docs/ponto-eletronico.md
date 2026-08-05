@@ -98,3 +98,27 @@ e não conta como faltante. Se for administrador, continua podendo lançar e
 conferir o ponto da equipe. A regra também é aplicada na função do banco: tentar
 registrar ponto de alguém isento é recusado no servidor, não apenas escondido na
 tela.
+
+## Onde cada um bate ponto
+
+**Menu "Meu Ponto"** — do colaborador. Mostra só o ponto dele: um botão grande,
+os horários do dia e o histórico do mês. Não há nada para configurar nem
+ninguém mais para ver. É por aqui que se bate ponto no celular.
+
+**RH / Pessoas → Ponto** — do RH e dos gestores. Lança e ajusta o ponto da
+equipe, registra atestado, escolhe o modo e exporta.
+
+## Quem enxerga o quê
+
+Com o Meu Ponto aberto a todos, a política antiga ("toda a empresa lê tudo")
+deixaria qualquer vendedor consultar salário, CPF e atestado dos colegas pela
+API — mesmo sem tela para isso. As regras passaram a ser por papel:
+
+| | Gestão de RH (`client_admin`, `c4hub_admin`, perfil `full` ou `rh`) | Colaborador |
+|---|---|---|
+| Ficha, documentos, saúde, benefícios, avaliações, ocorrências, férias | lê e escreve de toda a empresa | lê apenas as próprias |
+| Ponto e marcações | lê, lança, ajusta e apaga de toda a empresa | lê as próprias e registra a própria batida |
+| Registro definitivo | lê de toda a empresa | lê apenas os próprios |
+| Modo do ponto | altera | apenas lê (a tela precisa saber como se comportar) |
+
+Tudo isso vale no banco, via RLS — não é só a tela que esconde.

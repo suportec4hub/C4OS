@@ -53,6 +53,7 @@ const PageMeta             = lazyLoad(() => import("../pages/PageMeta"));
 const PageCheckoutAdmin    = lazyLoad(() => import("../pages/PageCheckoutAdmin"));
 const PageNotificacoesAdmin = lazyLoad(() => import("../pages/PageNotificacoesAdmin"));
 const PageTrafico          = lazyLoad(() => import("../pages/PageTrafico"));
+const PageMeuPonto         = lazyLoad(() => import("../pages/PageMeuPonto"));
 
 const NAV_ITEMS = [
   {id:"dashboard",  label:"Dashboard",      ico:"▦", g:"principal"},
@@ -62,6 +63,7 @@ const NAV_ITEMS = [
   {id:"chatbot",    label:"Chatbot",        ico:"🤖", g:"comunicação"},
   {id:"chatbotbuilder",  label:"Fluxo Visual",   ico:"⬡", g:"comunicação"},
   {id:"disparos",   label:"Disparos",       ico:"◉",  g:"comunicação"},
+  {id:"meuponto",   label:"Meu Ponto",     ico:"◔", g:"atividades"},
   {id:"followup",   label:"Follow-ups",     ico:"◷", g:"atividades"},
   {id:"agenda",     label:"Agenda",         ico:"◷", g:"atividades"},
   {id:"financeiro", label:"Financeiro",     ico:"◈", g:"gestão"},
@@ -451,6 +453,7 @@ export default function Shell({user,onLogout,onProfileUpdate,theme,toggleTheme})
           {safe==="ai"              && <PageAI              user={user}/>}
           {safe==="financeiro" && <PageFinanceiro user={user}/>}
           {safe==="rh"        && <PageRH        user={user}/>}
+          {safe==="meuponto"  && <PageMeuPonto  user={user}/>}
           {safe==="marketing" && <PageMarketing user={user} isAdmin={isAdmin}/>}
           {safe==="trafico"  && <PageTrafico  user={user}/>}
           {safe==="digital"   && <PageDigital   user={user} isAdmin={isAdmin}/>}

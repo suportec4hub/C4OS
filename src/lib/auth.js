@@ -20,13 +20,13 @@ const CARGO_GROUP_MAP = [
 // Páginas acessíveis por grupo
 const PAGE_ACCESS_MAP = {
   full:       null, // null = tudo liberado
-  vendas:     new Set(["dashboard","leads","pipeline","whatsapp","broadcast","followup","fluxosvendedor","meta","reports","ai","empresa","propostas","agenda"]),
-  marketing:  new Set(["dashboard","leads","broadcast","followup","meta","reports","ai","empresa","marketing","agenda"]),
-  trafego:    new Set(["dashboard","leads","meta","reports","ai","marketing"]),
-  digital:    new Set(["dashboard","leads","broadcast","meta","reports","ai","empresa","digital","marketing","agenda"]),
-  financeiro: new Set(["dashboard","meta","reports","empresa","financeiro","contratos","propostas","estoque"]),
-  rh:         new Set(["dashboard","equipe","departs","empresa","rh","meta","agenda"]),
-  suporte:    new Set(["dashboard","whatsapp","leads","followup","fluxosvendedor","meta","ai","empresa","agenda"]),
+  vendas:     new Set(["meuponto","dashboard","leads","pipeline","whatsapp","broadcast","followup","fluxosvendedor","meta","reports","ai","empresa","propostas","agenda"]),
+  marketing:  new Set(["meuponto","dashboard","leads","broadcast","followup","meta","reports","ai","empresa","marketing","agenda"]),
+  trafego:    new Set(["meuponto","dashboard","leads","meta","reports","ai","marketing"]),
+  digital:    new Set(["meuponto","dashboard","leads","broadcast","meta","reports","ai","empresa","digital","marketing","agenda"]),
+  financeiro: new Set(["meuponto","dashboard","meta","reports","empresa","financeiro","contratos","propostas","estoque"]),
+  rh:         new Set(["meuponto","dashboard","equipe","departs","empresa","rh","meta","agenda"]),
+  suporte:    new Set(["meuponto","dashboard","whatsapp","leads","followup","fluxosvendedor","meta","ai","empresa","agenda"]),
 };
 
 export function getCargoGroup(user) {
