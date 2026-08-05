@@ -5,9 +5,10 @@
 // diferentes do sistema. Por isso documentos, saúde ocupacional, benefícios,
 // treinamentos, avaliações, ocorrências e checklist vivem aqui dentro, e as
 // abas de fora ficam só para o que é transversal (ponto, férias, alertas).
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { L } from "../constants/theme";
 import { supabase } from "../lib/supabase";
+import { buscarCEP, formatarCEP, cepCompleto, soDigitos } from "../lib/cep";
 import { Row, Tag, Av, IBtn, PBtn, TabPills } from "./ui";
 import Modal, { Field, Input, Select, ModalFooter } from "./Modal";
 
@@ -121,6 +122,8 @@ export default function FichaColaborador({ user, colaborador, onClose, onSalvou 
   }, [uid]);
 
   const D = (k) => (v) => setFicha((p) => ({ ...p, [k]: v }));
+  // Grava vários campos de uma vez — é o que a busca por CEP precisa.
+  const preencher = (obj) => setFicha((p) => ({ ...p, ...obj }));
 
   const salvarFicha = async () => {
     setErro("");
@@ -176,7 +179,7 @@ export default function FichaColaborador({ user, colaborador, onClose, onSalvou 
 
       <div style={{ maxHeight: "60vh", overflowY: "auto", paddingRight: 4 }}>
         {aba === "Dados" && (
-          <AbaDados ficha={ficha} D={D} erro={erro} onSalvar={salvarFicha} />
+          <AbaDados ficha={ficha} D={D} preencher={preencher} erro={erro} onSalvar={salvarFicha} />
         )}
         {aba === "Documentos" && (
           <AbaDocumentos itens={docs} empresaId={empresaId} uid={uid}
@@ -223,9 +226,41 @@ const Titulo = ({ children }) => (
     color: L.t4, fontWeight: 600, margin: "14px 0 8px" }}>{children}</div>
 );
 
-function AbaDados({ ficha, D, erro, onSalvar }) {
+function AbaDados({ ficha, D, preencher, erro, onSalvar }) {
   const [salvando, setSalvando] = useState(false);
   const salvar = async () => { setSalvando(true); await onSalvar(); setSalvando(false); };
+
+  const [buscandoCep, setBuscandoCep] = useState(false);
+  const [avisoCep, setAvisoCep] = useState("");
+  // Guarda o último CEP consultado: sem isso, reabrir a aba ou digitar o mesmo
+  // número de novo refaria a busca e sobrescreveria o que já foi corrigido
+  // à mão.
+  const ultimoCep = useRef("");
+
+  useEffect(() => { ultimoCep.current = soDigitos(ficha.cep); /* só na montagem */ }, []); // eslint-disable-line
+
+  const mudarCep = async (valor) => {
+    const formatado = formatarCEP(valor);
+    D("cep")(formatado);
+    setAvisoCep("");
+
+    const limpo = soDigitos(formatado);
+    if (!cepCompleto(limpo) || limpo === ultimoCep.current) return;
+    ultimoCep.current = limpo;
+
+    setBuscandoCep(true);
+    try {
+      const end = await buscarCEP(limpo);
+      if (!end) { setAvisoCep("CEP não encontrado — preencha manualmente."); return; }
+      // Preenche tudo e segue editável: o retorno do CEP é ponto de partida,
+      // não verdade final. Complemento e número nunca vêm daqui.
+      preencher(end);
+    } catch {
+      setAvisoCep("Não foi possível consultar o CEP agora — preencha manualmente.");
+    } finally {
+      setBuscandoCep(false);
+    }
+  };
 
   return (
     <>
@@ -266,13 +301,19 @@ function AbaDados({ ficha, D, erro, onSalvar }) {
 
       <Titulo>Endereço</Titulo>
       <G>
-        <Field label="CEP"><Input value={ficha.cep} onChange={D("cep")} /></Field>
+        <Field label={buscandoCep ? "CEP — buscando..." : "CEP"}>
+          <Input value={ficha.cep} onChange={mudarCep} placeholder="00000-000" inputMode="numeric" />
+        </Field>
         <Field label="Cidade"><Input value={ficha.cidade} onChange={D("cidade")} /></Field>
         <Field label="UF"><Input value={ficha.uf} onChange={D("uf")} /></Field>
         <Field label="Endereço"><Input value={ficha.endereco} onChange={D("endereco")} /></Field>
         <Field label="Número"><Input value={ficha.numero} onChange={D("numero")} /></Field>
         <Field label="Bairro"><Input value={ficha.bairro} onChange={D("bairro")} /></Field>
       </G>
+      {avisoCep && (
+        <div style={{ padding: "7px 11px", background: L.yellowBg, borderRadius: 8,
+          fontSize: 11.5, color: L.yellow, marginBottom: 12 }}>{avisoCep}</div>
+      )}
 
       <Titulo>Contato de emergência e pagamento</Titulo>
       <G>
