@@ -6,11 +6,11 @@
 // transversal — os alertas, o ponto e as ausências —, porque são as perguntas
 // que o RH faz olhando a empresa inteira, não uma pessoa.
 import { useEffect, useMemo, useState } from "react";
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 import { L } from "../constants/theme";
 import { useTable } from "../hooks/useData";
 import { supabase } from "../lib/supabase";
-import { Fade, Row, Grid, TabPills, PBtn, DataTable, Tag, Av, IBtn, TD, Card, TT } from "../components/ui";
+import { Fade, Row, Grid, TabPills, PBtn, DataTable, Tag, Av, IBtn, TD, Card } from "../components/ui";
 import Modal, { Field, Input, Select, ModalFooter } from "../components/Modal";
 import FichaColaborador, { fmtData, hojeISO, diasAte, fmtMoeda } from "../components/FichaColaborador";
 
@@ -148,9 +148,13 @@ export default function PageRH({ user }) {
 
   const cargos = {};
   ativos.forEach((c) => { const g = c.cargo || "Sem cargo"; cargos[g] = (cargos[g] || 0) + 1; });
-  const pieData = Object.entries(cargos).sort((a, b) => b[1] - a[1]).slice(0, 6)
-    .map(([name, value]) => ({ name, value }));
-  const PIE_COLORS = [L.teal, L.copper, L.green, L.yellow, L.red, L.blue];
+  // Top 6 cargos e o resto agrupado em "Outros": fatiar em 6 e descartar o
+  // restante fazia o gráfico somar menos que o total de pessoas, sem avisar.
+  const ordenados = Object.entries(cargos).sort((a, b) => b[1] - a[1]);
+  const pieData = ordenados.slice(0, 6).map(([name, value]) => ({ name, value }));
+  const resto = ordenados.slice(6).reduce((s, [, v]) => s + v, 0);
+  if (resto > 0) pieData.push({ name: `Outros (${ordenados.length - 6} cargos)`, value: resto });
+  const PIE_COLORS = [L.teal, L.copper, L.green, L.yellow, L.red, L.blue, L.t4];
 
   const openNew  = () => { setForm(VAZIO_FERIAS); setEdit(null); setErr(""); setModal(true); };
   const openEdit = (f) => { setForm({ ...f }); setEdit(f.id); setErr(""); setModal(true); };
@@ -332,6 +336,31 @@ function KPI({ l, v, c, sub }) {
   );
 }
 
+const totalPie = (d) => d.reduce((s, x) => s + x.value, 0);
+
+// Tooltip do gráfico de cargos. É próprio, e não o do recharts, porque o
+// padrão pinta o texto com a cor da série e ignora o tema: no escuro saía
+// preto sobre preto. Além de legível, diz o cargo e o percentual — antes
+// mostrava só "1 pessoa", sem dizer de quem.
+function TooltipCargo({ active, payload, total }) {
+  if (!active || !payload?.length) return null;
+  const { name, value } = payload[0].payload;
+  const cor = payload[0].color;
+  const pct = total ? Math.round((value / total) * 100) : 0;
+  return (
+    <div style={{ background: L.white, border: `1px solid ${L.line}`, borderRadius: 9,
+      padding: "8px 11px", boxShadow: "0 4px 16px rgba(0,0,0,0.25)", pointerEvents: "none" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 3 }}>
+        <span style={{ width: 8, height: 8, borderRadius: "50%", background: cor }} />
+        <span style={{ fontSize: 12, fontWeight: 600, color: L.t1 }}>{name}</span>
+      </div>
+      <div style={{ fontSize: 11.5, color: L.t3 }}>
+        {value} pessoa{value !== 1 ? "s" : ""} · {pct}% do time
+      </div>
+    </div>
+  );
+}
+
 function Carregando() {
   return <div style={{ textAlign: "center", padding: 40, color: L.t4 }}>Carregando...</div>;
 }
@@ -414,15 +443,41 @@ function VisaoGeral({ alertas, aniversariantes, aniversariosEmpresa, pieData, co
       <div style={{ marginTop: 12 }}>
         <Card title="Distribuição por cargo" sub="colaboradores ativos">
           {pieData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={180}>
-              <PieChart>
-                <Pie data={pieData} cx="50%" cy="50%" outerRadius={70} dataKey="value" paddingAngle={2}>
-                  {pieData.map((_, i) => <Cell key={i} fill={cores[i % 6]} />)}
-                </Pie>
-                <Tooltip contentStyle={TT} formatter={(v) => [`${v} pessoa${v !== 1 ? "s" : ""}`]} />
-                <Legend iconSize={8} iconType="circle" wrapperStyle={{ fontSize: 10, color: L.t3 }} />
-              </PieChart>
-            </ResponsiveContainer>
+            <div style={{ display: "grid", gridTemplateColumns: "200px 1fr", gap: 18, alignItems: "center" }}
+              className="rg-auto">
+              <ResponsiveContainer width="100%" height={190}>
+                <PieChart>
+                  <Pie data={pieData} cx="50%" cy="50%" innerRadius={42} outerRadius={78}
+                    dataKey="value" paddingAngle={2} stroke="none">
+                    {pieData.map((_, i) => <Cell key={i} fill={cores[i % cores.length]} />)}
+                  </Pie>
+                  {/* Tooltip próprio: o padrão do recharts herda cor de texto que
+                      não enxerga o tema escuro, e saía preto sobre fundo escuro. */}
+                  <Tooltip content={<TooltipCargo total={totalPie(pieData)} />} />
+                </PieChart>
+              </ResponsiveContainer>
+
+              {/* Legenda própria em vez da do recharts: além de legível, mostra
+                  quantidade e percentual, que era o que o tooltip escondia. */}
+              <div>
+                {pieData.map((d, i) => {
+                  const total = totalPie(pieData);
+                  const pct = total ? Math.round((d.value / total) * 100) : 0;
+                  return (
+                    <div key={d.name} style={{ display: "flex", alignItems: "center", gap: 9,
+                      padding: "5px 0", borderBottom: `1px solid ${L.lineSoft}` }}>
+                      <span style={{ width: 9, height: 9, borderRadius: "50%", flexShrink: 0,
+                        background: cores[i % cores.length] }} />
+                      <span style={{ flex: 1, fontSize: 12, color: L.t2, whiteSpace: "nowrap",
+                        overflow: "hidden", textOverflow: "ellipsis" }} title={d.name}>{d.name}</span>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: L.t1 }}>{d.value}</span>
+                      <span style={{ fontSize: 11, color: L.t4, width: 34, textAlign: "right",
+                        fontFamily: "'JetBrains Mono',monospace" }}>{pct}%</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           ) : (
             <div style={{ textAlign: "center", padding: 40, color: L.t4, fontSize: 11 }}>
               Nenhum colaborador cadastrado
