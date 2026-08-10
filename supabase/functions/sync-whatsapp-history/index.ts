@@ -37,6 +37,15 @@ Deno.serve(async (req) => {
   }
   if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405 });
 
+  // Mesmo padrão das demais funções agendadas: com o secret configurado, só
+  // passa quem apresenta o token. Vazio = ainda não configurado, e aí não
+  // bloqueia para não derrubar o que já roda.
+  const CRON_TOKEN = Deno.env.get("CRON_TOKEN") ?? "";
+  if (CRON_TOKEN !== "" && req.headers.get("x-cron-token") !== CRON_TOKEN) {
+    const auth = req.headers.get("Authorization") ?? "";
+    if (!auth.startsWith("Bearer ")) return new Response("Unauthorized", { status: 401 });
+  }
+
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL")!,
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
@@ -48,6 +57,15 @@ Deno.serve(async (req) => {
   const filterEmpresaId = body.empresa_id as string | undefined;
   const months          = Number(body.months    ?? 3);
   const maxChats        = Number(body.max_chats ?? 40);  // chats por instância por execução
+  // Orçamento de tempo: sem ele uma instância lenta consumiria a execução
+  // inteira e as últimas empresas nunca seriam alcançadas.
+  const budgetMs        = Number(body.budget_ms ?? 240_000);
+  const iniciadoEm      = Date.now();
+
+  // Chamada pelo cron: o pg_net desiste em 5s e derruba a função no meio do
+  // trabalho. Responder na hora e seguir em segundo plano é o que faz a
+  // execução chegar ao fim — foi assim que os disparos pararam de travar.
+  const emSegundoPlano  = body.background === true;
   const cutoffTs        = Math.floor(Date.now() / 1000) - months * 30 * 24 * 60 * 60;
 
   const stats = {
@@ -95,158 +113,189 @@ Deno.serve(async (req) => {
     }
   }
 
-  // ── Processa cada instância ───────────────────────────────────────────────
-  for (const inst of instancias) {
-    stats.instancias++;
-    const hdrs = { "apikey": inst.token, "Content-Type": "application/json" };
-
-    try {
-      // 1. Busca lista de chats da instância
-      const chatsRes = await fetch(`${GLOBAL_URL}/chat/findChats/${inst.evo_instance}`, { headers: hdrs });
-      if (!chatsRes.ok) {
-        stats.erros.push(`findChats[${inst.evo_instance}]: HTTP ${chatsRes.status}`);
-        continue;
+  // Todo o trabalho fica aqui dentro para poder rodar em segundo plano.
+  const processar = async () => {
+    // ── Processa cada instância ───────────────────────────────────────────────
+    for (const inst of instancias) {
+      if (Date.now() - iniciadoEm > budgetMs) {
+        stats.erros.push("orçamento de tempo esgotado; instâncias restantes ficam para a próxima execução");
+        break;
       }
-      const chatsRaw = await chatsRes.json();
-      const chats: Record<string, unknown>[] = Array.isArray(chatsRaw)
-        ? chatsRaw
-        : (chatsRaw.chats ?? chatsRaw.data ?? []);
+      stats.instancias++;
+      const hdrs = { "apikey": inst.token, "Content-Type": "application/json" };
 
-      let chatsCount = 0;
-
-      for (const chat of chats) {
-        if (chatsCount >= maxChats) break;
-
-        // remoteJid primeiro: o campo id da Evolution v2 é um CUID do banco.
-        const jid = (chat.remoteJid || chat.id || "") as string;
-        if (!jid || jid.endsWith("@broadcast") || jid.endsWith("@newsletter") || jid.includes("@lid")) continue;
-
-        const isGroup  = jid.endsWith("@g.us");
-        const phone    = isGroup
-          ? jid
-          : jid.replace(/@s\.whatsapp\.net$/, "").replace(/@c\.us$/, "").replace(/:.*$/, "");
-        const nomeCont = (chat.name || chat.pushName || chat.subject || phone) as string;
-
-        // 2. Garante que a conversa existe
-        let { data: conv } = await supabase.from("conversas")
-          .select("id, ultima_hora")
-          .eq("empresa_id", inst.empresa_id)
-          .eq("contato_telefone", phone)
-          .maybeSingle();
-
-        if (!conv) {
-          const { data: nova } = await supabase.from("conversas").insert({
-            empresa_id:       inst.empresa_id,
-            contato_nome:     nomeCont,
-            contato_telefone: phone,
-            ultima_mensagem:  "",
-            ultima_hora:      new Date().toISOString(),
-            nao_lidas:        0,
-            status:           "aberta",
-            bot_ativo:        false,
-            canal:            "whatsapp",
-            instancia_id:     inst.instancia_id,
-          }).select("id, ultima_hora").single();
-          conv = nova;
-          if (nova) stats.conversas_criadas++;
+      try {
+        // 1. Busca lista de chats da instância
+        // Evolution v2 exige POST com {"where":{}}; o GET responde 404. Este
+        // trecho vinha errando em silêncio: a chamada falhava, caía no continue,
+        // e a sincronização não trazia nada sem ninguém perceber.
+        let chatsRes = await fetch(`${GLOBAL_URL}/chat/findChats/${inst.evo_instance}`, {
+          method: "POST", headers: hdrs, body: JSON.stringify({ where: {} }),
+        });
+        if (chatsRes.status === 404 || chatsRes.status === 405) {
+          chatsRes = await fetch(`${GLOBAL_URL}/chat/findChats/${inst.evo_instance}`, { headers: hdrs });
         }
+        if (!chatsRes.ok) {
+          stats.erros.push(`findChats[${inst.evo_instance}]: HTTP ${chatsRes.status}`);
+          continue;
+        }
+        const chatsRaw = await chatsRes.json();
+        const chats: Record<string, unknown>[] = Array.isArray(chatsRaw)
+          ? chatsRaw
+          : (chatsRaw.chats ?? chatsRaw.data ?? []);
 
-        if (!conv?.id) continue;
+        let chatsCount = 0;
 
-        // 3. Busca mensagens paginadas
-        let page = 1;
-        let latestTs: string | null = null;
-        let latestTexto = "";
+        for (const chat of chats) {
+          if (chatsCount >= maxChats) break;
 
-        while (true) {
-          const msgsRes = await fetch(`${GLOBAL_URL}/chat/findMessages/${inst.evo_instance}`, {
-            method: "POST",
-            headers: hdrs,
-            body: JSON.stringify({ where: { key: { remoteJid: jid } }, page, offset: 50 }),
-          });
-          if (!msgsRes.ok) break;
+          // remoteJid primeiro: o campo id da Evolution v2 é um CUID do banco.
+          const jid = (chat.remoteJid || chat.id || "") as string;
+          if (!jid || jid.endsWith("@broadcast") || jid.endsWith("@newsletter") || jid.includes("@lid")) continue;
 
-          const msgsRaw = await msgsRes.json() as Record<string, unknown>;
+          const isGroup  = jid.endsWith("@g.us");
+          const phone    = isGroup
+            ? jid
+            : jid.replace(/@s\.whatsapp\.net$/, "").replace(/@c\.us$/, "").replace(/:.*$/, "");
+          const nomeCont = (chat.name || chat.pushName || chat.subject || phone) as string;
 
-          // Suporta múltiplos formatos de resposta do Evolution API
-          const records: Record<string, unknown>[] = Array.isArray(msgsRaw)
-            ? msgsRaw
-            : Array.isArray(msgsRaw.messages)
-              ? msgsRaw.messages as Record<string, unknown>[]
-              : Array.isArray((msgsRaw.messages as Record<string, unknown>)?.records)
-                ? (msgsRaw.messages as Record<string, unknown>).records as Record<string, unknown>[]
-                : [];
+          // 2. Garante que a conversa existe
+          let { data: conv } = await supabase.from("conversas")
+            .select("id, ultima_hora")
+            .eq("empresa_id", inst.empresa_id)
+            .eq("contato_telefone", phone)
+            .maybeSingle();
 
-          if (records.length === 0) break;
+          if (!conv) {
+            const { data: nova } = await supabase.from("conversas").insert({
+              empresa_id:       inst.empresa_id,
+              contato_nome:     nomeCont,
+              contato_telefone: phone,
+              ultima_mensagem:  "",
+              ultima_hora:      new Date().toISOString(),
+              nao_lidas:        0,
+              status:           "aberta",
+              bot_ativo:        false,
+              canal:            "whatsapp",
+              instancia_id:     inst.instancia_id,
+            }).select("id, ultima_hora").single();
+            conv = nova;
+            if (nova) stats.conversas_criadas++;
+          }
 
-          const toInsert: Record<string, unknown>[] = [];
-          let reachedCutoff = false;
+          if (!conv?.id) continue;
 
-          for (const msg of records) {
-            const ts = Number(msg.messageTimestamp || msg.MessageTimestamp || 0);
-            // Mensagens fora da janela de tempo → para de paginar
-            if (ts > 0 && ts < cutoffTs) { reachedCutoff = true; break; }
+          // 3. Busca mensagens paginadas
+          let page = 1;
+          let latestTs: string | null = null;
+          let latestTexto = "";
 
-            const key     = (msg.key || msg.Key || {}) as Record<string, unknown>;
-            const wamid   = (key.id || "") as string;
-            if (!wamid) continue;  // sem ID não conseguimos deduplicar
-
-            const fromMe  = Boolean(key.fromMe ?? false);
-            const { texto, tipo, nomeArquivo } = extractMsg(msg);
-            if (!texto && tipo === "texto") continue;  // pula reações e vazios
-
-            const hora = ts > 0 ? new Date(ts * 1000).toISOString() : new Date().toISOString();
-
-            if (!latestTs || hora > latestTs) { latestTs = hora; latestTexto = texto; }
-
-            toInsert.push({
-              conversa_id:  conv.id,
-              empresa_id:   inst.empresa_id,
-              de:           fromMe ? "me" : "contato",
-              texto,
-              tipo,
-              media_url:    null,  // não re-baixa mídia no sync histórico
-              nome_arquivo: nomeArquivo,
-              wamid,
-              hora,
-              status:       fromMe ? "enviado" : "recebido",
-              remetente:    "usuario",
-              instancia_id: inst.instancia_id,
+          while (true) {
+            const msgsRes = await fetch(`${GLOBAL_URL}/chat/findMessages/${inst.evo_instance}`, {
+              method: "POST",
+              headers: hdrs,
+              body: JSON.stringify({ where: { key: { remoteJid: jid } }, page, offset: 50 }),
             });
+            if (!msgsRes.ok) break;
+
+            const msgsRaw = await msgsRes.json() as Record<string, unknown>;
+
+            // Suporta múltiplos formatos de resposta do Evolution API
+            const records: Record<string, unknown>[] = Array.isArray(msgsRaw)
+              ? msgsRaw
+              : Array.isArray(msgsRaw.messages)
+                ? msgsRaw.messages as Record<string, unknown>[]
+                : Array.isArray((msgsRaw.messages as Record<string, unknown>)?.records)
+                  ? (msgsRaw.messages as Record<string, unknown>).records as Record<string, unknown>[]
+                  : [];
+
+            if (records.length === 0) break;
+
+            const toInsert: Record<string, unknown>[] = [];
+            let reachedCutoff = false;
+
+            for (const msg of records) {
+              const ts = Number(msg.messageTimestamp || msg.MessageTimestamp || 0);
+              // Mensagens fora da janela de tempo → para de paginar
+              if (ts > 0 && ts < cutoffTs) { reachedCutoff = true; break; }
+
+              const key     = (msg.key || msg.Key || {}) as Record<string, unknown>;
+              const wamid   = (key.id || "") as string;
+              if (!wamid) continue;  // sem ID não conseguimos deduplicar
+
+              const fromMe  = Boolean(key.fromMe ?? false);
+              const { texto, tipo, nomeArquivo } = extractMsg(msg);
+              if (!texto && tipo === "texto") continue;  // pula reações e vazios
+
+              const hora = ts > 0 ? new Date(ts * 1000).toISOString() : new Date().toISOString();
+
+              if (!latestTs || hora > latestTs) { latestTs = hora; latestTexto = texto; }
+
+              toInsert.push({
+                conversa_id:  conv.id,
+                empresa_id:   inst.empresa_id,
+                de:           fromMe ? "me" : "contato",
+                texto,
+                tipo,
+                media_url:    null,  // não re-baixa mídia no sync histórico
+                nome_arquivo: nomeArquivo,
+                wamid,
+                hora,
+                status:       fromMe ? "enviado" : "recebido",
+                remetente:    "usuario",
+                instancia_id: inst.instancia_id,
+              });
+            }
+
+            if (toInsert.length > 0) {
+              const { count } = await supabase.from("mensagens")
+                .upsert(toInsert, { onConflict: "wamid", ignoreDuplicates: true, count: "exact" });
+              stats.mensagens_importadas += count ?? toInsert.length;
+            }
+
+            if (reachedCutoff) break;
+
+            // Verifica se há mais páginas
+            const msgs = msgsRaw.messages as Record<string, unknown> | undefined;
+            const totalPages = Number(msgs?.pages ?? msgsRaw.pages ?? 1);
+            if (page >= totalPages) break;
+            page++;
           }
 
-          if (toInsert.length > 0) {
-            const { count } = await supabase.from("mensagens")
-              .upsert(toInsert, { onConflict: "wamid", ignoreDuplicates: true, count: "exact" });
-            stats.mensagens_importadas += count ?? toInsert.length;
+          // 4. Atualiza conversa com a mensagem mais recente
+          if (latestTs) {
+            const convTs = conv.ultima_hora ? new Date(conv.ultima_hora as string).getTime() : 0;
+            if (new Date(latestTs).getTime() > convTs) {
+              await supabase.from("conversas").update({
+                ultima_mensagem: latestTexto,
+                ultima_hora:     latestTs,
+              }).eq("id", conv.id);
+            }
           }
 
-          if (reachedCutoff) break;
-
-          // Verifica se há mais páginas
-          const msgs = msgsRaw.messages as Record<string, unknown> | undefined;
-          const totalPages = Number(msgs?.pages ?? msgsRaw.pages ?? 1);
-          if (page >= totalPages) break;
-          page++;
+          chatsCount++;
         }
-
-        // 4. Atualiza conversa com a mensagem mais recente
-        if (latestTs) {
-          const convTs = conv.ultima_hora ? new Date(conv.ultima_hora as string).getTime() : 0;
-          if (new Date(latestTs).getTime() > convTs) {
-            await supabase.from("conversas").update({
-              ultima_mensagem: latestTexto,
-              ultima_hora:     latestTs,
-            }).eq("id", conv.id);
-          }
-        }
-
-        chatsCount++;
+      } catch (err) {
+        stats.erros.push(`${inst.evo_instance}: ${(err as Error).message}`);
       }
-    } catch (err) {
-      stats.erros.push(`${inst.evo_instance}: ${(err as Error).message}`);
     }
+
+  };
+
+  // Chamado pelo cron: responde imediatamente e continua processando. O
+  // pg_net corta a conexão em 5s, e sem isso o Deno encerrava a função no
+  // meio, deixando a maioria das empresas sem sincronizar.
+  if (emSegundoPlano) {
+    // deno-lint-ignore no-explicit-any
+    const rt = (globalThis as any).EdgeRuntime;
+    if (rt?.waitUntil) rt.waitUntil(processar());
+    else processar();
+    return new Response(JSON.stringify({ ok: true, background: true, instancias: instancias.length }), {
+      headers: { "Content-Type": "application/json" },
+    });
   }
+
+  await processar();
 
   return new Response(JSON.stringify({ ok: true, stats }), {
     headers: { "Content-Type": "application/json" },
