@@ -633,7 +633,7 @@ function interpretarEscolha(
   // O que fazer quando a resposta não corresponde a nenhuma opção do menu.
   // Sem valor definido vale "parar": seguir com resposta inválida era o que
   // mandava o cliente para um caminho que ele não escolheu.
-  resposta_invalida?: "parar" | "repetir" | "seguir";
+  resposta_invalida?: "parar" | "encerrar" | "repetir" | "seguir";
   msg_invalida?: string;
   max_tentativas?: number;
   gatilhos?: string;
@@ -804,13 +804,23 @@ async function executarFluxo(
               return true;
             }
 
-            // Para o fluxo. O estado fica onde está, então a próxima mensagem
-            // não reinicia nem avança — o reinício continua sendo do Encerrar.
-            // O atendimento passa para uma pessoa, que é o desfecho certo para
-            // quem respondeu algo que o bot não entende.
             if (noAtual.msg_invalida?.trim()) {
               await sendBot(interpolarVariaveis(noAtual.msg_invalida, estado.variaveis));
             }
+
+            if (acao === "encerrar") {
+              // Encerra como o nó Encerrar faria: limpa o estado e mantém o bot
+              // ligado. A próxima mensagem do cliente começa o fluxo de novo,
+              // do início — é o desfecho de quem quer o bot sempre atendendo.
+              await supabase.from("conversas")
+                .update({ fluxo_estado: null })
+                .eq("id", convId);
+              return true;
+            }
+
+            // "parar": o estado fica onde está, então a próxima mensagem não
+            // avança nem reinicia, e o atendimento passa para uma pessoa. É o
+            // desfecho de quem prefere um humano a um bot repetindo o menu.
             await supabase.from("conversas")
               .update({ fluxo_estado: estado, bot_ativo: false, status: "aguardando" })
               .eq("id", convId);

@@ -710,13 +710,19 @@ function NodeEditPanel({ no, onSave, onClose, onGenerateRoutes, setores = [], us
                 style={{ width: "100%", border: `1.5px solid ${L.line}`, borderRadius: 8,
                   padding: "7px 10px", fontSize: 12, outline: "none", fontFamily: "inherit",
                   boxSizing: "border-box", background: L.surface, color: L.t1 }}>
-                <option value="parar">Parar o fluxo e chamar um atendente</option>
+                <option value="parar">Parar e chamar um atendente</option>
+                <option value="encerrar">Encerrar o fluxo (recomeça na próxima mensagem)</option>
                 <option value="repetir">Repetir o menu e tentar de novo</option>
                 <option value="seguir">Seguir o fluxo mesmo assim</option>
               </select>
               <div style={{ fontSize: 10, color: L.t4, marginTop: 4 }}>
                 Vale para texto fora das opções, áudio, imagem e número inexistente.
                 O cliente pode responder pelo número ou pelo nome da opção.
+                <div style={{ marginTop: 4 }}>
+                  <b>Parar</b>: o bot silencia e a conversa vai para a fila de atendimento.
+                  {" "}<b>Encerrar</b>: o bot silencia agora e recomeça o fluxo do início
+                  quando o cliente mandar a próxima mensagem.
+                </div>
               </div>
             </div>
 
