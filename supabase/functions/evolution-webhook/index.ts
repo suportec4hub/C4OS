@@ -958,8 +958,16 @@ async function executarNosSequencialmente(
       }
 
       const labelAlvo = condicaoVerdadeira ? "Sim" : "Não";
-      const conexaoEscolhida = conexoes.find(c => c.de === proximoNo.id && c.label === labelAlvo)
-        || conexoes.find(c => c.de === proximoNo.id);
+      const conexoesDoNo = conexoes.filter(c => c.de === proximoNo.id);
+      const temRotulo = conexoesDoNo.some(c => c.label === "Sim" || c.label === "Não");
+
+      // Só cai no fio único quando o nó não tem ramos rotulados — fluxo antigo,
+      // feito antes de existirem Sim e Não. Havendo rótulo, a ausência do ramo
+      // escolhido significa "não há caminho", e não "use o outro":
+      // antes, condição falsa num nó que só tinha o fio "Sim" entrava por ele,
+      // e o cliente recebia a resposta de uma opção que não escolheu.
+      const conexaoEscolhida = conexoesDoNo.find(c => c.label === labelAlvo)
+        || (temRotulo ? undefined : conexoesDoNo[0]);
 
       await logWA(supabase, {
         empresa_id, conversa_id: convId, tipo: "fluxo", nivel: "info",
@@ -980,7 +988,19 @@ async function executarNosSequencialmente(
         ];
         await executarNosSequencialmente(proximoNo.id, nos, conexoesFiltradas, estado, convId, empresa_id, senderPhone, senderName, isNew, supabase, sendBot, profundidade + 1);
       } else {
-        await supabase.from("conversas").update({ fluxo_estado: null }).eq("id", convId);
+        // Sem caminho para o resultado da condição, o fluxo acaba aqui. Zerar o
+        // estado faria a próxima mensagem reiniciar tudo; parar e chamar uma
+        // pessoa é o desfecho honesto, porque o bot não tem mais o que dizer.
+        await logWA(supabase, {
+          empresa_id, conversa_id: convId, tipo: "fluxo", nivel: "warn",
+          origem: "evolution-webhook", evento: "condicao-sem-caminho",
+          telefone: senderPhone,
+          resumo: `Condição resultou "${labelAlvo}" e o fluxo não tem esse ramo ligado`,
+          payload: { no: proximoNo.id, label: labelAlvo, ramos: conexoesDoNo.map(c => c.label) },
+        });
+        await supabase.from("conversas")
+          .update({ fluxo_estado: estado, bot_ativo: false, status: "aguardando" })
+          .eq("id", convId);
       }
       break;
     }
