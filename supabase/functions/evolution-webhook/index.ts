@@ -864,7 +864,13 @@ async function executarFluxo(
 
   // intervalo_reativacao only applies to non-mensagem_recebida triggers
   // "mensagem_recebida" must always fire on every message
-  if (gatilhoTipo !== "mensagem_recebida" && noInicioRaw.intervalo_reativacao && noInicioRaw.intervalo_reativacao > 0) {
+  //
+  // Também não se aplica quando isNew: conversa nova, ou reaberta depois de
+  // resolvida, é atendimento novo. O intervalo existe para não repetir a
+  // saudação com quem manda várias mensagens seguidas — não para barrar quem
+  // acabou de ser atendido e voltou. Sem esta ressalva, resolver a conversa e
+  // responder em seguida caía no intervalo e o fluxo não rodava.
+  if (!isNew && gatilhoTipo !== "mensagem_recebida" && noInicioRaw.intervalo_reativacao && noInicioRaw.intervalo_reativacao > 0) {
     const ultimaHora = conv.ultima_hora as string | null;
     if (ultimaHora && !estado) {
       const diffMinutes = (Date.now() - new Date(ultimaHora).getTime()) / 60000;
