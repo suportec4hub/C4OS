@@ -4,6 +4,8 @@ import { useTable } from "../hooks/useData";
 import { supabase } from "../lib/supabase";
 import { Fade, Row, PBtn, Tag, ScBar, IBtn } from "../components/ui";
 import Modal, { Field, Input, Select, ModalFooter } from "../components/Modal";
+// Mesma regra de "lead novo" usada na tela de Leads.
+import { ehLeadNovo, tempoRelativo, exibirNome, exibirWhats, maisRecentePrimeiro } from "../lib/leads";
 
 // Aplica opacidade a qualquer cor (CSS var ou hex)
 const ao = (color, pct) =>
@@ -80,23 +82,13 @@ export default function PagePipeline({ user, onOpenChat }) {
   // WhatsApp encheria o funil de número errado e engano, e estragaria a soma
   // de valor das colunas — aqui eles só ficam visíveis até alguém puxar para
   // a etapa seguinte, e é nesse momento que o negócio nasce.
-  const leadsNoFunil = leads.filter(l =>
-    l.status === "novo" && !deals.some(d => d.lead_id === l.id)
-  ).sort((a, b) =>
-    new Date(b.ultima_atividade || b.created_at || 0) - new Date(a.ultima_atividade || a.created_at || 0)
-  );
+  // Exatamente os mesmos leads que a tela de Leads marca com LEAD NOVO —
+  // mesma função, não uma cópia da regra —, tirando os que já viraram negócio.
+  const leadsNoFunil = leads
+    .filter(l => ehLeadNovo(l) && !deals.some(d => d.lead_id === l.id))
+    .sort(maisRecentePrimeiro);
 
-  const tempoRelativo = (iso) => {
-    if (!iso) return null;
-    const min = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
-    if (min < 1)  return "agora";
-    if (min < 60) return `há ${min} min`;
-    const h = Math.floor(min / 60);
-    if (h < 24)   return `há ${h}h`;
-    const d = Math.floor(h / 24);
-    return d === 1 ? "ontem" : `há ${d} dias`;
-  };
-  const nomeLead = (l) => (l.nome && !String(l.nome).includes("@")) ? l.nome : "Contato sem nome";
+  const nomeLead = exibirNome;
 
   const openNew  = (etapa = "novo") => {
     setForm({ ...VAZIO, etapa }); setEditId(null); setErr(""); setModal(true);
@@ -305,7 +297,7 @@ export default function PagePipeline({ user, onOpenChat }) {
                     letterSpacing: ".4px", whiteSpace: "nowrap", marginLeft: 6 }}>LEAD NOVO</span>
                 </Row>
                 <div style={{ fontSize: 10.5, color: L.t4 }}>
-                  {String(l.whatsapp || "").includes("@") ? "aguardando número" : (l.whatsapp || "sem telefone")}
+                  {exibirWhats(l.whatsapp)}
                   {tempoRelativo(l.ultima_atividade || l.created_at)
                     ? ` · ${tempoRelativo(l.ultima_atividade || l.created_at)}` : ""}
                 </div>

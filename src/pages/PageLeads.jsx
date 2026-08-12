@@ -6,6 +6,10 @@ import { trackLead } from "../lib/analytics";
 import { logAction } from "../lib/log";
 import { Fade, Row, TabPills, PBtn, DataTable, Av, Tag, ScBar, IBtn, TD } from "../components/ui";
 import Modal, { Field, Input, Select, ModalFooter } from "../components/Modal";
+// Regra de "lead novo" compartilhada com o Pipeline: uma definição só, para
+// as duas telas nunca discordarem sobre quantos leads novos existem.
+import { ehLeadNovo, tempoRelativo, exibirNome, exibirWhats, semNumero, maisRecentePrimeiro }
+  from "../lib/leads";
 
 const STATUS_COLORS = {
   quente: { c: L.red,    bg: L.redBg,    l: "Quente" },
@@ -13,36 +17,6 @@ const STATUS_COLORS = {
   frio:   { c: L.blue,   bg: L.blueBg,   l: "Frio"   },
   novo:   { c: L.teal,   bg: L.tealBg,   l: "Novo"   },
 };
-// "há 5 min", "há 2 h", "ontem". Saber que o lead chegou agora muda a ação;
-// uma data absoluta obriga a pessoa a fazer essa conta de cabeça.
-const tempoRelativo = (iso) => {
-  if (!iso) return null;
-  const min = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
-  if (min < 1)    return "agora";
-  if (min < 60)   return `há ${min} min`;
-  const h = Math.floor(min / 60);
-  if (h < 24)     return `há ${h}h`;
-  const d = Math.floor(h / 24);
-  if (d === 1)    return "ontem";
-  if (d < 30)     return `há ${d} dias`;
-  return new Date(iso).toLocaleDateString("pt-BR");
-};
-
-// Lead novo = status "novo" e chegou nas últimas 24h. Só o status não basta:
-// um lead de dois meses que ninguém qualificou continuaria "novo" para sempre.
-const ehLeadNovo = (l) => {
-  if (l.status !== "novo") return false;
-  const ref = l.created_at || l.ultima_atividade;
-  if (!ref) return true;
-  return (Date.now() - new Date(ref).getTime()) < 24 * 3600 * 1000;
-};
-
-// Enquanto o WhatsApp não informa o número, o identificador interno (@lid)
-// aparecia cru como nome e telefone. Não é informação para o usuário.
-const semNumero = (v) => !v || String(v).includes("@");
-const exibirWhats = (v) => semNumero(v) ? "aguardando número" : v;
-const exibirNome  = (l) => (l.nome && !String(l.nome).includes("@")) ? l.nome : "Contato sem nome";
-
 const CANAIS = ["WhatsApp","Site","Email","Indicação","Ligação","Instagram","Facebook ADS","Outro"];
 const VAZIO  = { nome:"", email:"", whatsapp:"", empresa_nome:"", cargo:"", status:"novo", score:70, origem:"WhatsApp", valor_estimado:"", observacoes:"", atribuido_a:"" };
 const PIPE_VAZIO = { lead_id:null, titulo:"", valor:"", etapa:"", empresa_nome:"", whatsapp:"", canal_aquisicao:"", responsavel_id:"" };
@@ -108,7 +82,7 @@ export default function PageLeads({ user, onOpenChat }) {
   ).slice().sort((a, b) => {
     const na = ehLeadNovo(a) ? 0 : 1, nb = ehLeadNovo(b) ? 0 : 1;
     if (na !== nb) return na - nb;
-    return new Date(b.ultima_atividade || b.created_at || 0) - new Date(a.ultima_atividade || a.created_at || 0);
+    return maisRecentePrimeiro(a, b);
   });
 
   const novos24h = leads.filter(ehLeadNovo).length;
