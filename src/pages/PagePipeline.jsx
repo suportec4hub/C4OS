@@ -75,6 +75,29 @@ export default function PagePipeline({ user, onOpenChat }) {
 
   const byEtapa = (id) => deals.filter(d => d.etapa === id);
 
+  // Leads que ainda não viraram negócio aparecem na primeira coluna como
+  // cartão de lead, e não como deal. Criar um deal para cada contato do
+  // WhatsApp encheria o funil de número errado e engano, e estragaria a soma
+  // de valor das colunas — aqui eles só ficam visíveis até alguém puxar para
+  // a etapa seguinte, e é nesse momento que o negócio nasce.
+  const leadsNoFunil = leads.filter(l =>
+    l.status === "novo" && !deals.some(d => d.lead_id === l.id)
+  ).sort((a, b) =>
+    new Date(b.ultima_atividade || b.created_at || 0) - new Date(a.ultima_atividade || a.created_at || 0)
+  );
+
+  const tempoRelativo = (iso) => {
+    if (!iso) return null;
+    const min = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+    if (min < 1)  return "agora";
+    if (min < 60) return `há ${min} min`;
+    const h = Math.floor(min / 60);
+    if (h < 24)   return `há ${h}h`;
+    const d = Math.floor(h / 24);
+    return d === 1 ? "ontem" : `há ${d} dias`;
+  };
+  const nomeLead = (l) => (l.nome && !String(l.nome).includes("@")) ? l.nome : "Contato sem nome";
+
   const openNew  = (etapa = "novo") => {
     setForm({ ...VAZIO, etapa }); setEditId(null); setErr(""); setModal(true);
   };
@@ -124,7 +147,27 @@ export default function PagePipeline({ user, onOpenChat }) {
   };
 
   const onDrop = async (toEtapa) => {
-    if (!dragging || dragging.etapa === toEtapa) { setDragging(null); setDragOver(null); return; }
+    if (!dragging) { setDragOver(null); return; }
+
+    // Cartão de lead: arrastar é o gesto que transforma o lead em negócio.
+    // Enquanto ele fica parado na primeira coluna, continua sendo só um lead.
+    if (dragging.__lead) {
+      const l = dragging.__lead;
+      await insert({
+        empresa_id: user?.empresa_id,
+        lead_id: l.id,
+        titulo: nomeLead(l),
+        valor: parseFloat(l.valor_estimado || 0) || 0,
+        etapa: toEtapa,
+        whatsapp_contato: l.whatsapp || null,
+        canal_aquisicao: l.origem || "WhatsApp",
+        responsavel_id: l.atribuido_a || null,
+      });
+      setDragging(null); setDragOver(null);
+      return;
+    }
+
+    if (dragging.etapa === toEtapa) { setDragging(null); setDragOver(null); return; }
     await update(dragging.id, { etapa: toEtapa });
     setDragging(null); setDragOver(null);
   };
@@ -222,7 +265,7 @@ export default function PagePipeline({ user, onOpenChat }) {
                 title="Arraste para reordenar a coluna">
                 <div style={{fontSize:10,fontWeight:700,color:stage.cor,textTransform:"uppercase",letterSpacing:"1px",fontFamily:"'JetBrains Mono',monospace"}}>{stage.label}</div>
                 <div style={{fontSize:10,color:L.t4,marginTop:1}}>
-                  {byEtapa(stage.id).length} deals · R$ {byEtapa(stage.id).reduce((s,d)=>s+parseFloat(d.valor||0),0).toLocaleString("pt-BR",{maximumFractionDigits:0})}
+                  {byEtapa(stage.id).length} deals{stageIdx === 0 && leadsNoFunil.length > 0 ? ` + ${leadsNoFunil.length} leads` : ""} · R$ {byEtapa(stage.id).reduce((s,d)=>s+parseFloat(d.valor||0),0).toLocaleString("pt-BR",{maximumFractionDigits:0})}
                 </div>
               </div>
               <div style={{display:"flex",alignItems:"center",gap:4}}>
@@ -236,6 +279,41 @@ export default function PagePipeline({ user, onOpenChat }) {
                   title="Editar coluna">✎</button>
               </div>
             </Row>
+
+            {/* Leads ainda não trabalhados — só na primeira coluna */}
+            {stageIdx === 0 && leadsNoFunil.map(l => (
+              <div key={`lead-${l.id}`} draggable
+                onDragStart={() => setDragging({ __lead: l })}
+                onDragEnd={() => setDragging(null)}
+                onClick={() => { setForm({ ...VAZIO, lead_id: l.id, titulo: nomeLead(l),
+                  whatsapp_contato: l.whatsapp || "", canal_aquisicao: l.origem || "WhatsApp",
+                  valor: l.valor_estimado || "", etapa: stage.id, responsavel_id: l.atribuido_a || "" });
+                  setEditId(null); setErr(""); setModal(true); }}
+                style={{ background: L.white, borderRadius: 10, border: `1px dashed ${L.greenA2}`,
+                  borderLeft: `3px solid ${L.green}`, padding: "11px 12px 11px 10px", marginBottom: 8,
+                  cursor: "grab", transition: "all .15s" }}
+                onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-1px)";
+                  e.currentTarget.style.boxShadow = "0 4px 12px rgba(0,0,0,0.08)"; }}
+                onMouseLeave={e => { e.currentTarget.style.transform = "none";
+                  e.currentTarget.style.boxShadow = "none"; }}
+              >
+                <Row between style={{ marginBottom: 4 }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 600, color: L.t1, flex: 1, minWidth: 0,
+                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{nomeLead(l)}</div>
+                  <span style={{ fontSize: 8.5, fontWeight: 800, color: L.green, background: L.greenBg,
+                    border: `1px solid ${L.greenA2}`, borderRadius: 5, padding: "2px 5px",
+                    letterSpacing: ".4px", whiteSpace: "nowrap", marginLeft: 6 }}>LEAD NOVO</span>
+                </Row>
+                <div style={{ fontSize: 10.5, color: L.t4 }}>
+                  {String(l.whatsapp || "").includes("@") ? "aguardando número" : (l.whatsapp || "sem telefone")}
+                  {tempoRelativo(l.ultima_atividade || l.created_at)
+                    ? ` · ${tempoRelativo(l.ultima_atividade || l.created_at)}` : ""}
+                </div>
+                <div style={{ fontSize: 9.5, color: L.t4, marginTop: 5, fontStyle: "italic" }}>
+                  arraste para virar negócio
+                </div>
+              </div>
+            ))}
 
             {/* Cards */}
             {byEtapa(stage.id).map(deal => {

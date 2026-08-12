@@ -150,11 +150,13 @@ export default function PageLeads({ user, onOpenChat }) {
       titulo:          pipeForm.titulo,
       valor:           parseFloat(pipeForm.valor) || 0,
       etapa:           pipeForm.etapa || firstEtapa,
-      empresa_nome:    pipeForm.empresa_nome || null,
-      whatsapp:        pipeForm.whatsapp || null,
+      // A tabela deals não tem empresa_nome nem criado_por, e o telefone se
+      // chama whatsapp_contato. Enviar campo inexistente fazia o Postgres
+      // recusar o insert inteiro — o botão "enviar para Pipeline" nunca criou
+      // negócio nenhum, só exibia o erro do banco.
+      whatsapp_contato: pipeForm.whatsapp || null,
       canal_aquisicao: pipeForm.canal_aquisicao || null,
       responsavel_id:  pipeForm.responsavel_id || null,
-      criado_por:      user?.id,
     });
     if (error) { setPipeErr(error.message); setPipeSaving(false); return; }
     logAction({
