@@ -1401,6 +1401,14 @@ async function processMessages(
       // Reabre conversa resolvida automaticamente quando cliente envia nova mensagem
       const wasResolvida = conv.status === "resolvida";
       if (wasResolvida) {
+        // Resolver encerra o atendimento; a mensagem que chega depois abre um
+        // novo. Por isso ela conta como primeira mensagem — sem isso, o gatilho
+        // "primeira mensagem" só valia uma vez na vida do contato, e um cliente
+        // que voltasse semanas depois entrava sem saudação e sem menu, direto
+        // no vazio.
+        //
+        // Vale também para "primeira mensagem do dia", que já considera isNew.
+        isNew = true;
         reopenFields.status = "aberta";
         reopenFields.atendente_id = null;
         reopenFields.fluxo_estado = null;
