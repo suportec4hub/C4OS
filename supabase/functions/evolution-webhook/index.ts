@@ -580,6 +580,47 @@ function safeTimestamp(rawTs: unknown, fallback: string): string {
 // Tipos de nó do fluxo visual
 // ─────────────────────────────────────────────────────────────────────────────
 interface FluxoNo {
+
+// Interpreta a resposta do cliente diante das opções do menu.
+//
+// Aceita o número ("2", "2.", "opção 2") e também o texto da opção, porque na
+// prática muita gente responde "Vendas" em vez de "1". Devolve null quando não
+// corresponde a nada — aí quem decide o que fazer é o nó, não o roteamento.
+// Áudio e imagem caem aqui naturalmente: o texto deles ("[🎤 Áudio]") não casa
+// com número nem com opção.
+function interpretarEscolha(
+  texto: string,
+  opcoes: string[],
+): { numero: number; texto: string } | null {
+  if (opcoes.length === 0) return null;
+  const bruto = (texto || "").trim();
+  if (!bruto) return null;
+
+  const semAcento = (t: string) => t.toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+
+  // Número solto, com ou sem pontuação em volta.
+  const m = bruto.match(/^[^\d]{0,10}?(\d{1,2})[^\d]{0,3}$/);
+  if (m) {
+    const n = parseInt(m[1], 10);
+    if (n >= 1 && n <= opcoes.length) return { numero: n, texto: opcoes[n - 1] };
+    return null;   // número fora da faixa é inválido, não "primeira opção"
+  }
+
+  // Texto da opção: exato primeiro, depois contido.
+  const alvo = semAcento(bruto);
+  const exato = opcoes.findIndex((op) => semAcento(op) === alvo);
+  if (exato >= 0) return { numero: exato + 1, texto: opcoes[exato] };
+
+  const contido = opcoes.findIndex((op) => {
+    const o = semAcento(op);
+    return o.length >= 4 && (alvo.includes(o) || o.includes(alvo));
+  });
+  if (contido >= 0) return { numero: contido + 1, texto: opcoes[contido] };
+
+  return null;
+}
+
   id: string;
   tipo: "inicio" | "mensagem" | "opcoes" | "condicao" | "transferir" | "encerrar" | "aguardar"
       | "imagem" | "video" | "audio" | "documento" | "respostas" | "lista" | "controle_fluxo";
@@ -589,6 +630,12 @@ interface FluxoNo {
   gatilho_tipo?: "mensagem_recebida" | "palavra_chave" | "primeira_mensagem_dia" | "primeira_mensagem";
   gatilho_palavras?: string;
   condicao_tipo?: "contem_palavra" | "igual" | "numero_opcao" | "primeira_mensagem" | "primeira_mensagem_dia";
+  // O que fazer quando a resposta não corresponde a nenhuma opção do menu.
+  // Sem valor definido vale "parar": seguir com resposta inválida era o que
+  // mandava o cliente para um caminho que ele não escolheu.
+  resposta_invalida?: "parar" | "repetir" | "seguir";
+  msg_invalida?: string;
+  max_tentativas?: number;
   gatilhos?: string;
   numero_opcao?: string;
   variavel?: string;
@@ -715,10 +762,64 @@ async function executarFluxo(
           console.log(`[fluxo] aguardar: variavel "${noAtual.variavel}" = "${texto.slice(0, 60)}"`);
         }
         if (["opcoes", "respostas", "lista"].includes(noAtual.tipo)) {
-          const num = parseInt(texto.trim(), 10);
-          if (!isNaN(num) && num > 0) {
-            estado.variaveis["_opcao"] = String(num);
+          // Zera antes de avaliar: o valor da rodada anterior sobrevivia no
+          // estado e casava com uma condição que nada tinha a ver com o que o
+          // cliente acabou de responder.
+          delete estado.variaveis["_opcao"];
+
+          const opcoesDoNo = (noAtual.opcoes || []).filter(Boolean);
+          const escolha = interpretarEscolha(texto, opcoesDoNo);
+
+          if (escolha === null) {
+            // Resposta fora do menu — inclusive áudio, imagem e texto livre.
+            // Antes seguia assim mesmo, e a condição caía na primeira conexão
+            // do nó: o cliente respondia qualquer coisa e o fluxo entrava num
+            // caminho que ele não pediu.
+            const acao = noAtual.resposta_invalida || "parar";
+            const tentativas = Number(estado.variaveis["_tentativas_menu"] || 0) + 1;
+            const maxTentativas = Number(noAtual.max_tentativas || 2);
+
+            await logWA(supabase, {
+              empresa_id, conversa_id: convId, tipo: "fluxo", nivel: "info",
+              origem: "evolution-webhook", evento: "menu-resposta-invalida",
+              telefone: senderPhone,
+              resumo: `Resposta fora do menu (${acao}) tentativa ${tentativas}`,
+              payload: { no_id: noAtual.id, texto: texto.slice(0, 80), opcoes: opcoesDoNo.length, acao },
+            });
+
+            if (acao === "seguir") {
+              await executarNosSequencialmente(noAtual.id, nos, conexoes, estado, convId, empresa_id, senderPhone, senderName, isNew, supabase, sendBot);
+              return true;
+            }
+
+            if (acao === "repetir" && tentativas < maxTentativas) {
+              estado.variaveis["_tentativas_menu"] = String(tentativas);
+              if (noAtual.msg_invalida?.trim()) {
+                await sendBot(interpolarVariaveis(noAtual.msg_invalida, estado.variaveis));
+              }
+              const intro = noAtual.mensagem?.trim() || "Escolha uma opção:";
+              const lista = opcoesDoNo.map((op, i) => `${i + 1}. ${op}`).join("\n");
+              await sendBot(interpolarVariaveis(`${intro}\n\n${lista}`, estado.variaveis));
+              await supabase.from("conversas").update({ fluxo_estado: estado }).eq("id", convId);
+              return true;
+            }
+
+            // Para o fluxo. O estado fica onde está, então a próxima mensagem
+            // não reinicia nem avança — o reinício continua sendo do Encerrar.
+            // O atendimento passa para uma pessoa, que é o desfecho certo para
+            // quem respondeu algo que o bot não entende.
+            if (noAtual.msg_invalida?.trim()) {
+              await sendBot(interpolarVariaveis(noAtual.msg_invalida, estado.variaveis));
+            }
+            await supabase.from("conversas")
+              .update({ fluxo_estado: estado, bot_ativo: false, status: "aguardando" })
+              .eq("id", convId);
+            return true;
           }
+
+          estado.variaveis["_opcao"] = String(escolha.numero);
+          estado.variaveis["_opcao_texto"] = escolha.texto;
+          delete estado.variaveis["_tentativas_menu"];
         }
         await executarNosSequencialmente(noAtual.id, nos, conexoes, estado, convId, empresa_id, senderPhone, senderName, isNew, supabase, sendBot);
         return true;

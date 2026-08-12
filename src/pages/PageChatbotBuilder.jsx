@@ -698,6 +698,53 @@ function NodeEditPanel({ no, onSave, onClose, onGenerateRoutes, setores = [], us
               </div>
             </div>
 
+            {/* Resposta fora do menu ─────────────────────────────────────
+                Antes o fluxo seguia mesmo assim, e a condição caía na primeira
+                conexão do nó: quem respondia qualquer coisa entrava num caminho
+                que não escolheu. */}
+            <div style={{ marginBottom: 10 }}>
+              {labelS("Se o cliente responder algo fora do menu")}
+              <select
+                value={form.resposta_invalida || "parar"}
+                onChange={e => set("resposta_invalida", e.target.value)}
+                style={{ width: "100%", border: `1.5px solid ${L.line}`, borderRadius: 8,
+                  padding: "7px 10px", fontSize: 12, outline: "none", fontFamily: "inherit",
+                  boxSizing: "border-box", background: L.surface, color: L.t1 }}>
+                <option value="parar">Parar o fluxo e chamar um atendente</option>
+                <option value="repetir">Repetir o menu e tentar de novo</option>
+                <option value="seguir">Seguir o fluxo mesmo assim</option>
+              </select>
+              <div style={{ fontSize: 10, color: L.t4, marginTop: 4 }}>
+                Vale para texto fora das opções, áudio, imagem e número inexistente.
+                O cliente pode responder pelo número ou pelo nome da opção.
+              </div>
+            </div>
+
+            {(form.resposta_invalida || "parar") !== "seguir" && (
+              <>
+                <FieldTextarea
+                  label="Mensagem quando a resposta não for válida (opcional)"
+                  value={form.msg_invalida}
+                  onChange={v => set("msg_invalida", v)}
+                  placeholder="Ex: Não entendi sua resposta. Vou chamar um atendente."
+                  rows={2}
+                />
+                {form.resposta_invalida === "repetir" && (
+                  <div style={{ marginBottom: 10 }}>
+                    {labelS("Tentativas antes de parar")}
+                    <input
+                      type="number" min={1} max={5}
+                      value={form.max_tentativas ?? 2}
+                      onChange={e => set("max_tentativas", parseInt(e.target.value, 10) || 2)}
+                      style={{ width: "100%", border: `1.5px solid ${L.line}`, borderRadius: 8,
+                        padding: "7px 10px", fontSize: 12, outline: "none", fontFamily: "inherit",
+                        boxSizing: "border-box", background: L.surface, color: L.t1 }}
+                    />
+                  </div>
+                )}
+              </>
+            )}
+
             {/* Guia de roteamento */}
             <div style={{ padding: "10px 12px", background: L.yellowBg, borderRadius: 8,
               border: `1px solid ${L.yellowA2}`, fontSize: 11, color: L.t2, lineHeight: 1.6, marginBottom: 8 }}>
@@ -1720,6 +1767,7 @@ export default function PageChatbotBuilder({ user }) {
       x: centro.x + (Math.random() * 60 - 30),
       y: centro.y + (Math.random() * 60 - 30),
       opcoes: [], gatilhos: "", variavel: "",
+      resposta_invalida: "parar", msg_invalida: "", max_tentativas: 2,
       condicao_tipo: "contem_palavra",
       ...extraProps,
     }]);
