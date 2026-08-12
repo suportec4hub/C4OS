@@ -222,7 +222,7 @@ export default function PageLeads({ user, onOpenChat }) {
           estão esperando resposta — não o total histórico. */}
       <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:12, marginBottom:16 }} className="rg-auto">
         {[
-          { l:"Novos (24h)",  v:novos24h,     c:L.teal,   sub:"aguardando primeiro contato" },
+          { l:"Novos (24h)",  v:novos24h,     c:L.green,  sub:"aguardando primeiro contato" },
           { l:"Com msg nova", v:unreadCount,  c:L.green,  sub:"esperando resposta" },
           { l:"Quentes",      v:leads.filter(x => x.status === "quente").length, c:L.red, sub:"prontos para fechar" },
           { l:"Total",        v:leads.length, c:L.t2,     sub:"na base" },
@@ -282,20 +282,24 @@ export default function PageLeads({ user, onOpenChat }) {
                 style={{ borderBottom:`1px solid ${L.lineSoft}`,
                   // Faixa à esquerda no lead novo: identifica a linha de relance,
                   // sem depender de ler a coluna de status.
-                  boxShadow: novo ? `inset 3px 0 0 ${L.teal}` : "none" }}
+                  boxShadow: novo ? `inset 3px 0 0 ${L.green}` : "none" }}
                 onMouseEnter={e => e.currentTarget.style.background = L.surface}
                 onMouseLeave={e => e.currentTarget.style.background = "transparent"}
               >
                 {/* name + unread badge */}
                 <td style={TD}>
                   <Row gap={9}>
-                    <Av name={exibirNome(lead)} color={novo ? L.teal : L.copper}/>
+                    <Av name={exibirNome(lead)} color={novo ? L.green : L.copper}/>
                     <div style={{ minWidth:0 }}>
                       <Row gap={6}>
                         <span style={{ color:L.t1, fontWeight:500, fontSize:12.5 }}>{exibirNome(lead)}</span>
                         {novo && (
-                          <span style={{ fontSize:9, fontWeight:800, color:"#fff", background:L.teal,
-                            borderRadius:5, padding:"2px 6px", letterSpacing:".5px", whiteSpace:"nowrap" }}>
+                          // Verde sobre fundo verde translúcido, com borda — o mesmo par de
+                          // tokens do selo de mensagem nova. Antes era branco sobre L.teal,
+                          // que no tema escuro é claro: texto claro sobre fundo claro, ilegível.
+                          <span style={{ fontSize:9, fontWeight:800, color:L.green, background:L.greenBg,
+                            border:`1px solid ${L.greenA2}`, borderRadius:5, padding:"2px 6px",
+                            letterSpacing:".5px", whiteSpace:"nowrap" }}>
                             LEAD NOVO
                           </span>
                         )}
