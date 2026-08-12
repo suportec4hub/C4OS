@@ -576,11 +576,6 @@ function safeTimestamp(rawTs: unknown, fallback: string): string {
   return fallback;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Tipos de nó do fluxo visual
-// ─────────────────────────────────────────────────────────────────────────────
-interface FluxoNo {
-
 // Interpreta a resposta do cliente diante das opções do menu.
 //
 // Aceita o número ("2", "2.", "opção 2") e também o texto da opção, porque na
@@ -621,6 +616,10 @@ function interpretarEscolha(
   return null;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Tipos de nó do fluxo visual
+// ─────────────────────────────────────────────────────────────────────────────
+interface FluxoNo {
   id: string;
   tipo: "inicio" | "mensagem" | "opcoes" | "condicao" | "transferir" | "encerrar" | "aguardar"
       | "imagem" | "video" | "audio" | "documento" | "respostas" | "lista" | "controle_fluxo";
