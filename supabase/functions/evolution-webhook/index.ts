@@ -809,8 +809,10 @@ async function executarFluxo(
 
             if (acao === "encerrar") {
               // Encerra como o nó Encerrar faria: limpa o estado e mantém o bot
-              // ligado. A próxima mensagem do cliente começa o fluxo de novo,
-              // do início — é o desfecho de quem quer o bot sempre atendendo.
+              // ligado. O que acontece depois é decisão do gatilho do nó de
+              // início, e não desta linha: com "primeira mensagem" o fluxo não
+              // roda de novo na mesma conversa; com "mensagem recebida" ele
+              // recomeça na mensagem seguinte.
               await supabase.from("conversas")
                 .update({ fluxo_estado: null })
                 .eq("id", convId);

@@ -711,7 +711,7 @@ function NodeEditPanel({ no, onSave, onClose, onGenerateRoutes, setores = [], us
                   padding: "7px 10px", fontSize: 12, outline: "none", fontFamily: "inherit",
                   boxSizing: "border-box", background: L.surface, color: L.t1 }}>
                 <option value="parar">Parar e chamar um atendente</option>
-                <option value="encerrar">Encerrar o fluxo (recomeça na próxima mensagem)</option>
+                <option value="encerrar">Encerrar o fluxo (segue o gatilho do nó Início)</option>
                 <option value="repetir">Repetir o menu e tentar de novo</option>
                 <option value="seguir">Seguir o fluxo mesmo assim</option>
               </select>
@@ -720,8 +720,11 @@ function NodeEditPanel({ no, onSave, onClose, onGenerateRoutes, setores = [], us
                 O cliente pode responder pelo número ou pelo nome da opção.
                 <div style={{ marginTop: 4 }}>
                   <b>Parar</b>: o bot silencia e a conversa vai para a fila de atendimento.
-                  {" "}<b>Encerrar</b>: o bot silencia agora e recomeça o fluxo do início
-                  quando o cliente mandar a próxima mensagem.
+                  O fluxo não volta a rodar nessa conversa.
+                  {" "}<b>Encerrar</b>: o fluxo simplesmente acaba, e daí em diante quem manda
+                  é o gatilho do nó <b>Início</b> — com "primeira mensagem" ele não roda de
+                  novo nessa conversa; com "mensagem recebida" ele recomeça na mensagem
+                  seguinte.
                 </div>
               </div>
             </div>
