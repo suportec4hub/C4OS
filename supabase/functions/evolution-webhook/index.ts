@@ -1304,14 +1304,6 @@ async function processMessages(
       }
 
       if (isNew) {
-      const { data: leadExist } = await supabase.from("leads")
-        .select("id").eq("empresa_id", empresa_id).eq("whatsapp", senderPhone).maybeSingle();
-      if (!leadExist) {
-        await supabase.from("leads").insert({
-          empresa_id, nome: senderName, whatsapp: senderPhone,
-          origem: "WhatsApp", status: "novo", score: 20, ultima_atividade: hora,
-        });
-      }
 
       // ── Round-robin: distribui novo cliente para o próximo vendedor ──────────
       // Só é bloqueado quando algum fluxo ativo tem menu de opções levando a setores;
@@ -1426,7 +1418,7 @@ async function processMessages(
       }
       await supabase.from("conversas").update(reopenFields).eq("id", conv.id);
 
-      // Instância secundária (celular de vendedor): atribui ao dono da instância se sem atendente
+    // Instância secundária (celular de vendedor): atribui ao dono da instância se sem atendente
       if (!instanciaEhPrincipal && instanciaId && !(conv as Record<string, unknown>).atendente_id) {
         try {
           const { data: instInfo } = await supabase.from("empresa_instancias")
@@ -1820,6 +1812,50 @@ async function processMessages(
         }
       }
     }
+
+    // ── Lead: novo ou recorrente ──────────────────────────────────────────────
+    // Roda a cada mensagem recebida, e não só quando a conversa é criada. Antes,
+    // quem já tinha conversa e não tinha lead nunca virava lead — e quem voltava
+    // depois de meses não tinha a atividade atualizada.
+    //
+    // Grupo não vira lead: o telefone ali é o do grupo, não o de uma pessoa.
+    if (!fromMe && !isHistory && !isGroup && conv?.id) {
+      try {
+        // Prefere o telefone já resolvido na conversa: enquanto o WhatsApp não
+        // informa o número, senderPhone pode ser o @lid, e um lead chamado
+        // "269616907587591@lid" não serve para ninguém.
+        const telLead = String((conv as Record<string, unknown>).contato_telefone || senderPhone);
+        const ehLid   = telLead.includes("@");
+
+        const { data: leadExist } = await supabase.from("leads")
+          .select("id, status, nome")
+          .eq("empresa_id", empresa_id)
+          .eq("whatsapp", telLead)
+          .maybeSingle();
+
+        if (!leadExist) {
+          await supabase.from("leads").insert({
+            empresa_id,
+            nome: (!ehLid && senderName) ? senderName : (senderName || telLead),
+            whatsapp: telLead,
+            origem: "WhatsApp", status: "novo", score: 20,
+            ultima_atividade: hora,
+          });
+        } else {
+          // Já existia: é contato recorrente. O status não volta para "novo" —
+          // quem já foi qualificado como quente não pode regredir só por
+          // mandar mensagem de novo.
+          const patch: Record<string, unknown> = { ultima_atividade: hora };
+          // Nome melhor que o que está gravado (deixa de ser o @lid ou o número).
+          if (senderName && !senderName.includes("@") &&
+              (!leadExist.nome || leadExist.nome.includes("@") || leadExist.nome === telLead)) {
+            patch.nome = senderName;
+          }
+          await supabase.from("leads").update(patch).eq("id", leadExist.id);
+        }
+      } catch (_) { /* lead é acessório: não pode derrubar o processamento da mensagem */ }
+    }
+
 
     const hasActiveFlowState = !!(conv.fluxo_estado as { fluxo_id?: string } | null)?.fluxo_id;
     // Allow chatbot block when bot is enabled OR when a per-seller flow is configured

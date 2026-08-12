@@ -13,6 +13,36 @@ const STATUS_COLORS = {
   frio:   { c: L.blue,   bg: L.blueBg,   l: "Frio"   },
   novo:   { c: L.teal,   bg: L.tealBg,   l: "Novo"   },
 };
+// "há 5 min", "há 2 h", "ontem". Saber que o lead chegou agora muda a ação;
+// uma data absoluta obriga a pessoa a fazer essa conta de cabeça.
+const tempoRelativo = (iso) => {
+  if (!iso) return null;
+  const min = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
+  if (min < 1)    return "agora";
+  if (min < 60)   return `há ${min} min`;
+  const h = Math.floor(min / 60);
+  if (h < 24)     return `há ${h}h`;
+  const d = Math.floor(h / 24);
+  if (d === 1)    return "ontem";
+  if (d < 30)     return `há ${d} dias`;
+  return new Date(iso).toLocaleDateString("pt-BR");
+};
+
+// Lead novo = status "novo" e chegou nas últimas 24h. Só o status não basta:
+// um lead de dois meses que ninguém qualificou continuaria "novo" para sempre.
+const ehLeadNovo = (l) => {
+  if (l.status !== "novo") return false;
+  const ref = l.created_at || l.ultima_atividade;
+  if (!ref) return true;
+  return (Date.now() - new Date(ref).getTime()) < 24 * 3600 * 1000;
+};
+
+// Enquanto o WhatsApp não informa o número, o identificador interno (@lid)
+// aparecia cru como nome e telefone. Não é informação para o usuário.
+const semNumero = (v) => !v || String(v).includes("@");
+const exibirWhats = (v) => semNumero(v) ? "aguardando número" : v;
+const exibirNome  = (l) => (l.nome && !String(l.nome).includes("@")) ? l.nome : "Contato sem nome";
+
 const CANAIS = ["WhatsApp","Site","Email","Indicação","Ligação","Instagram","Facebook ADS","Outro"];
 const VAZIO  = { nome:"", email:"", whatsapp:"", empresa_nome:"", cargo:"", status:"novo", score:70, origem:"WhatsApp", valor_estimado:"", observacoes:"", atribuido_a:"" };
 const PIPE_VAZIO = { lead_id:null, titulo:"", valor:"", etapa:"", empresa_nome:"", whatsapp:"", canal_aquisicao:"", responsavel_id:"" };
@@ -20,6 +50,7 @@ const PIPE_VAZIO = { lead_id:null, titulo:"", valor:"", etapa:"", empresa_nome:"
 export default function PageLeads({ user, onOpenChat }) {
   /* ── lead modal ── */
   const [f, setF]         = useState("Todos");
+  const [busca, setBusca] = useState("");
   const [modal, setModal] = useState(false);
   const [edit, setEdit]   = useState(null);
   const [form, setForm]   = useState(VAZIO);
@@ -62,7 +93,25 @@ export default function PageLeads({ user, onOpenChat }) {
   }, [user?.empresa_id]);
 
   /* ── helpers ── */
-  const filtered = f === "Todos" ? leads : leads.filter(l => l.status === f.toLowerCase());
+  // "Novos" é aba própria porque é a que exige ação imediata; as demais
+  // continuam filtrando por temperatura.
+  const porAba = f === "Todos"  ? leads
+               : f === "Novos"  ? leads.filter(ehLeadNovo)
+               : leads.filter(l => l.status === f.toLowerCase());
+
+  const termo = busca.trim().toLowerCase();
+  const filtered = (termo
+    ? porAba.filter(l => [l.nome, l.whatsapp, l.empresa_nome, l.email]
+        .some(v => String(v || "").toLowerCase().includes(termo)))
+    : porAba
+  // Lead novo primeiro: é dele que depende a resposta rápida.
+  ).slice().sort((a, b) => {
+    const na = ehLeadNovo(a) ? 0 : 1, nb = ehLeadNovo(b) ? 0 : 1;
+    if (na !== nb) return na - nb;
+    return new Date(b.ultima_atividade || b.created_at || 0) - new Date(a.ultima_atividade || a.created_at || 0);
+  });
+
+  const novos24h = leads.filter(ehLeadNovo).length;
   const F  = (k) => (v) => setForm(p => ({ ...p, [k]: v }));
   const PF = (k) => (v) => setPipeForm(p => ({ ...p, [k]: v }));
 
@@ -168,10 +217,36 @@ export default function PageLeads({ user, onOpenChat }) {
   /* ──────────────────── RENDER ──────────────────── */
   return (
     <Fade>
+      {/* ── indicadores ──────────────────────────────────────────────────────
+          O que importa ao abrir a tela é quantos leads chegaram agora e quantos
+          estão esperando resposta — não o total histórico. */}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:12, marginBottom:16 }} className="rg-auto">
+        {[
+          { l:"Novos (24h)",  v:novos24h,     c:L.teal,   sub:"aguardando primeiro contato" },
+          { l:"Com msg nova", v:unreadCount,  c:L.green,  sub:"esperando resposta" },
+          { l:"Quentes",      v:leads.filter(x => x.status === "quente").length, c:L.red, sub:"prontos para fechar" },
+          { l:"Total",        v:leads.length, c:L.t2,     sub:"na base" },
+        ].map((k,i) => (
+          <div key={i} style={{ background:L.white, borderRadius:12, border:`1px solid ${L.line}`,
+            padding:"14px 16px", boxShadow:"0 1px 3px rgba(0,0,0,0.04)" }}>
+            <div style={{ fontSize:9.5, color:L.t4, textTransform:"uppercase", letterSpacing:"1.4px",
+              marginBottom:4, fontFamily:"'JetBrains Mono',monospace", fontWeight:600 }}>{k.l}</div>
+            <div style={{ fontSize:26, fontWeight:700, color:k.c, fontFamily:"'Outfit',sans-serif" }}>{k.v}</div>
+            <div style={{ fontSize:10, color:L.t4, marginTop:1 }}>{k.sub}</div>
+          </div>
+        ))}
+      </div>
+
       {/* ── toolbar ── */}
       <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:8, marginBottom:16 }}>
         <div style={{ display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
-          <TabPills tabs={["Todos","Quente","Morno","Frio","Novo"]} active={f} onChange={setF}/>
+          <TabPills tabs={["Todos","Novos","Quente","Morno","Frio"]} active={f} onChange={setF}/>
+          <input
+            value={busca} onChange={e => setBusca(e.target.value)}
+            placeholder="Buscar nome, telefone ou empresa..."
+            style={{ padding:"7px 12px", borderRadius:9, border:`1px solid ${L.line}`, background:L.surface,
+              color:L.t1, fontSize:12, outline:"none", minWidth:230 }}
+          />
           {unreadCount > 0 && (
             <button
               onClick={() => setF("Todos")}
@@ -200,28 +275,43 @@ export default function PageLeads({ user, onOpenChat }) {
             const sc    = STATUS_COLORS[lead.status] || STATUS_COLORS.novo;
             const phone = (lead.whatsapp || "").replace(/\D/g, "");
             const conv  = phone ? conversaMap[phone] : null;
+            const novo  = ehLeadNovo(lead);
+            const quando = tempoRelativo(lead.ultima_atividade || lead.created_at);
             return (
               <tr key={lead.id}
-                style={{ borderBottom:`1px solid ${L.lineSoft}` }}
+                style={{ borderBottom:`1px solid ${L.lineSoft}`,
+                  // Faixa à esquerda no lead novo: identifica a linha de relance,
+                  // sem depender de ler a coluna de status.
+                  boxShadow: novo ? `inset 3px 0 0 ${L.teal}` : "none" }}
                 onMouseEnter={e => e.currentTarget.style.background = L.surface}
                 onMouseLeave={e => e.currentTarget.style.background = "transparent"}
               >
                 {/* name + unread badge */}
                 <td style={TD}>
                   <Row gap={9}>
-                    <Av name={lead.nome} color={L.teal}/>
-                    <div>
-                      <span style={{ color:L.t1, fontWeight:500, fontSize:12.5 }}>{lead.nome}</span>
-                      {conv && (
-                        <span style={{ marginLeft:6, fontSize:10, fontWeight:700, color:L.green, background:L.greenBg, border:`1px solid ${L.greenA2}`, borderRadius:10, padding:"1px 6px" }}>
-                          💬 {conv.nao_lidas} nova{conv.nao_lidas > 1 ? "s" : ""}
-                        </span>
-                      )}
+                    <Av name={exibirNome(lead)} color={novo ? L.teal : L.copper}/>
+                    <div style={{ minWidth:0 }}>
+                      <Row gap={6}>
+                        <span style={{ color:L.t1, fontWeight:500, fontSize:12.5 }}>{exibirNome(lead)}</span>
+                        {novo && (
+                          <span style={{ fontSize:9, fontWeight:800, color:"#fff", background:L.teal,
+                            borderRadius:5, padding:"2px 6px", letterSpacing:".5px", whiteSpace:"nowrap" }}>
+                            LEAD NOVO
+                          </span>
+                        )}
+                        {conv && (
+                          <span style={{ fontSize:10, fontWeight:700, color:L.green, background:L.greenBg, border:`1px solid ${L.greenA2}`, borderRadius:10, padding:"1px 6px", whiteSpace:"nowrap" }}>
+                            💬 {conv.nao_lidas}
+                          </span>
+                        )}
+                      </Row>
+                      {quando && <div style={{ fontSize:10, color:L.t4, marginTop:1 }}>{quando}</div>}
                     </div>
                   </Row>
                 </td>
                 <td style={{ ...TD, color:L.t3, fontSize:12 }}>{lead.empresa_nome || "—"}</td>
-                <td style={{ ...TD, fontFamily:"'JetBrains Mono',monospace", color:L.teal, fontSize:11 }}>{lead.whatsapp || "—"}</td>
+                <td style={{ ...TD, fontFamily:"'JetBrains Mono',monospace", fontSize:11,
+                  color: semNumero(lead.whatsapp) ? L.t4 : L.teal }}>{exibirWhats(lead.whatsapp)}</td>
                 <td style={TD}><Tag color={sc.c} bg={sc.bg}>{sc.l}</Tag></td>
                 <td style={TD}>
                   <Row gap={7}>
